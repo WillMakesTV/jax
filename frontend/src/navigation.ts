@@ -7,13 +7,14 @@ import {
 } from 'lucide-react'
 
 /**
- * Identifiers for every routable view in the app. `profile` is reachable from
- * the user menu rather than the sidebar, so it is intentionally absent from the
- * nav lists below.
+ * Identifiers for every routable view in the app. `profile` (user menu) and
+ * `stream-details` (selected from the Streams page) are reachable outside the
+ * sidebar, so they are intentionally absent from the nav lists below.
  */
 export type ViewId =
   | 'dashboard'
   | 'streams'
+  | 'stream-details'
   | 'videos'
   | 'settings'
   | 'profile'

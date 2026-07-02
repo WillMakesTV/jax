@@ -21,8 +21,9 @@ import {
 import {useEffect, useState, type ReactNode} from 'react'
 import {GetPastStreams} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
-import {BrowserOpenURL} from '../../wailsjs/runtime/runtime'
+import {BrandTile} from '../components/BrandTile'
 import {Modal} from '../components/Modal'
+import {openExternal} from '../lib/browser'
 import {
   formatBytes,
   formatCompact,
@@ -39,21 +40,26 @@ import {
   useLiveData,
   type ObsMetrics,
 } from '../live/LiveDataProvider'
-import {SERVICES} from '../services/services'
+import {platformName, SERVICES} from '../services/services'
 import {useServices} from '../services/ServicesProvider'
+
+interface StreamsProps {
+  /** Open the details view for an aggregated past stream. */
+  onOpenStream: (stream: main.PastStream) => void
+}
 
 /**
  * Streams overview: a hero banner, a live-stream metrics panel fed by the
- * Twitch/YouTube APIs and OBS's WebSocket, past streams aggregated by title
+ * Twitch/YouTube APIs and OBS's WebSocket, past streams aggregated by timing
  * across platforms, and stream-planning cards.
  */
-export function Streams() {
+export function Streams({onOpenStream}: StreamsProps) {
   return (
     <div className="flex h-full flex-col gap-8">
       <Hero />
       <LiveStreamSection />
       <ObsSection />
-      <PastStreamsSection />
+      <PastStreamsSection onOpenStream={onOpenStream} />
       <PlanningSection />
     </div>
   )
@@ -205,10 +211,6 @@ function LiveStreamSection() {
   )
 }
 
-function platformName(id: string): string {
-  return SERVICES.find((s) => s.id === id)?.name ?? id
-}
-
 function SummaryTile({
   icon: Icon,
   label,
@@ -263,22 +265,6 @@ function StatusPill({live, label}: {live: boolean; label?: string}) {
     <span className="inline-flex items-center gap-1 rounded-full bg-surface-hover px-2 py-0.5 text-[11px] font-medium text-fg-muted">
       <span className="h-1.5 w-1.5 rounded-full bg-fg-muted" aria-hidden />
       {label ?? 'Offline'}
-    </span>
-  )
-}
-
-/** Brand logo tile for a platform card. */
-function BrandTile({platform, size = 36}: {platform: string; size?: number}) {
-  const def = SERVICES.find((s) => s.id === platform)
-  if (!def) return null
-  const Icon = def.Icon
-  return (
-    <span
-      aria-hidden
-      className="flex shrink-0 items-center justify-center rounded-lg text-white"
-      style={{width: size, height: size, backgroundColor: def.brand}}
-    >
-      <Icon size={Math.round(size * 0.55)} />
     </span>
   )
 }
@@ -478,7 +464,7 @@ function PlatformDetailModal({
           {stream.live && stream.streamUrl && (
             <button
               type="button"
-              onClick={() => openUrl(stream.streamUrl)}
+              onClick={() => openExternal(stream.streamUrl)}
               className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90"
             >
               <ExternalLink size={16} aria-hidden />
@@ -488,7 +474,7 @@ function PlatformDetailModal({
           {stream.channelUrl && (
             <button
               type="button"
-              onClick={() => openUrl(stream.channelUrl)}
+              onClick={() => openExternal(stream.channelUrl)}
               className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-edge bg-bg px-4 py-2 text-sm font-semibold text-fg transition-colors hover:bg-surface-hover"
             >
               <ExternalLink size={16} aria-hidden />
@@ -691,15 +677,11 @@ function ObsSection() {
 // stream (if any) leads the grid.
 // ---------------------------------------------------------------------------
 
-const openUrl = (url: string) => {
-  try {
-    BrowserOpenURL(url)
-  } catch {
-    window.open(url, '_blank', 'noreferrer')
-  }
-}
-
-function PastStreamsSection() {
+function PastStreamsSection({
+  onOpenStream,
+}: {
+  onOpenStream: (stream: main.PastStream) => void
+}) {
   const {platforms} = useLiveData()
   const [past, setPast] = useState<main.PastStream[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -750,7 +732,11 @@ function PastStreamsSection() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {live.length > 0 && <LiveNowCard live={live} />}
           {past.map((stream) => (
-            <PastStreamCard key={`${stream.title}-${stream.startedAt}`} stream={stream} />
+            <PastStreamCard
+              key={`${stream.title}-${stream.startedAt}`}
+              stream={stream}
+              onOpen={() => onOpenStream(stream)}
+            />
           ))}
         </div>
       )}
@@ -797,7 +783,7 @@ function BroadcastChip({
   return (
     <button
       type="button"
-      onClick={() => url && openUrl(url)}
+      onClick={() => url && openExternal(url)}
       title={`Open on ${def?.name ?? platform}`}
       className="inline-flex items-center gap-1.5 rounded-full border border-edge bg-bg px-2.5 py-1 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
     >
@@ -856,7 +842,13 @@ function LiveNowCard({live}: {live: main.LiveStream[]}) {
   )
 }
 
-function PastStreamCard({stream}: {stream: main.PastStream}) {
+function PastStreamCard({
+  stream,
+  onOpen,
+}: {
+  stream: main.PastStream
+  onOpen: () => void
+}) {
   const duration = stream.broadcasts.find((b) => b.duration)?.duration
   const meta = [
     formatDate(stream.startedAt),
@@ -868,14 +860,27 @@ function PastStreamCard({stream}: {stream: main.PastStream}) {
 
   return (
     <article className="flex flex-col overflow-hidden rounded-xl border border-edge bg-surface">
-      <CardThumbnail
-        url={stream.thumbnailUrl}
-        alt={`${stream.title || 'Untitled stream'} thumbnail`}
-      />
+      {/* Thumbnail and title open the stream's details view; the platform
+          chips below deep-link to each channel's VOD instead. */}
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`Open details for ${stream.title || 'untitled stream'}`}
+        className="text-left transition-opacity hover:opacity-90"
+      >
+        <CardThumbnail
+          url={stream.thumbnailUrl}
+          alt={`${stream.title || 'Untitled stream'} thumbnail`}
+        />
+      </button>
       <div className="flex flex-1 flex-col p-4">
-        <h3 className="truncate text-sm font-semibold text-fg">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="truncate text-left text-sm font-semibold text-fg hover:underline"
+        >
           {stream.title || 'Untitled stream'}
-        </h3>
+        </button>
         {meta && <p className="mt-1 text-xs text-fg-muted">{meta}</p>}
         <div className="mt-3 flex flex-wrap gap-2">
           {stream.broadcasts.map((b) => (

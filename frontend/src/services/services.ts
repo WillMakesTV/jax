@@ -15,6 +15,11 @@ export interface ServiceDef {
   Icon: BrandIconComponent
 }
 
+/** Display name for a platform/service id, falling back to the id itself. */
+export function platformName(id: string): string {
+  return SERVICES.find((s) => s.id === id)?.name ?? id
+}
+
 export const SERVICES: ServiceDef[] = [
   {
     id: 'twitch',

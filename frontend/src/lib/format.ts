@@ -62,6 +62,20 @@ export function formatDate(iso: string): string {
   return Number.isNaN(t) ? '' : dateFmt.format(t)
 }
 
+const dateTimeFmt = new Intl.DateTimeFormat('en', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+})
+
+/** RFC3339 timestamp → "Jun 28, 2026, 6:02 PM" (local time), or "" when invalid. */
+export function formatDateTime(iso: string): string {
+  const t = Date.parse(iso)
+  return Number.isNaN(t) ? '' : dateTimeFmt.format(t)
+}
+
 /** Skipped/total frame pair → "12 (0.4%)". */
 export function formatFrameDrops(skipped: number, total: number): string {
   if (!total) return '0'
