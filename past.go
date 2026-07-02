@@ -273,10 +273,26 @@ func fetchTwitchArchives(conn serviceConn) ([]PastBroadcast, error) {
 	if conn.userID == "" {
 		return nil, fmt.Errorf("missing broadcaster id")
 	}
+	headers := twitchHeaders(conn)
+
+	// Twitch creates the archive VOD while the stream is still running, which
+	// would duplicate the live card as a "past" stream. Find the current live
+	// stream id (if any) so its in-progress VOD can be excluded.
+	liveStreamID := ""
+	var liveResp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if _, err := getJSON(twitchStreamsURL+"?user_id="+conn.userID, headers, &liveResp); err == nil && len(liveResp.Data) > 0 {
+		liveStreamID = liveResp.Data[0].ID
+	}
+
 	var resp struct {
 		Data []struct {
 			Title        string `json:"title"`
 			URL          string `json:"url"`
+			StreamID     string `json:"stream_id"`
 			ThumbnailURL string `json:"thumbnail_url"`
 			CreatedAt    string `json:"created_at"`
 			Duration     string `json:"duration"`
@@ -284,12 +300,15 @@ func fetchTwitchArchives(conn serviceConn) ([]PastBroadcast, error) {
 		} `json:"data"`
 	}
 	endpoint := twitchVideosURL + "?user_id=" + conn.userID + "&type=archive&first=20"
-	if _, err := getJSON(endpoint, twitchHeaders(conn), &resp); err != nil {
+	if _, err := getJSON(endpoint, headers, &resp); err != nil {
 		return nil, err
 	}
 
 	out := make([]PastBroadcast, 0, len(resp.Data))
 	for _, v := range resp.Data {
+		if liveStreamID != "" && v.StreamID == liveStreamID {
+			continue // the broadcast is still live; it belongs on the live card
+		}
 		// Thumbnails are size templates; freshly finished VODs may have none.
 		thumb := ""
 		if v.ThumbnailURL != "" {
