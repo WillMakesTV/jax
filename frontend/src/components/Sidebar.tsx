@@ -1,6 +1,8 @@
 import clsx from 'clsx'
 import {ChevronLeft, ChevronRight, Radio} from 'lucide-react'
 import {PRIMARY_NAV, SETTINGS_NAV, type ViewId} from '../navigation'
+import {useProfile} from '../profile/ProfileProvider'
+import {Avatar} from './Avatar'
 import {NavItem} from './NavItem'
 
 interface SidebarProps {
@@ -21,6 +23,11 @@ export function Sidebar({
   collapsed,
   onToggleCollapsed,
 }: SidebarProps) {
+  // Personalise the brand area once a profile is configured: the user's
+  // Gravatar and name replace the default app mark.
+  const {profile} = useProfile()
+  const personalised = Boolean(profile.name.trim() || profile.email.trim())
+
   return (
     <nav
       aria-label="Primary"
@@ -47,22 +54,27 @@ export function Sidebar({
         )}
       </button>
 
-      {/* Brand / logo */}
+      {/* Brand / identity: the user's Gravatar and name when a profile is
+          configured, otherwise the default app mark. */}
       <div
         className={clsx(
           'flex h-16 items-center gap-2.5 px-3',
           collapsed && 'justify-center',
         )}
       >
-        <span
-          aria-hidden
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-fg"
-        >
-          <Radio size={20} strokeWidth={2.25} />
-        </span>
+        {personalised ? (
+          <Avatar email={profile.email} name={profile.name} size={36} />
+        ) : (
+          <span
+            aria-hidden
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-fg"
+          >
+            <Radio size={20} strokeWidth={2.25} />
+          </span>
+        )}
         {!collapsed && (
           <span className="truncate text-base font-semibold tracking-tight text-fg">
-            Jax
+            {personalised ? profile.name.trim() || 'Jax' : 'Jax'}
           </span>
         )}
       </div>
