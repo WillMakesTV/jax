@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -47,11 +48,41 @@ var httpClient = &http.Client{Timeout: 20 * time.Second}
 // Status store
 // ---------------------------------------------------------------------------
 
-func (a *App) setService(name, token, account string) {
+// serviceConn holds everything needed to call a platform's API on behalf of the
+// connected account. Persisted to the local database (see store.go) so the
+// connection survives restarts; refreshed via the refresh token when the access
+// token expires.
+type serviceConn struct {
+	token        string    // OAuth access token
+	refreshToken string    // OAuth refresh token (empty if the platform issued none)
+	clientID     string    // app client ID (required by Twitch Helix headers and refresh)
+	clientSecret string    // app client secret (required by Google's token refresh)
+	userID       string    // Twitch broadcaster ID / YouTube channel ID
+	login        string    // Twitch login (URL slug); empty for YouTube
+	account      string    // display name shown in the UI
+	expiresAt    time.Time // access-token expiry; zero when unknown
+}
+
+// setService records a live connection and persists it so it survives restarts.
+func (a *App) setService(name string, conn serviceConn) {
+	a.mu.Lock()
+	a.conns[name] = conn
+	a.statuses[name] = ServiceStatus{Name: name, Connected: true, Account: conn.account}
+	a.mu.Unlock()
+
+	if a.store != nil {
+		if err := a.store.saveServiceConn(name, conn); err != nil {
+			log.Printf("jax: persist %s connection: %v", name, err)
+		}
+	}
+}
+
+// getConn returns the live connection for a service, if one exists.
+func (a *App) getConn(name string) (serviceConn, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.tokens[name] = token
-	a.statuses[name] = ServiceStatus{Name: name, Connected: true, Account: account}
+	conn, ok := a.conns[name]
+	return conn, ok
 }
 
 // GetServiceStatuses returns the current connection status of the OAuth-backed
@@ -67,12 +98,18 @@ func (a *App) GetServiceStatuses() []ServiceStatus {
 	return out
 }
 
-// DisconnectService clears any stored token and marks the service disconnected.
+// DisconnectService clears the stored session and marks the service disconnected.
 func (a *App) DisconnectService(name string) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	delete(a.tokens, name)
+	delete(a.conns, name)
 	a.statuses[name] = ServiceStatus{Name: name, Connected: false}
+	a.mu.Unlock()
+
+	if a.store != nil {
+		if err := a.store.deleteServiceConn(name); err != nil {
+			log.Printf("jax: remove %s connection: %v", name, err)
+		}
+	}
 }
 
 func (a *App) openBrowser(uri string) {
@@ -160,14 +197,24 @@ func (a *App) PollTwitchDeviceAuth(clientID, deviceCode, scopes string) (AuthPol
 
 	if status == http.StatusOK {
 		var t struct {
-			AccessToken string `json:"access_token"`
+			AccessToken  string `json:"access_token"`
+			RefreshToken string `json:"refresh_token"`
+			ExpiresIn    int    `json:"expires_in"`
 		}
 		if err := json.Unmarshal(body, &t); err != nil {
 			return AuthPollResult{}, err
 		}
-		account := a.fetchTwitchUser(clientID, t.AccessToken)
-		a.setService("twitch", t.AccessToken, account)
-		return AuthPollResult{Status: "complete", Account: account}, nil
+		user := a.fetchTwitchUser(clientID, t.AccessToken)
+		a.setService("twitch", serviceConn{
+			token:        t.AccessToken,
+			refreshToken: t.RefreshToken,
+			clientID:     clientID,
+			userID:       user.id,
+			login:        user.login,
+			account:      user.display,
+			expiresAt:    tokenExpiry(t.ExpiresIn),
+		})
+		return AuthPollResult{Status: "complete", Account: user.display}, nil
 	}
 
 	// Errors arrive as JSON. Twitch uses the `message` field; tolerate `error`.
@@ -186,29 +233,44 @@ func (a *App) PollTwitchDeviceAuth(clientID, deviceCode, scopes string) (AuthPol
 	return AuthPollResult{Status: "error", Message: firstNonEmpty(e.Message, e.Error)}, nil
 }
 
-func (a *App) fetchTwitchUser(clientID, token string) string {
+// twitchUser identifies the token's owner. The broadcaster ID is what the
+// Helix live-stream endpoints key on.
+type twitchUser struct {
+	id      string
+	login   string
+	display string
+}
+
+func (a *App) fetchTwitchUser(clientID, token string) twitchUser {
+	fallback := twitchUser{display: "Twitch account"}
 	req, err := http.NewRequest(http.MethodGet, twitchUsersURL, nil)
 	if err != nil {
-		return "Twitch account"
+		return fallback
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Client-Id", clientID)
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return "Twitch account"
+		return fallback
 	}
 	defer resp.Body.Close()
 
 	var r struct {
 		Data []struct {
+			ID          string `json:"id"`
 			DisplayName string `json:"display_name"`
 			Login       string `json:"login"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil || len(r.Data) == 0 {
-		return "Twitch account"
+		return fallback
 	}
-	return firstNonEmpty(r.Data[0].DisplayName, r.Data[0].Login, "Twitch account")
+	u := r.Data[0]
+	return twitchUser{
+		id:      u.ID,
+		login:   u.Login,
+		display: firstNonEmpty(u.DisplayName, u.Login, "Twitch account"),
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -217,8 +279,8 @@ func (a *App) fetchTwitchUser(clientID, token string) string {
 // ---------------------------------------------------------------------------
 
 const (
-	googleDeviceURL  = "https://oauth2.googleapis.com/device/code"
-	googleTokenURL   = "https://oauth2.googleapis.com/token"
+	googleDeviceURL   = "https://oauth2.googleapis.com/device/code"
+	googleTokenURL    = "https://oauth2.googleapis.com/token"
 	youtubeScope      = "https://www.googleapis.com/auth/youtube.readonly"
 	youtubeChannelURL = "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true"
 )
@@ -278,14 +340,24 @@ func (a *App) PollYouTubeDeviceAuth(clientID, clientSecret, deviceCode string) (
 
 	if status == http.StatusOK {
 		var t struct {
-			AccessToken string `json:"access_token"`
+			AccessToken  string `json:"access_token"`
+			RefreshToken string `json:"refresh_token"`
+			ExpiresIn    int    `json:"expires_in"`
 		}
 		if err := json.Unmarshal(body, &t); err != nil {
 			return AuthPollResult{}, err
 		}
-		account := a.fetchYouTubeChannel(t.AccessToken)
-		a.setService("youtube", t.AccessToken, account)
-		return AuthPollResult{Status: "complete", Account: account}, nil
+		channelID, title := a.fetchYouTubeChannel(t.AccessToken)
+		a.setService("youtube", serviceConn{
+			token:        t.AccessToken,
+			refreshToken: t.RefreshToken,
+			clientID:     clientID,
+			clientSecret: clientSecret,
+			userID:       channelID,
+			account:      title,
+			expiresAt:    tokenExpiry(t.ExpiresIn),
+		})
+		return AuthPollResult{Status: "complete", Account: title}, nil
 	}
 
 	// Google returns errors in the `error` field.
@@ -300,29 +372,32 @@ func (a *App) PollYouTubeDeviceAuth(clientID, clientSecret, deviceCode string) (
 	return AuthPollResult{Status: "error", Message: firstNonEmpty(e.ErrorDescription, e.Error)}, nil
 }
 
-func (a *App) fetchYouTubeChannel(token string) string {
+// fetchYouTubeChannel returns the token owner's channel ID and title.
+func (a *App) fetchYouTubeChannel(token string) (channelID, title string) {
+	fallbackTitle := "YouTube channel"
 	req, err := http.NewRequest(http.MethodGet, youtubeChannelURL, nil)
 	if err != nil {
-		return "YouTube channel"
+		return "", fallbackTitle
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return "YouTube channel"
+		return "", fallbackTitle
 	}
 	defer resp.Body.Close()
 
 	var r struct {
 		Items []struct {
+			ID      string `json:"id"`
 			Snippet struct {
 				Title string `json:"title"`
 			} `json:"snippet"`
 		} `json:"items"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil || len(r.Items) == 0 {
-		return "YouTube channel"
+		return "", fallbackTitle
 	}
-	return firstNonEmpty(r.Items[0].Snippet.Title, "YouTube channel")
+	return r.Items[0].ID, firstNonEmpty(r.Items[0].Snippet.Title, fallbackTitle)
 }
 
 // ---------------------------------------------------------------------------
