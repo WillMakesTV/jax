@@ -3,12 +3,14 @@ import {useState} from 'react'
 import {PageHeader} from '../components/PageHeader'
 import {PreferencesTab} from './settings/PreferencesTab'
 import {ServicesTab} from './settings/ServicesTab'
+import {StreamsTab} from './settings/StreamsTab'
 
-type TabId = 'preferences' | 'services'
+type TabId = 'preferences' | 'services' | 'streams'
 
 const TABS: {id: TabId; label: string}[] = [
   {id: 'preferences', label: 'Preferences'},
   {id: 'services', label: 'Services'},
+  {id: 'streams', label: 'Streams'},
 ]
 
 export function Settings() {
@@ -57,6 +59,7 @@ export function Settings() {
       >
         {tab === 'preferences' && <PreferencesTab />}
         {tab === 'services' && <ServicesTab />}
+        {tab === 'streams' && <StreamsTab />}
       </div>
     </div>
   )

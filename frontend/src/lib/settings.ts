@@ -7,6 +7,8 @@ import {GetSetting, SetSetting} from '../../wailsjs/go/main/App'
 export const SETTING_KEYS = {
   theme: 'theme',
   navCollapsed: 'nav_collapsed',
+  /** Minutes of tolerance when matching simulcast broadcasts (see past.go). */
+  streamMatchMargin: 'stream_match_margin_min',
 } as const
 
 /**
