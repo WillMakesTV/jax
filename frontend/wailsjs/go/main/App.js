@@ -10,8 +10,24 @@ export function GetChannelSources() {
   return window['go']['main']['App']['GetChannelSources']();
 }
 
+export function GetLiveStreams() {
+  return window['go']['main']['App']['GetLiveStreams']();
+}
+
+export function GetProfile() {
+  return window['go']['main']['App']['GetProfile']();
+}
+
+export function GetServiceConfig() {
+  return window['go']['main']['App']['GetServiceConfig']();
+}
+
 export function GetServiceStatuses() {
   return window['go']['main']['App']['GetServiceStatuses']();
+}
+
+export function GetSetting(arg1) {
+  return window['go']['main']['App']['GetSetting'](arg1);
 }
 
 export function GetStreams() {
@@ -24,6 +40,26 @@ export function PollTwitchDeviceAuth(arg1, arg2, arg3) {
 
 export function PollYouTubeDeviceAuth(arg1, arg2, arg3) {
   return window['go']['main']['App']['PollYouTubeDeviceAuth'](arg1, arg2, arg3);
+}
+
+export function SaveChannelSources(arg1) {
+  return window['go']['main']['App']['SaveChannelSources'](arg1);
+}
+
+export function SaveProfile(arg1) {
+  return window['go']['main']['App']['SaveProfile'](arg1);
+}
+
+export function SaveServiceConfig(arg1) {
+  return window['go']['main']['App']['SaveServiceConfig'](arg1);
+}
+
+export function SaveStreams(arg1) {
+  return window['go']['main']['App']['SaveStreams'](arg1);
+}
+
+export function SetSetting(arg1, arg2) {
+  return window['go']['main']['App']['SetSetting'](arg1, arg2);
 }
 
 export function StartTwitchDeviceAuth(arg1, arg2) {

@@ -6,13 +6,31 @@ export function DisconnectService(arg1:string):Promise<void>;
 
 export function GetChannelSources():Promise<Array<main.ChannelSource>>;
 
+export function GetLiveStreams():Promise<Array<main.LiveStream>>;
+
+export function GetProfile():Promise<main.Profile>;
+
+export function GetServiceConfig():Promise<main.ServiceConfig>;
+
 export function GetServiceStatuses():Promise<Array<main.ServiceStatus>>;
+
+export function GetSetting(arg1:string):Promise<string>;
 
 export function GetStreams():Promise<Array<main.Stream>>;
 
 export function PollTwitchDeviceAuth(arg1:string,arg2:string,arg3:string):Promise<main.AuthPollResult>;
 
 export function PollYouTubeDeviceAuth(arg1:string,arg2:string,arg3:string):Promise<main.AuthPollResult>;
+
+export function SaveChannelSources(arg1:Array<main.ChannelSource>):Promise<void>;
+
+export function SaveProfile(arg1:main.Profile):Promise<void>;
+
+export function SaveServiceConfig(arg1:main.ServiceConfig):Promise<void>;
+
+export function SaveStreams(arg1:Array<main.Stream>):Promise<void>;
+
+export function SetSetting(arg1:string,arg2:string):Promise<void>;
 
 export function StartTwitchDeviceAuth(arg1:string,arg2:string):Promise<main.DeviceCodeInfo>;
 

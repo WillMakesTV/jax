@@ -11,6 +11,8 @@ export interface ObsConfig {
 const OP_HELLO = 0
 const OP_IDENTIFY = 1
 const OP_IDENTIFIED = 2
+const OP_REQUEST = 6
+const OP_REQUEST_RESPONSE = 7
 
 async function sha256Bytes(input: string): Promise<Uint8Array> {
   const digest = await crypto.subtle.digest(
@@ -34,6 +36,59 @@ async function authString(
 ): Promise<string> {
   const secret = toBase64(await sha256Bytes(password + salt))
   return toBase64(await sha256Bytes(secret + challenge))
+}
+
+/**
+ * Send a request over an identified OBS socket and resolve with its response
+ * data. Correlates by requestId, so concurrent requests are safe, and uses
+ * addEventListener so it never clobbers the socket's own handlers.
+ */
+export function obsRequest<T = Record<string, unknown>>(
+  ws: WebSocket,
+  requestType: string,
+  requestData?: Record<string, unknown>,
+  timeoutMs = 5000,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    if (ws.readyState !== WebSocket.OPEN) {
+      reject(new Error('OBS is not connected.'))
+      return
+    }
+    const requestId = crypto.randomUUID()
+
+    const cleanup = () => {
+      window.clearTimeout(timer)
+      ws.removeEventListener('message', onMessage)
+    }
+    const onMessage = (event: MessageEvent) => {
+      let message: {op: number; d: any}
+      try {
+        message = JSON.parse(event.data as string)
+      } catch {
+        return
+      }
+      if (
+        message.op !== OP_REQUEST_RESPONSE ||
+        message.d?.requestId !== requestId
+      ) {
+        return
+      }
+      cleanup()
+      const status = message.d.requestStatus
+      if (status?.result) {
+        resolve((message.d.responseData ?? {}) as T)
+      } else {
+        reject(new Error(status?.comment || `OBS request failed: ${requestType}`))
+      }
+    }
+    const timer = window.setTimeout(() => {
+      cleanup()
+      reject(new Error(`OBS request timed out: ${requestType}`))
+    }, timeoutMs)
+
+    ws.addEventListener('message', onMessage)
+    ws.send(JSON.stringify({op: OP_REQUEST, d: {requestType, requestId, requestData}}))
+  })
 }
 
 /**
