@@ -149,6 +149,7 @@ export namespace main {
 	    thumbnailUrl: string;
 	    startedAt: string;
 	    totalViews: number;
+	    groupId: string;
 	    broadcasts: PastBroadcast[];
 	
 	    static createFrom(source: any = {}) {
@@ -161,6 +162,7 @@ export namespace main {
 	        this.thumbnailUrl = source["thumbnailUrl"];
 	        this.startedAt = source["startedAt"];
 	        this.totalViews = source["totalViews"];
+	        this.groupId = source["groupId"];
 	        this.broadcasts = this.convertValues(source["broadcasts"], PastBroadcast);
 	    }
 	

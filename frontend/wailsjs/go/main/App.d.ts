@@ -20,6 +20,8 @@ export function GetSetting(arg1:string):Promise<string>;
 
 export function GetStreams():Promise<Array<main.Stream>>;
 
+export function GroupPastStreams(arg1:Array<string>):Promise<void>;
+
 export function PollTwitchDeviceAuth(arg1:string,arg2:string,arg3:string):Promise<main.AuthPollResult>;
 
 export function PollYouTubeDeviceAuth(arg1:string,arg2:string,arg3:string):Promise<main.AuthPollResult>;
@@ -37,3 +39,5 @@ export function SetSetting(arg1:string,arg2:string):Promise<void>;
 export function StartTwitchDeviceAuth(arg1:string,arg2:string):Promise<main.DeviceCodeInfo>;
 
 export function StartYouTubeDeviceAuth(arg1:string):Promise<main.DeviceCodeInfo>;
+
+export function UngroupPastStreams(arg1:string):Promise<void>;

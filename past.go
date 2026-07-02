@@ -32,13 +32,22 @@ type PastBroadcast struct {
 	ViewCount    int    `json:"viewCount"`
 }
 
-// PastStream is a finished stream aggregated across platforms by title.
+// PastStream is a finished stream aggregated across platforms.
 type PastStream struct {
-	Title        string          `json:"title"`
-	ThumbnailURL string          `json:"thumbnailUrl"`
-	StartedAt    string          `json:"startedAt"` // most recent broadcast start
-	TotalViews   int             `json:"totalViews"`
-	Broadcasts   []PastBroadcast `json:"broadcasts"`
+	Title        string `json:"title"`
+	ThumbnailURL string `json:"thumbnailUrl"`
+	StartedAt    string `json:"startedAt"` // most recent broadcast start
+	TotalViews   int    `json:"totalViews"`
+	// GroupID is set when the stream was grouped manually (Settings-proof
+	// escape hatch for when timing-based matching misses); empty otherwise.
+	GroupID    string          `json:"groupId"`
+	Broadcasts []PastBroadcast `json:"broadcasts"`
+}
+
+// broadcastKey is the stable identity of one platform's broadcast, used to
+// persist manual group assignments across refetches.
+func broadcastKey(b PastBroadcast) string {
+	return b.Platform + "|" + b.URL
 }
 
 // GetPastStreams fetches recent past broadcasts from every connected platform
@@ -72,7 +81,56 @@ func (a *App) GetPastStreams() []PastStream {
 	fetch("youtube", fetchYouTubeCompleted)
 	wg.Wait()
 
-	return aggregatePastStreams(all, a.pastMatchMargin())
+	// Manual group assignments take precedence; the rest cluster by timing.
+	groups := map[string]int64{}
+	if a.store != nil {
+		g, err := a.store.getStreamGroups()
+		if err != nil {
+			log.Printf("jax: load stream groups: %v", err)
+		} else {
+			groups = g
+		}
+	}
+	manual := map[int64][]PastBroadcast{}
+	rest := []PastBroadcast{}
+	for _, b := range all {
+		if gid, ok := groups[broadcastKey(b)]; ok {
+			manual[gid] = append(manual[gid], b)
+		} else {
+			rest = append(rest, b)
+		}
+	}
+
+	out := aggregatePastStreams(rest, a.pastMatchMargin())
+	for gid, items := range manual {
+		ps := buildPastStream(items)
+		ps.GroupID = strconv.FormatInt(gid, 10)
+		out = append(out, ps)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt > out[j].StartedAt })
+	return out
+}
+
+// GroupPastStreams manually groups the given broadcasts (broadcastKey format,
+// "platform|url") into one stream, merging any groups they already belong to.
+func (a *App) GroupPastStreams(keys []string) error {
+	if a.store == nil {
+		return fmt.Errorf("storage is unavailable")
+	}
+	return a.store.groupBroadcasts(keys)
+}
+
+// UngroupPastStreams dissolves a manual group; its broadcasts fall back to
+// time-based aggregation.
+func (a *App) UngroupPastStreams(groupID string) error {
+	if a.store == nil {
+		return fmt.Errorf("storage is unavailable")
+	}
+	gid, err := strconv.ParseInt(groupID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid group id %q", groupID)
+	}
+	return a.store.ungroupBroadcasts(gid)
 }
 
 // keyStreamMatchMargin is the settings key holding the cross-platform stream
@@ -110,9 +168,9 @@ func aggregatePastStreams(items []PastBroadcast, margin time.Duration) []PastStr
 	sort.Slice(items, func(i, j int) bool { return items[i].StartedAt < items[j].StartedAt })
 
 	type group struct {
-		ps    PastStream
 		start time.Time // anchor go-live time (first broadcast in the group)
 		dur   int       // anchor duration in seconds; 0 when unknown
+		items []PastBroadcast
 	}
 	var groups []*group
 
@@ -157,27 +215,35 @@ func aggregatePastStreams(items []PastBroadcast, margin time.Duration) []PastStr
 		if g.dur == 0 {
 			g.dur = b.DurationSecs
 		}
-
-		g.ps.Broadcasts = append(g.ps.Broadcasts, b)
-		g.ps.TotalViews += b.ViewCount
-		if b.StartedAt > g.ps.StartedAt {
-			g.ps.StartedAt = b.StartedAt
-		}
-		if g.ps.ThumbnailURL == "" && b.ThumbnailURL != "" {
-			g.ps.ThumbnailURL = b.ThumbnailURL
-		}
+		g.items = append(g.items, b)
 	}
 
 	out := make([]PastStream, 0, len(groups))
 	for _, g := range groups {
-		g.ps.Title = pickStreamTitle(g.ps.Broadcasts)
-		sort.Slice(g.ps.Broadcasts, func(i, j int) bool {
-			return g.ps.Broadcasts[i].Platform < g.ps.Broadcasts[j].Platform
-		})
-		out = append(out, g.ps)
+		out = append(out, buildPastStream(g.items))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt > out[j].StartedAt })
 	return out
+}
+
+// buildPastStream finalises one aggregated stream from its broadcasts.
+func buildPastStream(items []PastBroadcast) PastStream {
+	ps := PastStream{}
+	for _, b := range items {
+		ps.Broadcasts = append(ps.Broadcasts, b)
+		ps.TotalViews += b.ViewCount
+		if b.StartedAt > ps.StartedAt {
+			ps.StartedAt = b.StartedAt
+		}
+		if ps.ThumbnailURL == "" && b.ThumbnailURL != "" {
+			ps.ThumbnailURL = b.ThumbnailURL
+		}
+	}
+	ps.Title = pickStreamTitle(ps.Broadcasts)
+	sort.Slice(ps.Broadcasts, func(i, j int) bool {
+		return ps.Broadcasts[i].Platform < ps.Broadcasts[j].Platform
+	})
+	return ps
 }
 
 // pickStreamTitle chooses the display title for an aggregated stream. Twitch

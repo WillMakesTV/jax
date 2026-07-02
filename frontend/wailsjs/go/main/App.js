@@ -38,6 +38,10 @@ export function GetStreams() {
   return window['go']['main']['App']['GetStreams']();
 }
 
+export function GroupPastStreams(arg1) {
+  return window['go']['main']['App']['GroupPastStreams'](arg1);
+}
+
 export function PollTwitchDeviceAuth(arg1, arg2, arg3) {
   return window['go']['main']['App']['PollTwitchDeviceAuth'](arg1, arg2, arg3);
 }
@@ -72,4 +76,8 @@ export function StartTwitchDeviceAuth(arg1, arg2) {
 
 export function StartYouTubeDeviceAuth(arg1) {
   return window['go']['main']['App']['StartYouTubeDeviceAuth'](arg1);
+}
+
+export function UngroupPastStreams(arg1) {
+  return window['go']['main']['App']['UngroupPastStreams'](arg1);
 }

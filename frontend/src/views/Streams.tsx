@@ -18,8 +18,13 @@ import {
   Video,
   type LucideIcon,
 } from 'lucide-react'
-import {useEffect, useState, type ReactNode} from 'react'
-import {GetPastStreams} from '../../wailsjs/go/main/App'
+import clsx from 'clsx'
+import {useCallback, useEffect, useState, type ReactNode} from 'react'
+import {
+  GetPastStreams,
+  GroupPastStreams,
+  UngroupPastStreams,
+} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {BrandTile} from '../components/BrandTile'
 import {Modal} from '../components/Modal'
@@ -677,6 +682,13 @@ function ObsSection() {
 // stream (if any) leads the grid.
 // ---------------------------------------------------------------------------
 
+/** Stable identity for one broadcast; mirrors broadcastKey in past.go. */
+const broadcastKeyOf = (b: main.PastBroadcast) => `${b.platform}|${b.url}`
+
+/** Selection identity for an aggregated stream. */
+const streamKeyOf = (s: main.PastStream) =>
+  s.broadcasts.map(broadcastKeyOf).join(',')
+
 function PastStreamsSection({
   onOpenStream,
 }: {
@@ -685,32 +697,131 @@ function PastStreamsSection({
   const {platforms} = useLiveData()
   const [past, setPast] = useState<main.PastStream[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
 
-  useEffect(() => {
-    let cancelled = false
-    GetPastStreams()
-      .then((result) => {
-        if (!cancelled) setPast(result ?? [])
-      })
-      .catch(() => {
-        // Backend unavailable (e.g. plain Vite dev); leave the list empty.
-      })
-      .finally(() => {
-        if (!cancelled) setLoaded(true)
-      })
-    return () => {
-      cancelled = true
+  const reload = useCallback(async () => {
+    try {
+      const result = await GetPastStreams()
+      setPast(result ?? [])
+    } catch {
+      // Backend unavailable (e.g. plain Vite dev); leave the list empty.
+    } finally {
+      setLoaded(true)
     }
   }, [])
+
+  useEffect(() => {
+    void reload()
+  }, [reload])
+
+  const toggleSelected = useCallback((stream: main.PastStream) => {
+    setError('')
+    setSelected((prev) => {
+      const key = streamKeyOf(stream)
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }, [])
+
+  const selectedStreams = past.filter((s) => selected.has(streamKeyOf(s)))
+  // Ungroup applies when exactly one manually-grouped stream is selected.
+  const ungroupTarget =
+    selectedStreams.length === 1 && selectedStreams[0].groupId
+      ? selectedStreams[0]
+      : null
+
+  const onGroup = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      await GroupPastStreams(
+        selectedStreams.flatMap((s) => s.broadcasts.map(broadcastKeyOf)),
+      )
+      setSelected(new Set())
+      await reload()
+    } catch {
+      setError('Could not group the selected streams.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const onUngroup = async () => {
+    if (!ungroupTarget) return
+    setBusy(true)
+    setError('')
+    try {
+      await UngroupPastStreams(ungroupTarget.groupId)
+      setSelected(new Set())
+      await reload()
+    } catch {
+      setError('Could not ungroup the selected stream.')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const live = platforms.filter((p) => p.live)
   const empty = loaded && past.length === 0 && live.length === 0
 
   return (
     <section aria-label="Past streams">
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-fg-muted">
-        Past streams
-      </h2>
+      <div className="mb-3 flex min-h-8 items-center justify-between gap-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+          Past streams
+        </h2>
+
+        {/* Selection CTA: group the checked streams into one, or dissolve a
+            manual group. Timing-based matching occasionally misses, so this
+            is the manual escape hatch. */}
+        {selectedStreams.length > 0 && (
+          <div className="flex items-center gap-2">
+            {error && (
+              <span className="text-xs text-red-600 dark:text-red-400">
+                {error}
+              </span>
+            )}
+            <span className="text-xs text-fg-muted">
+              {selectedStreams.length} selected
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelected(new Set())}
+              className="rounded-lg border border-edge bg-bg px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+            >
+              Clear
+            </button>
+            {ungroupTarget && (
+              <button
+                type="button"
+                onClick={onUngroup}
+                disabled={busy}
+                className="rounded-lg border border-edge bg-bg px-3 py-1.5 text-xs font-semibold text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+              >
+                Ungroup
+              </button>
+            )}
+            {selectedStreams.length >= 2 && (
+              <button
+                type="button"
+                onClick={onGroup}
+                disabled={busy}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                <Link2 size={14} aria-hidden />
+                {busy ? 'Grouping…' : 'Group streams'}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       {!loaded && past.length === 0 ? (
         <p className="text-sm text-fg-muted">Loading past streams…</p>
@@ -733,8 +844,10 @@ function PastStreamsSection({
           {live.length > 0 && <LiveNowCard live={live} />}
           {past.map((stream) => (
             <PastStreamCard
-              key={`${stream.title}-${stream.startedAt}`}
+              key={streamKeyOf(stream)}
               stream={stream}
+              selected={selected.has(streamKeyOf(stream))}
+              onToggleSelect={() => toggleSelected(stream)}
               onOpen={() => onOpenStream(stream)}
             />
           ))}
@@ -844,9 +957,13 @@ function LiveNowCard({live}: {live: main.LiveStream[]}) {
 
 function PastStreamCard({
   stream,
+  selected,
+  onToggleSelect,
   onOpen,
 }: {
   stream: main.PastStream
+  selected: boolean
+  onToggleSelect: () => void
   onOpen: () => void
 }) {
   const duration = stream.broadcasts.find((b) => b.duration)?.duration
@@ -859,7 +976,25 @@ function PastStreamCard({
     .join(' · ')
 
   return (
-    <article className="flex flex-col overflow-hidden rounded-xl border border-edge bg-surface">
+    <article
+      className={clsx(
+        'relative flex flex-col overflow-hidden rounded-xl border bg-surface',
+        selected ? 'border-accent ring-1 ring-accent' : 'border-edge',
+      )}
+    >
+      {/* Selection checkbox for manual grouping, floating over the thumbnail. */}
+      <label
+        className="absolute left-2 top-2 z-10 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border border-edge bg-bg/85 backdrop-blur-sm"
+        title="Select stream for grouping"
+      >
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggleSelect}
+          aria-label={`Select ${stream.title || 'untitled stream'} for grouping`}
+          className="h-3.5 w-3.5 accent-accent"
+        />
+      </label>
       {/* Thumbnail and title open the stream's details view; the platform
           chips below deep-link to each channel's VOD instead. */}
       <button

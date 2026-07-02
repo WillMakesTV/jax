@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -97,6 +98,10 @@ CREATE TABLE IF NOT EXISTS service_conns (
 	login         TEXT NOT NULL DEFAULT '',
 	account       TEXT NOT NULL DEFAULT '',
 	expires_at    INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS stream_groups (
+	broadcast_key TEXT PRIMARY KEY,
+	group_id      INTEGER NOT NULL
 );`
 	_, err := s.db.Exec(schema)
 	return err
@@ -269,6 +274,90 @@ func (s *Store) getServiceConns() (map[string]serviceConn, error) {
 		conns[name] = conn
 	}
 	return conns, rows.Err()
+}
+
+// ---------------------------------------------------------------------------
+// Manual stream groups
+//
+// Time-based aggregation of past broadcasts occasionally misses (see past.go),
+// so the user can group streams by hand. Assignments are keyed by a stable
+// broadcast identity ("platform|url") and survive refetches.
+// ---------------------------------------------------------------------------
+
+// getStreamGroups returns every manual broadcast→group assignment.
+func (s *Store) getStreamGroups() (map[string]int64, error) {
+	rows, err := s.db.Query(`SELECT broadcast_key, group_id FROM stream_groups`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	groups := map[string]int64{}
+	for rows.Next() {
+		var key string
+		var gid int64
+		if err := rows.Scan(&key, &gid); err != nil {
+			return nil, err
+		}
+		groups[key] = gid
+	}
+	return groups, rows.Err()
+}
+
+// groupBroadcasts places all given broadcast keys into one manual group. Any
+// existing groups the keys belong to are merged into the new one.
+func (s *Store) groupBroadcasts(keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Next free group id.
+	var newGid int64
+	if err := tx.QueryRow(
+		`SELECT COALESCE(MAX(group_id), 0) + 1 FROM stream_groups`,
+	).Scan(&newGid); err != nil {
+		return err
+	}
+
+	// Merge any groups the keys already belong to into the new group, so
+	// grouping an already-grouped stream pulls its whole group along.
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(keys)), ",")
+	args := make([]any, len(keys))
+	for i, k := range keys {
+		args[i] = k
+	}
+	if _, err := tx.Exec(
+		`UPDATE stream_groups SET group_id = ?
+		 WHERE group_id IN (
+			SELECT DISTINCT group_id FROM stream_groups WHERE broadcast_key IN (`+placeholders+`)
+		 )`,
+		append([]any{newGid}, args...)...,
+	); err != nil {
+		return err
+	}
+
+	for _, key := range keys {
+		if _, err := tx.Exec(
+			`INSERT INTO stream_groups (broadcast_key, group_id) VALUES (?, ?)
+			 ON CONFLICT(broadcast_key) DO UPDATE SET group_id = excluded.group_id`,
+			key, newGid,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// ungroupBroadcasts dissolves one manual group; its broadcasts fall back to
+// time-based aggregation.
+func (s *Store) ungroupBroadcasts(groupID int64) error {
+	_, err := s.db.Exec(`DELETE FROM stream_groups WHERE group_id = ?`, groupID)
+	return err
 }
 
 // getChannelSources returns every stored channel source (never nil).
