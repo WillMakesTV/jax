@@ -27,7 +27,7 @@ interface QuickAction {
 
 const QUICK_ACTIONS: QuickAction[] = [
   {
-    view: 'stream-planning',
+    view: 'streams',
     title: 'Plan a stream',
     description: 'Outline your next broadcast and its channel source.',
     icon: CalendarClock,

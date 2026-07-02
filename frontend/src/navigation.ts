@@ -13,7 +13,7 @@ import {
  */
 export type ViewId =
   | 'dashboard'
-  | 'stream-planning'
+  | 'streams'
   | 'videos'
   | 'settings'
   | 'profile'
@@ -27,7 +27,7 @@ export interface NavItemConfig {
 /** Primary navigation items, rendered in order at the top of the sidebar. */
 export const PRIMARY_NAV: NavItemConfig[] = [
   {id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard},
-  {id: 'stream-planning', label: 'Stream Planning', icon: CalendarClock},
+  {id: 'streams', label: 'Streams', icon: CalendarClock},
   {id: 'videos', label: 'Videos', icon: Clapperboard},
 ]
 
