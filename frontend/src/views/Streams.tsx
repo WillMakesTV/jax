@@ -18,14 +18,15 @@ import {
   Video,
   type LucideIcon,
 } from 'lucide-react'
-import {useCallback, useEffect, useState} from 'react'
-import {GetStreams} from '../../wailsjs/go/main/App'
+import {useEffect, useState, type ReactNode} from 'react'
+import {GetPastStreams} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {BrowserOpenURL} from '../../wailsjs/runtime/runtime'
 import {Modal} from '../components/Modal'
 import {
   formatBytes,
   formatCompact,
+  formatDate,
   formatDurationMs,
   formatFrameDrops,
   formatKbps,
@@ -43,32 +44,16 @@ import {useServices} from '../services/ServicesProvider'
 
 /**
  * Streams overview: a hero banner, a live-stream metrics panel fed by the
- * Twitch/YouTube APIs and OBS's WebSocket, a grid of past streams (loaded from
- * the SQLite-backed store), and stream-planning cards.
+ * Twitch/YouTube APIs and OBS's WebSocket, past streams aggregated by title
+ * across platforms, and stream-planning cards.
  */
 export function Streams() {
-  const [streams, setStreams] = useState<main.Stream[]>([])
-
-  useEffect(() => {
-    let cancelled = false
-    GetStreams()
-      .then((result) => {
-        if (!cancelled && Array.isArray(result)) setStreams(result)
-      })
-      .catch(() => {
-        // Backend unavailable (e.g. plain Vite dev); leave the list empty.
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
   return (
     <div className="flex h-full flex-col gap-8">
       <Hero />
       <LiveStreamSection />
       <ObsSection />
-      <PastStreamsSection streams={streams} />
+      <PastStreamsSection />
       <PlanningSection />
     </div>
   )
@@ -435,14 +420,6 @@ function PlatformDetailModal({
   onClose: () => void
 }) {
   const open = stream !== null
-  const openUrl = useCallback((url: string) => {
-    try {
-      BrowserOpenURL(url)
-    } catch {
-      window.open(url, '_blank', 'noreferrer')
-    }
-  }, [])
-
   if (!stream) return null
   return (
     <Modal
@@ -707,16 +684,55 @@ function ObsSection() {
 
 // ---------------------------------------------------------------------------
 // Past streams
+//
+// One stream is broadcast to several platforms under the same title, so the
+// backend aggregates Twitch VODs and completed YouTube broadcasts by title
+// into PastStream records referencing each channel's copy. The current live
+// stream (if any) leads the grid.
 // ---------------------------------------------------------------------------
 
-function PastStreamsSection({streams}: {streams: main.Stream[]}) {
+const openUrl = (url: string) => {
+  try {
+    BrowserOpenURL(url)
+  } catch {
+    window.open(url, '_blank', 'noreferrer')
+  }
+}
+
+function PastStreamsSection() {
+  const {platforms} = useLiveData()
+  const [past, setPast] = useState<main.PastStream[]>([])
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    GetPastStreams()
+      .then((result) => {
+        if (!cancelled) setPast(result ?? [])
+      })
+      .catch(() => {
+        // Backend unavailable (e.g. plain Vite dev); leave the list empty.
+      })
+      .finally(() => {
+        if (!cancelled) setLoaded(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const live = platforms.filter((p) => p.live)
+  const empty = loaded && past.length === 0 && live.length === 0
+
   return (
     <section aria-label="Past streams">
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-fg-muted">
         Past streams
       </h2>
 
-      {streams.length === 0 ? (
+      {!loaded && past.length === 0 ? (
+        <p className="text-sm text-fg-muted">Loading past streams…</p>
+      ) : empty ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-edge bg-surface px-6 py-10 text-center">
           <span
             aria-hidden
@@ -726,14 +742,15 @@ function PastStreamsSection({streams}: {streams: main.Stream[]}) {
           </span>
           <p className="text-sm font-semibold text-fg">No past streams yet</p>
           <p className="mt-1 max-w-sm text-sm text-fg-muted">
-            Streams you&apos;ve run will appear here so you can revisit their
-            details and plans.
+            Once you&apos;ve streamed on a connected channel, your broadcasts
+            appear here aggregated across platforms.
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {streams.map((stream, index) => (
-            <StreamCard key={index} stream={stream} />
+          {live.length > 0 && <LiveNowCard live={live} />}
+          {past.map((stream) => (
+            <PastStreamCard key={`${stream.title}-${stream.startedAt}`} stream={stream} />
           ))}
         </div>
       )}
@@ -741,24 +758,138 @@ function PastStreamsSection({streams}: {streams: main.Stream[]}) {
   )
 }
 
-function StreamCard({stream}: {stream: main.Stream}) {
-  const source = stream.channelSource?.title || stream.channelSource?.account
+/** Thumbnail area shared by the live and past cards. */
+function CardThumbnail({
+  url,
+  alt,
+  overlay,
+}: {
+  url: string
+  alt: string
+  overlay?: ReactNode
+}) {
   return (
-    <article className="flex flex-col rounded-xl border border-edge bg-surface p-5">
-      <h3 className="truncate text-base font-semibold text-fg">
-        {stream.title || 'Untitled stream'}
-      </h3>
-      {stream.description && (
-        <p className="mt-1 line-clamp-2 text-sm text-fg-muted">
-          {stream.description}
-        </p>
+    <div className="relative">
+      {url ? (
+        <img src={url} alt={alt} className="aspect-video w-full object-cover" />
+      ) : (
+        <div className="flex aspect-video w-full items-center justify-center bg-surface-hover text-fg-muted">
+          <Video size={28} aria-hidden />
+        </div>
       )}
-      {source && (
-        <span className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-full border border-edge bg-bg px-2.5 py-1 text-xs font-medium text-fg-muted">
-          <Radio size={12} aria-hidden />
-          {source}
+      {overlay}
+    </div>
+  )
+}
+
+/** Small platform chip linking out to one channel's copy of the stream. */
+function BroadcastChip({
+  platform,
+  label,
+  url,
+}: {
+  platform: string
+  label: string
+  url: string
+}) {
+  const def = SERVICES.find((s) => s.id === platform)
+  const Icon = def?.Icon
+  return (
+    <button
+      type="button"
+      onClick={() => url && openUrl(url)}
+      title={`Open on ${def?.name ?? platform}`}
+      className="inline-flex items-center gap-1.5 rounded-full border border-edge bg-bg px-2.5 py-1 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+    >
+      {Icon && (
+        <span
+          aria-hidden
+          className="flex h-4 w-4 items-center justify-center rounded-full text-white"
+          style={{backgroundColor: def?.brand}}
+        >
+          <Icon size={10} />
         </span>
       )}
+      {label}
+    </button>
+  )
+}
+
+/** The current broadcast, aggregated across platforms, leading the grid. */
+function LiveNowCard({live}: {live: main.LiveStream[]}) {
+  const title = live.find((p) => p.title)?.title ?? 'Live now'
+  const thumbnail = live.find((p) => p.thumbnailUrl)?.thumbnailUrl ?? ''
+  const viewers = live.reduce((sum, p) => sum + p.viewerCount, 0)
+
+  return (
+    <article className="flex flex-col overflow-hidden rounded-xl border border-red-500/40 bg-surface">
+      <CardThumbnail
+        url={thumbnail}
+        alt="Current live stream preview"
+        overlay={
+          <span className="absolute left-2 top-2 inline-flex items-center gap-1.5 rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-semibold text-white">
+            <span className="relative flex h-1.5 w-1.5" aria-hidden>
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+            </span>
+            Live
+          </span>
+        }
+      />
+      <div className="flex flex-1 flex-col p-4">
+        <h3 className="truncate text-sm font-semibold text-fg">{title}</h3>
+        <p className="mt-1 text-xs text-fg-muted">
+          {formatCompact(viewers)} watching now
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {live.map((p) => (
+            <BroadcastChip
+              key={p.platform}
+              platform={p.platform}
+              label={`${formatCompact(p.viewerCount)} watching`}
+              url={p.streamUrl}
+            />
+          ))}
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function PastStreamCard({stream}: {stream: main.PastStream}) {
+  const duration = stream.broadcasts.find((b) => b.duration)?.duration
+  const meta = [
+    formatDate(stream.startedAt),
+    duration,
+    stream.totalViews > 0 ? `${formatCompact(stream.totalViews)} views` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  return (
+    <article className="flex flex-col overflow-hidden rounded-xl border border-edge bg-surface">
+      <CardThumbnail
+        url={stream.thumbnailUrl}
+        alt={`${stream.title || 'Untitled stream'} thumbnail`}
+      />
+      <div className="flex flex-1 flex-col p-4">
+        <h3 className="truncate text-sm font-semibold text-fg">
+          {stream.title || 'Untitled stream'}
+        </h3>
+        {meta && <p className="mt-1 text-xs text-fg-muted">{meta}</p>}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {stream.broadcasts.map((b) => (
+            <BroadcastChip
+              key={`${b.platform}-${b.url}`}
+              platform={b.platform}
+              label={
+                b.viewCount > 0 ? `${formatCompact(b.viewCount)} views` : 'Watch'
+              }
+              url={b.url}
+            />
+          ))}
+        </div>
+      </div>
     </article>
   )
 }

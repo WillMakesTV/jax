@@ -14,6 +14,10 @@ export function GetLiveStreams() {
   return window['go']['main']['App']['GetLiveStreams']();
 }
 
+export function GetPastStreams() {
+  return window['go']['main']['App']['GetPastStreams']();
+}
+
 export function GetProfile() {
   return window['go']['main']['App']['GetProfile']();
 }

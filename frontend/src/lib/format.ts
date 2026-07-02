@@ -50,6 +50,18 @@ export function formatBytes(bytes: number): string {
   return `${bytes} B`
 }
 
+const dateFmt = new Intl.DateTimeFormat('en', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+})
+
+/** RFC3339 timestamp → "Jun 28, 2026", or "" when invalid. */
+export function formatDate(iso: string): string {
+  const t = Date.parse(iso)
+  return Number.isNaN(t) ? '' : dateFmt.format(t)
+}
+
 /** Skipped/total frame pair → "12 (0.4%)". */
 export function formatFrameDrops(skipped: number, total: number): string {
   if (!total) return '0'

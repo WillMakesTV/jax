@@ -118,6 +118,70 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class PastBroadcast {
+	    platform: string;
+	    title: string;
+	    url: string;
+	    thumbnailUrl: string;
+	    startedAt: string;
+	    duration: string;
+	    durationSecs: number;
+	    viewCount: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new PastBroadcast(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.platform = source["platform"];
+	        this.title = source["title"];
+	        this.url = source["url"];
+	        this.thumbnailUrl = source["thumbnailUrl"];
+	        this.startedAt = source["startedAt"];
+	        this.duration = source["duration"];
+	        this.durationSecs = source["durationSecs"];
+	        this.viewCount = source["viewCount"];
+	    }
+	}
+	export class PastStream {
+	    title: string;
+	    thumbnailUrl: string;
+	    startedAt: string;
+	    totalViews: number;
+	    broadcasts: PastBroadcast[];
+	
+	    static createFrom(source: any = {}) {
+	        return new PastStream(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.title = source["title"];
+	        this.thumbnailUrl = source["thumbnailUrl"];
+	        this.startedAt = source["startedAt"];
+	        this.totalViews = source["totalViews"];
+	        this.broadcasts = this.convertValues(source["broadcasts"], PastBroadcast);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class Profile {
 	    name: string;
 	    email: string;

@@ -8,6 +8,8 @@ export function GetChannelSources():Promise<Array<main.ChannelSource>>;
 
 export function GetLiveStreams():Promise<Array<main.LiveStream>>;
 
+export function GetPastStreams():Promise<Array<main.PastStream>>;
+
 export function GetProfile():Promise<main.Profile>;
 
 export function GetServiceConfig():Promise<main.ServiceConfig>;
