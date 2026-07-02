@@ -7,7 +7,7 @@ Developed and tested on **Windows 11** with **GoLand**.
 ## Features
 
 - **Dashboard** landing view with at-a-glance summary and quick actions.
-- **Collapsible left navigation** (Stream Planning, Videos, Settings) with a
+- **Collapsible left navigation** (Streams, Videos, Settings) with a
   border-mounted chevron toggle; Settings is pinned to the bottom.
 - **Light / dark theming** that defaults to your system setting, is toggleable
   (System / Light / Dark), persists, and meets **WCAG AAA** contrast.
@@ -104,8 +104,9 @@ The executable is written to `build/bin/jax.exe`. Useful variants:
 ```
 jax/
 ├── main.go              # Wails app entry point & window options
-├── app.go               # App struct + bound methods (service state)
-├── models.go            # Stream, ChannelSource models
+├── app.go               # App struct + bound methods (persistence, service state)
+├── store.go             # SQLite persistence layer (~/.jax/jax.db)
+├── models.go            # Stream, ChannelSource, Profile, ServiceConfig models
 ├── services.go          # Twitch / YouTube OAuth device-flow backend
 ├── wails.json           # Wails project config
 ├── build/               # Build assets (icons, platform files)
@@ -114,7 +115,7 @@ jax/
     ├── src/
     │   ├── App.tsx              # Layout + view routing
     │   ├── components/          # Sidebar, TopBar, Modal, Avatar, brand logos…
-    │   ├── views/               # Dashboard, Stream Planning, Videos, Settings, Profile
+    │   ├── views/               # Dashboard, Streams, Videos, Settings, Profile
     │   ├── theme/               # ThemeProvider (light/dark/system)
     │   ├── profile/             # ProfileProvider
     │   ├── services/            # ServicesProvider + connect modals
@@ -173,8 +174,23 @@ Open **Settings → Services** and select a service:
   [Google Cloud Console](https://console.cloud.google.com/apis/credentials),
   enable the **YouTube Data API v3**, and paste the Client ID and secret.
 
-OAuth tokens are currently held in memory for the session; connection config is
-stored locally for convenience.
+Connections persist across restarts: OAuth sessions (access + refresh tokens)
+are stored locally and refreshed automatically when they expire, and OBS is
+reconnected on launch using the saved settings (see Data storage below).
+
+## Data storage
+
+App data is persisted in a SQLite database at `~/.jax/jax.db` (on Windows,
+`%USERPROFILE%\.jax\jax.db`), created automatically on first run. It holds your
+profile, service connection config, OAuth sessions (tokens, refreshed on
+demand), streams and channel sources, and UI preferences (theme, collapsed
+navigation). The theme is additionally mirrored to `localStorage` so the
+correct theme can be applied before first paint. Tokens and the OBS password
+are stored in plaintext in this local, per-user file — acceptable for a local
+single-user app; moving them to the OS keychain is a planned improvement.
+
+To reset all local data, close the app and delete `~/.jax/jax.db` — it is
+recreated empty on the next launch.
 
 ## Configuration
 
