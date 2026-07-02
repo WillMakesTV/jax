@@ -38,6 +38,10 @@ export function GetStreams() {
   return window['go']['main']['App']['GetStreams']();
 }
 
+export function GetYouTubeLiveChat(arg1) {
+  return window['go']['main']['App']['GetYouTubeLiveChat'](arg1);
+}
+
 export function GroupPastStreams(arg1) {
   return window['go']['main']['App']['GroupPastStreams'](arg1);
 }

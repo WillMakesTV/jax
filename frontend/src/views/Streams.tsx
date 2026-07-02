@@ -10,6 +10,7 @@ import {
   HardDrive,
   Layers,
   Link2,
+  MessageSquare,
   Mic,
   MonitorPlay,
   PlayCircle,
@@ -19,12 +20,13 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import clsx from 'clsx'
-import {useCallback, useEffect, useState, type ReactNode} from 'react'
+import {useCallback, useEffect, useRef, useState, type ReactNode} from 'react'
 import {
   GetPastStreams,
   GroupPastStreams,
   UngroupPastStreams,
 } from '../../wailsjs/go/main/App'
+import {useChat} from '../chat/ChatProvider'
 import {main} from '../../wailsjs/go/models'
 import {BrandTile} from '../components/BrandTile'
 import {Modal} from '../components/Modal'
@@ -51,20 +53,23 @@ import {useServices} from '../services/ServicesProvider'
 interface StreamsProps {
   /** Open the details view for an aggregated past stream. */
   onOpenStream: (stream: main.PastStream) => void
+  /** Open the details view for the current live stream. */
+  onOpenLive: () => void
 }
 
 /**
  * Streams overview: a hero banner, a live-stream metrics panel fed by the
- * Twitch/YouTube APIs and OBS's WebSocket, past streams aggregated by timing
- * across platforms, and stream-planning cards.
+ * Twitch/YouTube APIs and OBS's WebSocket, aggregated live chat, past streams
+ * aggregated by timing across platforms, and stream-planning cards.
  */
-export function Streams({onOpenStream}: StreamsProps) {
+export function Streams({onOpenStream, onOpenLive}: StreamsProps) {
   return (
     <div className="flex h-full flex-col gap-8">
       <Hero />
       <LiveStreamSection />
+      <ChatSection />
       <ObsSection />
-      <PastStreamsSection onOpenStream={onOpenStream} />
+      <PastStreamsSection onOpenStream={onOpenStream} onOpenLive={onOpenLive} />
       <PlanningSection />
     </div>
   )
@@ -585,12 +590,105 @@ function ObsDetailModal({
 }
 
 // ---------------------------------------------------------------------------
+// Chat
+//
+// Aggregated live chat across every channel currently broadcasting, fed by
+// the app-wide ChatProvider (Twitch IRC + YouTube Data API).
+// ---------------------------------------------------------------------------
+
+const chatTimeFmt = new Intl.DateTimeFormat('en', {
+  hour: 'numeric',
+  minute: '2-digit',
+})
+
+function ChatSection() {
+  const {messages, active} = useChat()
+  const listRef = useRef<HTMLDivElement>(null)
+  // Follow new messages only while the user is already at the bottom.
+  const stickToBottom = useRef(true)
+
+  useEffect(() => {
+    const el = listRef.current
+    if (el && stickToBottom.current) {
+      el.scrollTop = el.scrollHeight
+    }
+  }, [messages])
+
+  const onScroll = () => {
+    const el = listRef.current
+    if (!el) return
+    stickToBottom.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 40
+  }
+
+  return (
+    <section aria-label="Chat">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+          Chat
+        </h2>
+        <StatusPill live={active} label={active ? 'Connected' : 'Offline'} />
+      </div>
+
+      <div className="rounded-xl border border-edge bg-surface">
+        {messages.length === 0 ? (
+          <div className="flex items-center gap-3 p-5">
+            <span
+              aria-hidden
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-hover text-fg-muted"
+            >
+              <MessageSquare size={20} />
+            </span>
+            <p className="text-sm text-fg-muted">
+              {active
+                ? 'Connected — chat messages will appear here.'
+                : 'Chat from all your channels appears here while you are live.'}
+            </p>
+          </div>
+        ) : (
+          <div
+            ref={listRef}
+            onScroll={onScroll}
+            className="max-h-80 overflow-y-auto p-4"
+          >
+            <ul className="space-y-1.5">
+              {messages.map((m) => (
+                <li
+                  key={`${m.platform}-${m.id}`}
+                  className="flex items-start gap-2"
+                >
+                  {/* Channel source of the chatter. */}
+                  <span className="mt-0.5" title={platformName(m.platform)}>
+                    <BrandTile platform={m.platform} size={16} />
+                  </span>
+                  <p className="min-w-0 flex-1 break-words text-sm leading-snug">
+                    <span
+                      className="font-semibold text-fg"
+                      style={m.color ? {color: m.color} : undefined}
+                    >
+                      {m.author}
+                    </span>{' '}
+                    <span className="text-fg">{m.text}</span>
+                  </p>
+                  <span className="shrink-0 pt-0.5 text-[10px] text-fg-muted">
+                    {chatTimeFmt.format(m.at)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // OBS
 //
-// Placeholder for OBS review/control features (scene switching, recording,
-// audio, stream start/stop). The WebSocket plumbing already exists
-// (ServicesProvider.obsRequest), so these cards will come to life as the
-// corresponding obs-websocket requests are wired up.
+// Stream controls are live; the remaining cards are placeholders that come to
+// life as more obs-websocket requests are wired up (the plumbing exists via
+// ServicesProvider.obsRequest).
 // ---------------------------------------------------------------------------
 
 interface ObsFeatureCard {
@@ -606,11 +704,6 @@ const OBS_FEATURE_CARDS: ObsFeatureCard[] = [
     icon: Layers,
   },
   {
-    title: 'Stream controls',
-    description: 'Start or stop the broadcast right from the dashboard.',
-    icon: PlayCircle,
-  },
-  {
     title: 'Recording & replay',
     description: 'Control recordings and the replay buffer, and see where files land.',
     icon: Disc,
@@ -621,6 +714,119 @@ const OBS_FEATURE_CARDS: ObsFeatureCard[] = [
     icon: Mic,
   },
 ]
+
+/** Live OBS stream controls: start/stop the broadcast with a confirm step. */
+function StreamControlsCard() {
+  const {statuses, obsRequest} = useServices()
+  const {obs} = useLiveData()
+
+  const connected = statuses.obs.connected
+  const streaming = Boolean(obs?.outputActive)
+  const reconnecting = Boolean(obs?.outputReconnecting)
+
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  // Drop a pending confirmation when the stream state changes underneath it
+  // (e.g. the stream was started/stopped from OBS itself).
+  useEffect(() => {
+    setConfirming(false)
+  }, [streaming])
+
+  const toggleStream = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      await obsRequest(streaming ? 'StopStream' : 'StartStream')
+      // The status pill and button flip when the next stats poll lands.
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'The OBS request failed.')
+    } finally {
+      setBusy(false)
+      setConfirming(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col rounded-xl border border-edge bg-surface p-5">
+      <div className="flex items-center gap-2">
+        <span
+          aria-hidden
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-fg"
+        >
+          <PlayCircle size={18} />
+        </span>
+        <span className="ml-auto">
+          <StatusPill
+            live={streaming}
+            label={
+              reconnecting
+                ? 'Reconnecting'
+                : streaming
+                  ? 'Streaming'
+                  : connected
+                    ? 'Idle'
+                    : 'Offline'
+            }
+          />
+        </span>
+      </div>
+      <p className="mt-3 text-sm font-semibold text-fg">Stream controls</p>
+      <p className="mt-1 flex-1 text-sm text-fg-muted">
+        {connected
+          ? 'Start or stop the broadcast right from the dashboard.'
+          : 'Connect OBS in Settings → Services to control the stream.'}
+      </p>
+
+      {connected && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {confirming ? (
+            <>
+              <button
+                type="button"
+                onClick={toggleStream}
+                disabled={busy}
+                className={clsx(
+                  'rounded-lg px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-90 disabled:opacity-50',
+                  streaming
+                    ? 'bg-red-600 text-white'
+                    : 'bg-accent text-accent-fg',
+                )}
+              >
+                {busy ? 'Working…' : streaming ? 'Confirm stop' : 'Confirm go live'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirming(false)}
+                disabled={busy}
+                className="rounded-lg border border-edge bg-bg px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirming(true)}
+              className={clsx(
+                'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                streaming
+                  ? 'border border-red-600/50 text-red-600 hover:bg-red-600/10 dark:text-red-400'
+                  : 'bg-accent text-accent-fg transition-opacity hover:opacity-90',
+              )}
+            >
+              {streaming ? 'Stop streaming' : 'Start streaming'}
+            </button>
+          )}
+        </div>
+      )}
+      {error && (
+        <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </div>
+  )
+}
 
 function ObsSection() {
   const {statuses} = useServices()
@@ -645,6 +851,7 @@ function ObsSection() {
       </p>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StreamControlsCard />
         {OBS_FEATURE_CARDS.map((card) => {
           const Icon = card.icon
           return (
@@ -691,8 +898,10 @@ const streamKeyOf = (s: main.PastStream) =>
 
 function PastStreamsSection({
   onOpenStream,
+  onOpenLive,
 }: {
   onOpenStream: (stream: main.PastStream) => void
+  onOpenLive: () => void
 }) {
   const {platforms} = useLiveData()
   const [past, setPast] = useState<main.PastStream[]>([])
@@ -841,7 +1050,7 @@ function PastStreamsSection({
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {live.length > 0 && <LiveNowCard live={live} />}
+          {live.length > 0 && <LiveNowCard live={live} onOpen={onOpenLive} />}
           {past.map((stream) => (
             <PastStreamCard
               key={streamKeyOf(stream)}
@@ -915,28 +1124,49 @@ function BroadcastChip({
 }
 
 /** The current broadcast, aggregated across platforms, leading the grid. */
-function LiveNowCard({live}: {live: main.LiveStream[]}) {
+function LiveNowCard({
+  live,
+  onOpen,
+}: {
+  live: main.LiveStream[]
+  onOpen: () => void
+}) {
   const title = live.find((p) => p.title)?.title ?? 'Live now'
   const thumbnail = live.find((p) => p.thumbnailUrl)?.thumbnailUrl ?? ''
   const viewers = live.reduce((sum, p) => sum + p.viewerCount, 0)
 
   return (
     <article className="flex flex-col overflow-hidden rounded-xl border border-red-500/40 bg-surface">
-      <CardThumbnail
-        url={thumbnail}
-        alt="Current live stream preview"
-        overlay={
-          <span className="absolute left-2 top-2 inline-flex items-center gap-1.5 rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-semibold text-white">
-            <span className="relative flex h-1.5 w-1.5" aria-hidden>
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+      {/* Thumbnail and title open the live details view; the platform chips
+          below deep-link to each channel's stream instead. */}
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label="Open live stream details"
+        className="text-left transition-opacity hover:opacity-90"
+      >
+        <CardThumbnail
+          url={thumbnail}
+          alt="Current live stream preview"
+          overlay={
+            <span className="absolute left-2 top-2 inline-flex items-center gap-1.5 rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-semibold text-white">
+              <span className="relative flex h-1.5 w-1.5" aria-hidden>
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+              </span>
+              Live
             </span>
-            Live
-          </span>
-        }
-      />
+          }
+        />
+      </button>
       <div className="flex flex-1 flex-col p-4">
-        <h3 className="truncate text-sm font-semibold text-fg">{title}</h3>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="truncate text-left text-sm font-semibold text-fg hover:underline"
+        >
+          {title}
+        </button>
         <p className="mt-1 text-xs text-fg-muted">
           {formatCompact(viewers)} watching now
         </p>

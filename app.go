@@ -21,6 +21,10 @@ type App struct {
 	mu       sync.Mutex
 	conns    map[string]serviceConn
 	statuses map[string]ServiceStatus
+
+	// ytChatID memoises the active YouTube broadcast's live-chat id between
+	// chat polls (guarded by mu; see chat.go).
+	ytChatID string
 }
 
 // NewApp creates a new App application struct

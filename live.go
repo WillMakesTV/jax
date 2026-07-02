@@ -33,6 +33,7 @@ type LiveStream struct {
 	Live         bool         `json:"live"`
 	Error        string       `json:"error"` // human-readable fetch failure, if any
 	ChannelName  string       `json:"channelName"`
+	ChannelLogin string       `json:"channelLogin"` // Twitch login slug (chat join); empty elsewhere
 	ChannelURL   string       `json:"channelUrl"`
 	StreamURL    string       `json:"streamUrl"` // direct link to the live broadcast
 	Title        string       `json:"title"`
@@ -163,10 +164,11 @@ func twitchHeaders(conn serviceConn) map[string]string {
 // metadata, and follower count from the Helix API.
 func (a *App) fetchTwitchLive(conn serviceConn) LiveStream {
 	ls := LiveStream{
-		Platform:    "twitch",
-		ChannelName: conn.account,
-		ChannelURL:  "https://twitch.tv/" + conn.login,
-		StreamURL:   "https://twitch.tv/" + conn.login,
+		Platform:     "twitch",
+		ChannelName:  conn.account,
+		ChannelLogin: conn.login,
+		ChannelURL:   "https://twitch.tv/" + conn.login,
+		StreamURL:    "https://twitch.tv/" + conn.login,
 	}
 	if conn.userID == "" {
 		ls.Error = "Twitch account details unavailable — try reconnecting."

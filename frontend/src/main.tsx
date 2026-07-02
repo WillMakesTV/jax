@@ -6,6 +6,7 @@ import {ThemeProvider} from './theme/ThemeProvider'
 import {ProfileProvider} from './profile/ProfileProvider'
 import {ServicesProvider} from './services/ServicesProvider'
 import {LiveDataProvider} from './live/LiveDataProvider'
+import {ChatProvider} from './chat/ChatProvider'
 
 const container = document.getElementById('root')
 
@@ -17,7 +18,9 @@ root.render(
             <ProfileProvider>
                 <ServicesProvider>
                     <LiveDataProvider>
-                        <App/>
+                        <ChatProvider>
+                            <App/>
+                        </ChatProvider>
                     </LiveDataProvider>
                 </ServicesProvider>
             </ProfileProvider>
