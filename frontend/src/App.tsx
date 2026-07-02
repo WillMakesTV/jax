@@ -6,6 +6,7 @@ import {TopBar} from './components/TopBar'
 import {SETTING_KEYS, loadSetting, saveSetting} from './lib/settings'
 import type {ViewId} from './navigation'
 import {Dashboard} from './views/Dashboard'
+import {LiveStreamDetails} from './views/LiveStreamDetails'
 import {StreamDetails} from './views/StreamDetails'
 import {Streams} from './views/Streams'
 import {Videos} from './views/Videos'
@@ -64,7 +65,11 @@ function App() {
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           // Keep "Streams" highlighted while a stream's details are open.
-          activeView={view === 'stream-details' ? 'streams' : view}
+          activeView={
+            view === 'stream-details' || view === 'live-details'
+              ? 'streams'
+              : view
+          }
           onNavigate={setView}
           collapsed={collapsed}
           onToggleCollapsed={() => setCollapsed((c) => !c)}
@@ -74,13 +79,19 @@ function App() {
           <div className="flex-1 overflow-y-auto p-8">
             {view === 'dashboard' && <Dashboard onNavigate={setView} />}
             {view === 'streams' && (
-              <Streams onOpenStream={openStreamDetails} />
+              <Streams
+                onOpenStream={openStreamDetails}
+                onOpenLive={() => setView('live-details')}
+              />
             )}
             {view === 'stream-details' && detailStream && (
               <StreamDetails
                 stream={detailStream}
                 onBack={() => setView('streams')}
               />
+            )}
+            {view === 'live-details' && (
+              <LiveStreamDetails onBack={() => setView('streams')} />
             )}
             {view === 'videos' && <Videos />}
             {view === 'settings' && <Settings />}

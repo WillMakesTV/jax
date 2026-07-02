@@ -94,7 +94,7 @@ export function StreamDetails({stream, onBack}: StreamDetailsProps) {
   )
 }
 
-function SummaryTile({
+export function SummaryTile({
   icon: Icon,
   label,
   value,
@@ -114,7 +114,7 @@ function SummaryTile({
   )
 }
 
-function DetailRow({label, value}: {label: string; value: string}) {
+export function DetailRow({label, value}: {label: string; value: string}) {
   return (
     <div className="flex items-baseline justify-between gap-4 py-2">
       <dt className="shrink-0 text-sm text-fg-muted">{label}</dt>

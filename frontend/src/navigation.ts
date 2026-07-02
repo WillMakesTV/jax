@@ -15,6 +15,7 @@ export type ViewId =
   | 'dashboard'
   | 'streams'
   | 'stream-details'
+  | 'live-details'
   | 'videos'
   | 'settings'
   | 'profile'
