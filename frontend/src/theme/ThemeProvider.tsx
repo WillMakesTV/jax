@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import {SETTING_KEYS, loadSetting, saveSetting} from '../lib/settings'
 
 /** The user's chosen theme preference. "system" follows the OS setting. */
 export type ThemePreference = 'system' | 'light' | 'dark'
@@ -14,7 +15,16 @@ export type ThemePreference = 'system' | 'light' | 'dark'
 /** The concrete theme actually applied to the document. */
 export type ResolvedTheme = 'light' | 'dark'
 
+/**
+ * The theme lives in the SQLite-backed store (source of truth), but is also
+ * mirrored to localStorage under this key. The inline script in index.html
+ * reads that cache synchronously before first paint to avoid a flash of the
+ * wrong theme — something an async backend read cannot do.
+ */
 const STORAGE_KEY = 'jax:theme'
+
+const isPreference = (v: string | null): v is ThemePreference =>
+  v === 'light' || v === 'dark' || v === 'system'
 
 interface ThemeContextValue {
   /** The user's preference: system | light | dark. */
@@ -63,11 +73,39 @@ export function ThemeProvider({children}: {children: ReactNode}) {
 
   const setPreference = useCallback((next: ThemePreference) => {
     setPreferenceState(next)
+    // Update the pre-paint cache and the backing store.
     try {
       localStorage.setItem(STORAGE_KEY, next)
     } catch {
       // Ignore persistence failures.
     }
+    saveSetting(SETTING_KEYS.theme, next)
+  }, [])
+
+  // Hydrate the preference from the backend store on mount. The synchronous
+  // localStorage read above gives the correct first paint; this reconciles with
+  // the source of truth and seeds it on first run.
+  useEffect(() => {
+    let cancelled = false
+    loadSetting(SETTING_KEYS.theme).then((stored) => {
+      if (cancelled) return
+      if (isPreference(stored)) {
+        setPreferenceState(stored)
+        try {
+          localStorage.setItem(STORAGE_KEY, stored)
+        } catch {
+          // Ignore cache write failures.
+        }
+      } else {
+        // Backend has no value yet: migrate the current (cached) preference.
+        saveSetting(SETTING_KEYS.theme, preference)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+    // Run once on mount; `preference` is only read to seed the empty backend.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Apply the resolved theme whenever the preference changes, and keep it in

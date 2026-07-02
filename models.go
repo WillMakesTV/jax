@@ -19,3 +19,26 @@ type Stream struct {
 	ChannelSource ChannelSource `json:"channelSource"`
 	Plan          string        `json:"plan"`
 }
+
+// Profile is the locally stored user profile. It is persisted in the SQLite
+// database under ~/.jax rather than in the browser's localStorage.
+type Profile struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+// ServiceConfig holds the connection settings the Settings → Services modals
+// prefill from. Client IDs are not secrets; the Google client secret and OBS
+// password are stored here for usability — acceptable for a local single-user
+// app, but a future version should move secrets to the OS keychain.
+type ServiceConfig struct {
+	TwitchClientID      string `json:"twitchClientId"`
+	YouTubeClientID     string `json:"youtubeClientId"`
+	YouTubeClientSecret string `json:"youtubeClientSecret"`
+	ObsHost             string `json:"obsHost"`
+	ObsPort             string `json:"obsPort"`
+	ObsPassword         string `json:"obsPassword"`
+	// ObsAutoConnect makes the frontend re-establish the OBS WebSocket on
+	// launch; set when a connection succeeds, cleared on manual disconnect.
+	ObsAutoConnect bool `json:"obsAutoConnect"`
+}
