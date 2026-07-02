@@ -1,0 +1,31 @@
+# Build output
+build/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Frontend
+node_modules/
+frontend/dist/
+
+# Go
+*.test
+*.out
+coverage.txt
+
+# IDE / editor
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs & local env
+*.log
+.env
+.env.local
+.env.*.local

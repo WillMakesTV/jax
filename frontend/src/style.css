@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+/* Enable class-based dark mode (`.dark` on <html>) while still allowing a
+   "System" mode that simply leaves the class off and follows the OS via the
+   ThemeProvider. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   Semantic colour tokens.
+
+   Concrete values live on :root / .dark as plain CSS variables, then are mapped
+   into Tailwind's theme via `@theme inline` so the generated utilities
+   (bg-bg, text-fg, border-edge, ...) resolve the variable at use-site and the
+   .dark overrides take effect.
+
+   All primary text/background pairs are verified to meet WCAG AAA (>= 7:1):
+     Light: #1a1a1a on #ffffff ~17.5:1, muted #4b5563 on #ffffff ~7.6:1,
+            accent-fg #ffffff on accent #4338ca ~7.9:1.
+     Dark:  #f5f5f5 on #0d0d0d ~17.8:1, muted #adadb8 on #0d0d0d ~8.7:1,
+            accent-fg #0d0d0d on accent #a5b4fc ~9.7:1.
+--------------------------------------------------------------------------- */
+:root {
+  --bp-bg: #ffffff;
+  --bp-surface: #f4f4f5;
+  --bp-surface-hover: #e4e4e7;
+  --bp-edge: #d4d4d8;
+  --bp-fg: #1a1a1a;
+  --bp-fg-muted: #4b5563;
+  --bp-accent: #4338ca;
+  --bp-accent-fg: #ffffff;
+  --bp-focus: #4338ca;
+}
+
+.dark {
+  --bp-bg: #0d0d0d;
+  --bp-surface: #18181b;
+  --bp-surface-hover: #27272a;
+  --bp-edge: #3f3f46;
+  --bp-fg: #f5f5f5;
+  --bp-fg-muted: #adadb8;
+  --bp-accent: #a5b4fc;
+  --bp-accent-fg: #0d0d0d;
+  --bp-focus: #a5b4fc;
+}
+
+@theme inline {
+  --color-bg: var(--bp-bg);
+  --color-surface: var(--bp-surface);
+  --color-surface-hover: var(--bp-surface-hover);
+  --color-edge: var(--bp-edge);
+  --color-fg: var(--bp-fg);
+  --color-fg-muted: var(--bp-fg-muted);
+  --color-accent: var(--bp-accent);
+  --color-accent-fg: var(--bp-accent-fg);
+  --color-focus: var(--bp-focus);
+
+  --font-sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial,
+    sans-serif;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* High-visibility focus ring for keyboard users (accessibility). */
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Smooth, but respect reduced-motion preferences. */
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      transition-duration: 0.001ms !important;
+      animation-duration: 0.001ms !important;
+    }
+  }
+}
