@@ -76,6 +76,18 @@ export function formatDateTime(iso: string): string {
   return Number.isNaN(t) ? '' : dateTimeFmt.format(t)
 }
 
+/** RFC3339 timestamp → "just now" / "12 min ago" / "3 h ago", or "" when invalid. */
+export function formatAgo(iso: string): string {
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return ''
+  const mins = Math.floor((Date.now() - t) / 60_000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins} min ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours} h ago`
+  return formatDate(iso)
+}
+
 /** Skipped/total frame pair → "12 (0.4%)". */
 export function formatFrameDrops(skipped: number, total: number): string {
   if (!total) return '0'

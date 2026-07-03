@@ -1,5 +1,6 @@
 import clsx from 'clsx'
 import {ChevronLeft, ChevronRight, Radio} from 'lucide-react'
+import {aggregateLive, useLiveData} from '../live/LiveDataProvider'
 import {PRIMARY_NAV, SETTINGS_NAV, type ViewId} from '../navigation'
 import {useProfile} from '../profile/ProfileProvider'
 import {Avatar} from './Avatar'
@@ -27,6 +28,11 @@ export function Sidebar({
   // Gravatar and name replace the default app mark.
   const {profile} = useProfile()
   const personalised = Boolean(profile.name.trim() || profile.email.trim())
+
+  // While on the air the dashboard item reads "Live Dashboard" and carries a
+  // pulsing red live indicator.
+  const {platforms, obs} = useLiveData()
+  const {anyLive} = aggregateLive(platforms, obs)
 
   return (
     <nav
@@ -82,15 +88,21 @@ export function Sidebar({
       {/* Primary navigation. Extra right padding keeps the active item
           highlight clear of the chevron toggle that straddles the border. */}
       <div className="flex flex-1 flex-col gap-1 overflow-y-auto py-2 pl-2 pr-4">
-        {PRIMARY_NAV.map((item) => (
-          <NavItem
-            key={item.id}
-            item={item}
-            active={activeView === item.id}
-            collapsed={collapsed}
-            onSelect={() => onNavigate(item.id)}
-          />
-        ))}
+        {PRIMARY_NAV.map((item) => {
+          // On air: the dashboard item's own icon pulses red and the label
+          // reads "Live Dashboard".
+          const isLiveDashboard = item.id === 'dashboard' && anyLive
+          return (
+            <NavItem
+              key={item.id}
+              item={isLiveDashboard ? {...item, label: 'Live Dashboard'} : item}
+              active={activeView === item.id}
+              collapsed={collapsed}
+              live={isLiveDashboard}
+              onSelect={() => onNavigate(item.id)}
+            />
+          )
+        })}
       </div>
 
       {/* Settings pinned to the bottom. Matches the primary list's right

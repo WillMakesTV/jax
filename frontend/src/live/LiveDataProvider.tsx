@@ -10,6 +10,8 @@ import {
 } from 'react'
 import {GetLiveStreams} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
+import {fetchObsMics, type ObsMic} from '../lib/obs'
+import {SETTING_KEYS, loadSetting} from '../lib/settings'
 import {useServices} from '../services/ServicesProvider'
 
 /**
@@ -62,6 +64,17 @@ interface LiveDataContextValue {
   platforms: main.LiveStream[]
   /** OBS encoder metrics, or null when OBS is unavailable. */
   obs: ObsMetrics | null
+  /**
+   * OBS's audio input capture devices (microphones) and their mute state.
+   * Refreshed with the stats poll; mute changes apply instantly via events.
+   */
+  mics: ObsMic[]
+  /**
+   * The Application Audio Capture source designated as "Music" (OBS tab →
+   * Audio Mixer) and its mute state; null when none is designated or the
+   * source is missing from OBS.
+   */
+  music: ObsMic | null
   oauthConnected: boolean
   obsConnected: boolean
   /**
@@ -100,9 +113,11 @@ export function aggregateLive(
 }
 
 export function LiveDataProvider({children}: {children: ReactNode}) {
-  const {statuses, obsRequest} = useServices()
+  const {statuses, obsRequest, onObsEvent} = useServices()
   const [platforms, setPlatforms] = useState<main.LiveStream[]>([])
   const [obs, setObs] = useState<ObsMetrics | null>(null)
+  const [mics, setMics] = useState<ObsMic[]>([])
+  const [music, setMusic] = useState<ObsMic | null>(null)
   const [fastCount, setFastCount] = useState(0)
   const prevBytes = useRef<{bytes: number; at: number} | null>(null)
 
@@ -144,17 +159,39 @@ export function LiveDataProvider({children}: {children: ReactNode}) {
   useEffect(() => {
     if (!obsConnected) {
       setObs(null)
+      setMics([])
+      setMusic(null)
       prevBytes.current = null
       return
     }
     let cancelled = false
     const tick = async () => {
       try {
-        const [stats, stream] = await Promise.all([
+        const [stats, stream, micList] = await Promise.all([
           obsRequest<ObsStats>('GetStats'),
           obsRequest<ObsStreamStatus>('GetStreamStatus'),
+          fetchObsMics(obsRequest),
         ])
         if (cancelled) return
+        setMics(micList)
+
+        // The designated Music source's mute state. Re-reading the setting
+        // each tick also picks up (re)designations made in the Audio Mixer.
+        try {
+          const name = (await loadSetting(SETTING_KEYS.obsMusicSource)) ?? ''
+          if (!name) {
+            if (!cancelled) setMusic(null)
+          } else {
+            const {inputMuted} = await obsRequest<{inputMuted: boolean}>(
+              'GetInputMute',
+              {inputName: name},
+            )
+            if (!cancelled) setMusic({name, muted: inputMuted})
+          }
+        } catch {
+          // Designated source missing from OBS; hide the indicator.
+          if (!cancelled) setMusic(null)
+        }
 
         // Bitrate from the byte delta between this poll and the previous one.
         let kbps: number | null = null
@@ -178,9 +215,38 @@ export function LiveDataProvider({children}: {children: ReactNode}) {
     }
   }, [obsConnected, obsRequest])
 
+  // Mute toggles apply instantly (from OBS itself or our own UI) between
+  // stats polls.
+  useEffect(() => {
+    if (!obsConnected) return
+    return onObsEvent<{inputName: string; inputMuted: boolean}>(
+      'InputMuteStateChanged',
+      (e) => {
+        setMics((prev) =>
+          prev.map((m) =>
+            m.name === e.inputName ? {...m, muted: e.inputMuted} : m,
+          ),
+        )
+        setMusic((prev) =>
+          prev && prev.name === e.inputName
+            ? {...prev, muted: e.inputMuted}
+            : prev,
+        )
+      },
+    )
+  }, [obsConnected, onObsEvent])
+
   const value = useMemo<LiveDataContextValue>(
-    () => ({platforms, obs, oauthConnected, obsConnected, requestFastPolling}),
-    [platforms, obs, oauthConnected, obsConnected, requestFastPolling],
+    () => ({
+      platforms,
+      obs,
+      mics,
+      music,
+      oauthConnected,
+      obsConnected,
+      requestFastPolling,
+    }),
+    [platforms, obs, mics, music, oauthConnected, obsConnected, requestFastPolling],
   )
 
   return (
