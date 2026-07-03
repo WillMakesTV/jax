@@ -5,11 +5,38 @@
 export interface TwitchChatMessage {
   id: string
   author: string
+  /** Twitch user id from the message tags; '' when absent. */
+  authorId: string
+  /** Login (URL slug) of the chatter, for API lookups. */
+  authorLogin: string
+  /** Normalised badge labels ("Subscriber", "Moderator", "VIP", ...). */
+  badges: string[]
   text: string
   /** The chatter's Twitch name colour ("#RRGGBB"), possibly empty. */
   color: string
   /** Unix millis the message was sent. */
   at: number
+}
+
+/** IRC badge keys worth surfacing, mapped to display labels. */
+const BADGE_LABELS: Record<string, string> = {
+  broadcaster: 'Broadcaster',
+  moderator: 'Moderator',
+  subscriber: 'Subscriber',
+  founder: 'Founder',
+  vip: 'VIP',
+  staff: 'Twitch Staff',
+}
+
+/** Parse the IRC `badges` tag ("subscriber/12,vip/1") into display labels. */
+function parseBadges(raw: string): string[] {
+  if (!raw) return []
+  const out: string[] = []
+  for (const part of raw.split(',')) {
+    const label = BADGE_LABELS[part.split('/')[0]]
+    if (label && !out.includes(label)) out.push(label)
+  }
+  return out
 }
 
 const TWITCH_IRC_URL = 'wss://irc-ws.chat.twitch.tv:443'
@@ -72,6 +99,9 @@ export function connectTwitchChat(
         onMessage({
           id: tags['id'] || `${Date.now()}-${Math.random()}`,
           author: tags['display-name'] || match[2],
+          authorId: tags['user-id'] || '',
+          authorLogin: match[2],
+          badges: parseBadges(tags['badges'] || ''),
           text: match[3],
           color: tags['color'] || '',
           at: Number(tags['tmi-sent-ts']) || Date.now(),

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/url"
+	"strings"
 )
 
 // ---------------------------------------------------------------------------
@@ -19,20 +21,31 @@ type ChatMessage struct {
 	ID          string `json:"id"`
 	Platform    string `json:"platform"`
 	Author      string `json:"author"`
-	Text        string `json:"text"`
-	PublishedAt string `json:"publishedAt"` // RFC3339
+	AuthorID    string `json:"authorId"` // YouTube channel id / Twitch user id
+	AvatarURL   string `json:"avatarUrl"`
+	// Badges are normalised author roles ("Owner", "Moderator", "Member",
+	// "Verified", "Subscriber", ...).
+	Badges      []string `json:"badges"`
+	Text        string   `json:"text"`
+	PublishedAt string   `json:"publishedAt"` // RFC3339
 }
 
 // LiveChatPage is one page of YouTube live-chat messages. The frontend passes
 // NextPageToken back on the next poll and waits PollIntervalMs between polls.
+// Events carries the channel events found in the same page (new members,
+// Super Chats, ...), since YouTube delivers them through the chat stream.
 type LiveChatPage struct {
 	Live           bool          `json:"live"`
 	Messages       []ChatMessage `json:"messages"`
+	Events         []LiveEvent   `json:"events"`
 	NextPageToken  string        `json:"nextPageToken"`
 	PollIntervalMs int           `json:"pollIntervalMs"`
 }
 
-const youtubeChatMessagesURL = "https://www.googleapis.com/youtube/v3/liveChat/messages"
+const (
+	youtubeChatMessagesURL = "https://www.googleapis.com/youtube/v3/liveChat/messages"
+	twitchChatMessagesURL  = "https://api.twitch.tv/helix/chat/messages"
+)
 
 // cachedYouTubeChatID returns the memoised live-chat id, or "" when unset.
 func (a *App) cachedYouTubeChatID() string {
@@ -47,6 +60,32 @@ func (a *App) setYouTubeChatID(id string) {
 	a.ytChatID = id
 }
 
+// resolveYouTubeChatID returns the active broadcast's live-chat id, memoised
+// between calls (looking it up on every chat poll would double the quota cost
+// of polling). Returns "" when there is no active broadcast.
+func (a *App) resolveYouTubeChatID(headers map[string]string) string {
+	if chatID := a.cachedYouTubeChatID(); chatID != "" {
+		return chatID
+	}
+	var broadcasts struct {
+		Items []struct {
+			Snippet struct {
+				LiveChatID string `json:"liveChatId"`
+			} `json:"snippet"`
+		} `json:"items"`
+	}
+	if _, err := getJSON(youtubeBroadcastsURL, headers, &broadcasts); err != nil {
+		log.Printf("jax: youtube chat broadcast lookup: %v", err)
+		return ""
+	}
+	if len(broadcasts.Items) == 0 || broadcasts.Items[0].Snippet.LiveChatID == "" {
+		return "" // not live
+	}
+	chatID := broadcasts.Items[0].Snippet.LiveChatID
+	a.setYouTubeChatID(chatID)
+	return chatID
+}
+
 // GetYouTubeLiveChat returns the next page of the active broadcast's live
 // chat. An empty pageToken starts from the recent history the API provides.
 // Live=false means there is no active chat (not live, chat ended, or the
@@ -58,26 +97,9 @@ func (a *App) GetYouTubeLiveChat(pageToken string) LiveChatPage {
 	}
 	headers := map[string]string{"Authorization": "Bearer " + conn.token}
 
-	// Resolve (and memoise) the active broadcast's chat id. Looking it up on
-	// every poll would double the quota cost of chat polling.
-	chatID := a.cachedYouTubeChatID()
+	chatID := a.resolveYouTubeChatID(headers)
 	if chatID == "" {
-		var broadcasts struct {
-			Items []struct {
-				Snippet struct {
-					LiveChatID string `json:"liveChatId"`
-				} `json:"snippet"`
-			} `json:"items"`
-		}
-		if _, err := getJSON(youtubeBroadcastsURL, headers, &broadcasts); err != nil {
-			log.Printf("jax: youtube chat broadcast lookup: %v", err)
-			return LiveChatPage{}
-		}
-		if len(broadcasts.Items) == 0 || broadcasts.Items[0].Snippet.LiveChatID == "" {
-			return LiveChatPage{} // not live
-		}
-		chatID = broadcasts.Items[0].Snippet.LiveChatID
-		a.setYouTubeChatID(chatID)
+		return LiveChatPage{}
 	}
 
 	endpoint := youtubeChatMessagesURL +
@@ -93,11 +115,34 @@ func (a *App) GetYouTubeLiveChat(pageToken string) LiveChatPage {
 		Items                 []struct {
 			ID      string `json:"id"`
 			Snippet struct {
-				DisplayMessage string `json:"displayMessage"`
-				PublishedAt    string `json:"publishedAt"`
+				Type             string `json:"type"`
+				DisplayMessage   string `json:"displayMessage"`
+				PublishedAt      string `json:"publishedAt"`
+				SuperChatDetails struct {
+					AmountDisplayString string `json:"amountDisplayString"`
+					UserComment         string `json:"userComment"`
+				} `json:"superChatDetails"`
+				SuperStickerDetails struct {
+					AmountDisplayString string `json:"amountDisplayString"`
+				} `json:"superStickerDetails"`
+				NewSponsorDetails struct {
+					MemberLevelName string `json:"memberLevelName"`
+					IsUpgrade       bool   `json:"isUpgrade"`
+				} `json:"newSponsorDetails"`
+				MemberMilestoneChatDetails struct {
+					MemberLevelName string `json:"memberLevelName"`
+					MemberMonth     int    `json:"memberMonth"`
+					UserComment     string `json:"userComment"`
+				} `json:"memberMilestoneChatDetails"`
 			} `json:"snippet"`
 			AuthorDetails struct {
-				DisplayName string `json:"displayName"`
+				DisplayName     string `json:"displayName"`
+				ChannelID       string `json:"channelId"`
+				ProfileImageURL string `json:"profileImageUrl"`
+				IsVerified      bool   `json:"isVerified"`
+				IsChatOwner     bool   `json:"isChatOwner"`
+				IsChatSponsor   bool   `json:"isChatSponsor"`
+				IsChatModerator bool   `json:"isChatModerator"`
 			} `json:"authorDetails"`
 		} `json:"items"`
 	}
@@ -114,14 +159,80 @@ func (a *App) GetYouTubeLiveChat(pageToken string) LiveChatPage {
 	}
 
 	messages := make([]ChatMessage, 0, len(resp.Items))
+	events := []LiveEvent{}
 	for _, item := range resp.Items {
+		// Channel events travel through the chat stream; convert the ones we
+		// support into LiveEvents for the Live Events feed.
+		switch item.Snippet.Type {
+		case "superChatEvent":
+			detail := "sent a " + item.Snippet.SuperChatDetails.AmountDisplayString + " Super Chat"
+			if c := item.Snippet.SuperChatDetails.UserComment; c != "" {
+				detail += " — " + c
+			}
+			events = append(events, LiveEvent{
+				ID: item.ID, Platform: "youtube", Type: "superchat",
+				Author: item.AuthorDetails.DisplayName, Detail: detail,
+				PublishedAt: item.Snippet.PublishedAt,
+			})
+			continue
+		case "superStickerEvent":
+			events = append(events, LiveEvent{
+				ID: item.ID, Platform: "youtube", Type: "supersticker",
+				Author: item.AuthorDetails.DisplayName,
+				Detail: "sent a " + item.Snippet.SuperStickerDetails.AmountDisplayString + " Super Sticker",
+				PublishedAt: item.Snippet.PublishedAt,
+			})
+			continue
+		case "newSponsorEvent":
+			detail := "became a channel member"
+			if item.Snippet.NewSponsorDetails.IsUpgrade {
+				detail = "upgraded their membership"
+			}
+			if lvl := item.Snippet.NewSponsorDetails.MemberLevelName; lvl != "" {
+				detail += " (" + lvl + ")"
+			}
+			events = append(events, LiveEvent{
+				ID: item.ID, Platform: "youtube", Type: "member",
+				Author: item.AuthorDetails.DisplayName, Detail: detail,
+				PublishedAt: item.Snippet.PublishedAt,
+			})
+			continue
+		case "memberMilestoneChatEvent":
+			d := item.Snippet.MemberMilestoneChatDetails
+			detail := fmt.Sprintf("member for %d months", d.MemberMonth)
+			if d.UserComment != "" {
+				detail += " — " + d.UserComment
+			}
+			events = append(events, LiveEvent{
+				ID: item.ID, Platform: "youtube", Type: "milestone",
+				Author: item.AuthorDetails.DisplayName, Detail: detail,
+				PublishedAt: item.Snippet.PublishedAt,
+			})
+			continue
+		}
 		if item.Snippet.DisplayMessage == "" {
-			continue // system events (memberships, deletions) have no display text
+			continue // other system events (deletions, polls) have no display text
+		}
+		var badges []string
+		if item.AuthorDetails.IsChatOwner {
+			badges = append(badges, "Owner")
+		}
+		if item.AuthorDetails.IsChatModerator {
+			badges = append(badges, "Moderator")
+		}
+		if item.AuthorDetails.IsChatSponsor {
+			badges = append(badges, "Member")
+		}
+		if item.AuthorDetails.IsVerified {
+			badges = append(badges, "Verified")
 		}
 		messages = append(messages, ChatMessage{
 			ID:          item.ID,
 			Platform:    "youtube",
 			Author:      item.AuthorDetails.DisplayName,
+			AuthorID:    item.AuthorDetails.ChannelID,
+			AvatarURL:   item.AuthorDetails.ProfileImageURL,
+			Badges:      badges,
 			Text:        item.Snippet.DisplayMessage,
 			PublishedAt: item.Snippet.PublishedAt,
 		})
@@ -129,7 +240,140 @@ func (a *App) GetYouTubeLiveChat(pageToken string) LiveChatPage {
 	return LiveChatPage{
 		Live:           true,
 		Messages:       messages,
+		Events:         events,
 		NextPageToken:  resp.NextPageToken,
 		PollIntervalMs: resp.PollingIntervalMillis,
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Broadcast messages
+//
+// One message sent, as the broadcaster, to every connected channel's chat.
+// Twitch uses the Helix send-chat-message endpoint (user:write:chat scope);
+// YouTube inserts into the active broadcast's live chat (youtube.force-ssl
+// scope). Connections made before those scopes were requested surface a
+// "reconnect" error for that platform.
+// ---------------------------------------------------------------------------
+
+// BroadcastSendResult is one platform's outcome for a broadcast message.
+type BroadcastSendResult struct {
+	Platform string `json:"platform"`
+	Sent     bool   `json:"sent"`
+	Error    string `json:"error"`
+}
+
+// sendErrorMessage maps an API failure to a user-actionable message.
+func sendErrorMessage(platform string, status int, err error) string {
+	if status == 401 || status == 403 {
+		return "Missing chat permission — reconnect " + platformLabel(platform) +
+			" in Settings → Services to grant it."
+	}
+	if err != nil {
+		return "Sending failed: " + err.Error()
+	}
+	return "Sending failed."
+}
+
+// SendBroadcastChat sends message to every connected channel's chat as the
+// broadcaster. Returns one result per connected platform (never nil).
+func (a *App) SendBroadcastChat(message string) []BroadcastSendResult {
+	message = strings.TrimSpace(message)
+	results := []BroadcastSendResult{}
+	if message == "" {
+		return results
+	}
+
+	if conn, ok := a.freshConn("twitch"); ok {
+		r := BroadcastSendResult{Platform: "twitch"}
+		if conn.userID == "" {
+			r.Error = "Twitch account details unavailable — try reconnecting."
+		} else {
+			var resp struct {
+				Data []struct {
+					IsSent     bool `json:"is_sent"`
+					DropReason struct {
+						Message string `json:"message"`
+					} `json:"drop_reason"`
+				} `json:"data"`
+			}
+			status, err := postJSON(twitchChatMessagesURL, twitchHeaders(conn), map[string]string{
+				"broadcaster_id": conn.userID,
+				"sender_id":      conn.userID,
+				"message":        message,
+			}, &resp)
+			switch {
+			case err != nil:
+				r.Error = sendErrorMessage("twitch", status, err)
+			case len(resp.Data) > 0 && !resp.Data[0].IsSent:
+				r.Error = firstNonEmpty(resp.Data[0].DropReason.Message, "Twitch dropped the message.")
+			default:
+				r.Sent = true
+			}
+		}
+		results = append(results, r)
+	}
+
+	if conn, ok := a.freshConn("youtube"); ok {
+		r := BroadcastSendResult{Platform: "youtube"}
+		headers := map[string]string{"Authorization": "Bearer " + conn.token}
+		send := func(chatID string) (int, error) {
+			payload := map[string]any{
+				"snippet": map[string]any{
+					"liveChatId": chatID,
+					"type":       "textMessageEvent",
+					"textMessageDetails": map[string]string{
+						"messageText": message,
+					},
+				},
+			}
+			return postJSON(youtubeChatMessagesURL+"?part=snippet", headers, payload, nil)
+		}
+
+		chatID := a.resolveYouTubeChatID(headers)
+		if chatID == "" {
+			r.Error = "No active YouTube live chat — the channel must be live to receive chat."
+		} else {
+			status, err := send(chatID)
+			if err != nil && status >= 400 && status < 500 {
+				// The memoised chat id may belong to an earlier, ended
+				// broadcast. Re-resolve against the current one and retry.
+				a.setYouTubeChatID("")
+				if fresh := a.resolveYouTubeChatID(headers); fresh != "" && fresh != chatID {
+					status, err = send(fresh)
+				}
+			}
+			if err != nil {
+				log.Printf("jax: youtube broadcast send: %v", err)
+				r.Error = youtubeSendError(status, err)
+			} else {
+				r.Sent = true
+			}
+		}
+		results = append(results, r)
+	}
+
+	return results
+}
+
+// youtubeSendError distinguishes the ways a live-chat insert fails: missing
+// write scope (token predates youtube.force-ssl), an inactive chat, or a
+// generic API error.
+func youtubeSendError(status int, err error) string {
+	msg := ""
+	if err != nil {
+		msg = err.Error()
+	}
+	switch {
+	case strings.Contains(msg, "SCOPE_INSUFFICIENT"),
+		strings.Contains(msg, "insufficientPermissions"),
+		strings.Contains(msg, "insufficient authentication"),
+		status == 401:
+		return "Missing chat permission — reconnect YouTube in Settings → Services to grant it."
+	case strings.Contains(msg, "liveChatEnded"), strings.Contains(msg, "liveChatDisabled"):
+		return "The YouTube live chat is not active."
+	case status == 403:
+		return "YouTube rejected the message — reconnect YouTube in Settings → Services if this persists. (" + msg + ")"
+	}
+	return "Sending failed: " + msg
 }
