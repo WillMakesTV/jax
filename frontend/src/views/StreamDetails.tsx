@@ -1,4 +1,15 @@
-import {ArrowLeft, Calendar, Clock, ExternalLink, Eye, Radio, Video} from 'lucide-react'
+import {
+  ArrowLeft,
+  Calendar,
+  Captions,
+  Clock,
+  ExternalLink,
+  Eye,
+  Radio,
+  Video,
+} from 'lucide-react'
+import {useEffect, useState} from 'react'
+import {GetTranscriptForStream} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {BrandTile} from '../components/BrandTile'
 import {PageHeader} from '../components/PageHeader'
@@ -10,6 +21,10 @@ import {
   formatNumber,
 } from '../lib/format'
 import {platformName} from '../services/services'
+import {
+  groupTranscriptLines,
+  type TranscriptLine,
+} from '../transcript/TranscriptProvider'
 
 interface StreamDetailsProps {
   stream: main.PastStream
@@ -85,12 +100,71 @@ export function StreamDetails({stream, onBack}: StreamDetailsProps) {
       <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wide text-fg-muted">
         Channel details
       </h2>
-      <div className="grid grid-cols-1 gap-4 pb-8 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {stream.broadcasts.map((b) => (
           <ChannelDetailCard key={`${b.platform}-${b.url}`} broadcast={b} />
         ))}
       </div>
+
+      <TranscriptSection startedAt={stream.startedAt} />
     </div>
+  )
+}
+
+const transcriptTimeFmt = new Intl.DateTimeFormat('en', {
+  hour: 'numeric',
+  minute: '2-digit',
+  second: '2-digit',
+})
+
+/**
+ * The stream's stored transcript log, when one was captured. Sessions are
+ * matched to the stream by start-time (the same margin used to aggregate
+ * broadcasts), so the log recorded live shows up here afterwards.
+ */
+function TranscriptSection({startedAt}: {startedAt: string}) {
+  const [lines, setLines] = useState<TranscriptLine[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    GetTranscriptForStream(startedAt)
+      .then((result) => {
+        if (!cancelled) setLines(groupTranscriptLines(result ?? []))
+      })
+      .catch(() => {
+        // Backend unavailable; the section simply stays hidden.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [startedAt])
+
+  if (lines.length === 0) return null
+
+  return (
+    <section aria-label="Transcript" className="pb-8">
+      <h2 className="mb-3 mt-8 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-fg-muted">
+        <Captions size={16} aria-hidden />
+        Transcript
+      </h2>
+      <div className="max-h-96 overflow-y-auto rounded-xl border border-edge bg-surface p-4">
+        <ul className="space-y-3">
+          {lines.map((line) => (
+            <li key={line.id} className="flex items-start gap-3">
+              <span
+                className="shrink-0 pt-0.5 font-mono text-[11px] text-fg-muted"
+                title={new Date(line.at).toLocaleString()}
+              >
+                {transcriptTimeFmt.format(line.at)}
+              </span>
+              <p className="min-w-0 flex-1 break-words text-sm leading-relaxed text-fg">
+                {line.text}
+              </p>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
   )
 }
 

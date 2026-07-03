@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"io"
 	"log"
+	"os/exec"
 	"sync"
+	"time"
 )
 
 // App struct
@@ -25,6 +28,18 @@ type App struct {
 	// ytChatID memoises the active YouTube broadcast's live-chat id between
 	// chat polls (guarded by mu; see chat.go).
 	ytChatID string
+
+	// YouTube live-status memo (guarded by mu; see live.go). The frontend
+	// polls GetLiveStreams every 10-60s, but YouTube's quota is tight, so the
+	// last result is served between backend refreshes and the active video id
+	// is remembered so being live costs one videos.list call per refresh.
+	ytVideoID      string
+	ytLiveResult   *LiveStream
+	ytLiveResultAt time.Time
+
+	// Transcriber sidecar process (guarded by mu; see transcriber.go).
+	transcribeCmd   *exec.Cmd
+	transcribeStdin io.WriteCloser
 }
 
 // NewApp creates a new App application struct
@@ -59,14 +74,22 @@ func NewApp() *App {
 	return app
 }
 
-// startup is called when the app starts. The context is saved
-// so we can call the runtime methods
+// startup is called when the app starts. The context is saved so we can call
+// the runtime methods, and the transcriber sidecar is warmed in the
+// background so its Whisper model is already loaded when a stream starts.
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	go func() {
+		if err := a.ensureTranscriber(); err != nil {
+			log.Printf("jax: warm transcriber: %v", err)
+		}
+	}()
 }
 
-// shutdown is called when the app closes. It releases the database handle.
+// shutdown is called when the app closes. It ends the transcriber sidecar
+// and releases the database handle.
 func (a *App) shutdown(ctx context.Context) {
+	a.killTranscriber()
 	if a.store != nil {
 		_ = a.store.Close()
 	}
