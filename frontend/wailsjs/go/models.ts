@@ -16,6 +16,22 @@ export namespace main {
 	        this.message = source["message"];
 	    }
 	}
+	export class BroadcastSendResult {
+	    platform: string;
+	    sent: boolean;
+	    error: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new BroadcastSendResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.platform = source["platform"];
+	        this.sent = source["sent"];
+	        this.error = source["error"];
+	    }
+	}
 	export class ChannelSource {
 	    title: string;
 	    url: string;
@@ -36,6 +52,9 @@ export namespace main {
 	    id: string;
 	    platform: string;
 	    author: string;
+	    authorId: string;
+	    avatarUrl: string;
+	    badges: string[];
 	    text: string;
 	    publishedAt: string;
 	
@@ -48,6 +67,9 @@ export namespace main {
 	        this.id = source["id"];
 	        this.platform = source["platform"];
 	        this.author = source["author"];
+	        this.authorId = source["authorId"];
+	        this.avatarUrl = source["avatarUrl"];
+	        this.badges = source["badges"];
 	        this.text = source["text"];
 	        this.publishedAt = source["publishedAt"];
 	    }
@@ -66,6 +88,59 @@ export namespace main {
 	        this.value = source["value"];
 	    }
 	}
+	export class ChatUserInfo {
+	    platform: string;
+	    id: string;
+	    displayName: string;
+	    avatarUrl: string;
+	    description: string;
+	    createdAt: string;
+	    channelUrl: string;
+	    follower: string;
+	    followedAt: string;
+	    subscriber: string;
+	    subTier: string;
+	    details: DetailItem[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ChatUserInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.platform = source["platform"];
+	        this.id = source["id"];
+	        this.displayName = source["displayName"];
+	        this.avatarUrl = source["avatarUrl"];
+	        this.description = source["description"];
+	        this.createdAt = source["createdAt"];
+	        this.channelUrl = source["channelUrl"];
+	        this.follower = source["follower"];
+	        this.followedAt = source["followedAt"];
+	        this.subscriber = source["subscriber"];
+	        this.subTier = source["subTier"];
+	        this.details = this.convertValues(source["details"], DetailItem);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class DeviceCodeInfo {
 	    deviceCode: string;
 	    userCode: string;
@@ -86,9 +161,32 @@ export namespace main {
 	        this.expiresIn = source["expiresIn"];
 	    }
 	}
+	export class LiveEvent {
+	    id: string;
+	    platform: string;
+	    type: string;
+	    author: string;
+	    detail: string;
+	    publishedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LiveEvent(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.platform = source["platform"];
+	        this.type = source["type"];
+	        this.author = source["author"];
+	        this.detail = source["detail"];
+	        this.publishedAt = source["publishedAt"];
+	    }
+	}
 	export class LiveChatPage {
 	    live: boolean;
 	    messages: ChatMessage[];
+	    events: LiveEvent[];
 	    nextPageToken: string;
 	    pollIntervalMs: number;
 	
@@ -100,6 +198,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.live = source["live"];
 	        this.messages = this.convertValues(source["messages"], ChatMessage);
+	        this.events = this.convertValues(source["events"], LiveEvent);
 	        this.nextPageToken = source["nextPageToken"];
 	        this.pollIntervalMs = source["pollIntervalMs"];
 	    }
@@ -122,6 +221,7 @@ export namespace main {
 		    return a;
 		}
 	}
+	
 	export class LiveStream {
 	    platform: string;
 	    live: boolean;
@@ -296,6 +396,38 @@ export namespace main {
 	        this.account = source["account"];
 	    }
 	}
+	export class StoredChatMessage {
+	    platform: string;
+	    id: string;
+	    author: string;
+	    authorId: string;
+	    authorLogin: string;
+	    avatarUrl: string;
+	    badges: string[];
+	    color: string;
+	    text: string;
+	    at: number;
+	    read: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new StoredChatMessage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.platform = source["platform"];
+	        this.id = source["id"];
+	        this.author = source["author"];
+	        this.authorId = source["authorId"];
+	        this.authorLogin = source["authorLogin"];
+	        this.avatarUrl = source["avatarUrl"];
+	        this.badges = source["badges"];
+	        this.color = source["color"];
+	        this.text = source["text"];
+	        this.at = source["at"];
+	        this.read = source["read"];
+	    }
+	}
 	export class Stream {
 	    title: string;
 	    description: string;
@@ -312,6 +444,154 @@ export namespace main {
 	        this.description = source["description"];
 	        this.channelSource = this.convertValues(source["channelSource"], ChannelSource);
 	        this.plan = source["plan"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class TranscriptLineRec {
+	    at: number;
+	    endAt: number;
+	    text: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TranscriptLineRec(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.at = source["at"];
+	        this.endAt = source["endAt"];
+	        this.text = source["text"];
+	    }
+	}
+	export class Video {
+	    platform: string;
+	    id: string;
+	    title: string;
+	    description: string;
+	    url: string;
+	    thumbnailUrl: string;
+	    publishedAt: string;
+	    duration: string;
+	    durationSecs: number;
+	    viewCount: number;
+	    kind: string;
+	    status: string;
+	    channelName: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Video(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.platform = source["platform"];
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.description = source["description"];
+	        this.url = source["url"];
+	        this.thumbnailUrl = source["thumbnailUrl"];
+	        this.publishedAt = source["publishedAt"];
+	        this.duration = source["duration"];
+	        this.durationSecs = source["durationSecs"];
+	        this.viewCount = source["viewCount"];
+	        this.kind = source["kind"];
+	        this.status = source["status"];
+	        this.channelName = source["channelName"];
+	    }
+	}
+	export class VideoComment {
+	    author: string;
+	    avatarUrl: string;
+	    text: string;
+	    likeCount: number;
+	    replyCount: number;
+	    publishedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VideoComment(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.author = source["author"];
+	        this.avatarUrl = source["avatarUrl"];
+	        this.text = source["text"];
+	        this.likeCount = source["likeCount"];
+	        this.replyCount = source["replyCount"];
+	        this.publishedAt = source["publishedAt"];
+	    }
+	}
+	export class VideoDetails {
+	    video: Video;
+	    stats: DetailItem[];
+	    comments: VideoComment[];
+	    commentsNote: string;
+	    fetchedAt: string;
+	    fromCache: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new VideoDetails(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.video = this.convertValues(source["video"], Video);
+	        this.stats = this.convertValues(source["stats"], DetailItem);
+	        this.comments = this.convertValues(source["comments"], VideoComment);
+	        this.commentsNote = source["commentsNote"];
+	        this.fetchedAt = source["fetchedAt"];
+	        this.fromCache = source["fromCache"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class VideoList {
+	    videos: Video[];
+	    fetchedAt: string;
+	    fromCache: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new VideoList(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.videos = this.convertValues(source["videos"], Video);
+	        this.fetchedAt = source["fetchedAt"];
+	        this.fromCache = source["fromCache"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
