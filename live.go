@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -54,7 +56,7 @@ func (a *App) GetLiveStreams() []LiveStream {
 	}
 	jobs := []job{
 		{"twitch", a.fetchTwitchLive},
-		{"youtube", a.fetchYouTubeLive},
+		{"youtube", a.fetchYouTubeLiveThrottled},
 	}
 
 	results := make([]*LiveStream, len(jobs))
@@ -114,6 +116,43 @@ func getJSON(endpoint string, headers map[string]string, out any) (int, error) {
 			msg = msg[:200]
 		}
 		return resp.StatusCode, fmt.Errorf("request failed (%d): %s", resp.StatusCode, msg)
+	}
+	return resp.StatusCode, json.Unmarshal(body, out)
+}
+
+// postJSON performs an authenticated POST with a JSON body and decodes the
+// JSON response into out (which may be nil). Any 2xx status counts as success.
+func postJSON(endpoint string, headers map[string]string, payload any, out any) (int, error) {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return 0, err
+	}
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(raw))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp.StatusCode, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		msg := string(body)
+		if len(msg) > 200 {
+			msg = msg[:200]
+		}
+		return resp.StatusCode, fmt.Errorf("request failed (%d): %s", resp.StatusCode, msg)
+	}
+	if out == nil {
+		return resp.StatusCode, nil
 	}
 	return resp.StatusCode, json.Unmarshal(body, out)
 }
@@ -261,11 +300,75 @@ const (
 	// include *persistent* broadcasts — streams started with the channel's
 	// default stream key (e.g. from OBS) — which the default (event) excludes.
 	youtubeBroadcastsURL = "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status&broadcastStatus=active&broadcastType=all"
-	youtubeVideosURL     = "https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,liveStreamingDetails&id="
+	youtubeVideosURL     = "https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,status,liveStreamingDetails&id="
 )
 
-// fetchYouTubeLive gathers channel statistics and, when a broadcast is active,
-// the live video's real-time metrics from the YouTube Data API.
+// YouTube's default quota is only 10,000 units/day, so the live poll is
+// throttled here in the backend regardless of how fast the UI polls: while
+// offline the "are we live?" probe runs at most every ytOfflineProbeMin;
+// while live the metrics refresh at most every ytLiveMetricsMin. Twitch, with
+// its far higher rate limits, stays realtime on the UI's cadence.
+const (
+	ytOfflineProbeMin = 30 * time.Second
+	ytLiveMetricsMin  = 15 * time.Second
+	// keyYTChannelInfo persistently caches channel-level stats (subscriber /
+	// view counts), which change too slowly to justify a call per poll.
+	keyYTChannelInfo = "yt_channel_info"
+)
+
+// ytChannelInfo is the slow-moving channel metadata cached for apiCacheTTL.
+type ytChannelInfo struct {
+	Name    string       `json:"name"`
+	URL     string       `json:"url"`
+	Details []DetailItem `json:"details"`
+}
+
+// fetchYouTubeLiveThrottled serves the memoised result between refreshes and
+// delegates to fetchYouTubeLive when the memo has aged out.
+func (a *App) fetchYouTubeLiveThrottled(conn serviceConn) LiveStream {
+	a.mu.Lock()
+	if a.ytLiveResult != nil {
+		ttl := ytOfflineProbeMin
+		if a.ytLiveResult.Live {
+			ttl = ytLiveMetricsMin
+		}
+		if time.Since(a.ytLiveResultAt) < ttl {
+			ls := *a.ytLiveResult
+			a.mu.Unlock()
+			return ls
+		}
+	}
+	a.mu.Unlock()
+
+	ls := a.fetchYouTubeLive(conn)
+
+	// Memoise failures too: hammering an unreachable API helps nobody.
+	a.mu.Lock()
+	a.ytLiveResult = &ls
+	a.ytLiveResultAt = time.Now()
+	a.mu.Unlock()
+	return ls
+}
+
+// cachedYTVideoID returns the memoised active broadcast's video id, or ""
+// when the channel is not known to be live.
+func (a *App) cachedYTVideoID() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.ytVideoID
+}
+
+func (a *App) setYTVideoID(id string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.ytVideoID = id
+}
+
+// fetchYouTubeLive gathers channel statistics (via the persistent cache) and,
+// when a broadcast is active, the live video's real-time metrics. Once live,
+// the video id is memoised so each refresh costs a single videos.list call —
+// which also detects the stream ending (actualEndTime) without touching the
+// more expensive broadcast-list probe.
 func (a *App) fetchYouTubeLive(conn serviceConn) LiveStream {
 	ls := LiveStream{
 		Platform:    "youtube",
@@ -276,79 +379,85 @@ func (a *App) fetchYouTubeLive(conn serviceConn) LiveStream {
 	}
 	headers := map[string]string{"Authorization": "Bearer " + conn.token}
 
-	// Channel-level statistics (also our reachability/auth probe).
-	var channels struct {
-		Items []struct {
-			ID      string `json:"id"`
-			Snippet struct {
-				Title     string `json:"title"`
-				CustomURL string `json:"customUrl"`
-			} `json:"snippet"`
-			Statistics struct {
-				SubscriberCount string `json:"subscriberCount"`
-				ViewCount       string `json:"viewCount"`
-				VideoCount      string `json:"videoCount"`
-			} `json:"statistics"`
-		} `json:"items"`
-	}
-	status, err := getJSON(youtubeChannelsURL, headers, &channels)
+	// Channel-level statistics: slow-moving, so served from the 1-hour cache.
+	// A cold fetch doubles as the reachability/auth probe.
+	var channelStatus int
+	info, _, _, err := cachedJSON(a, keyYTChannelInfo, apiCacheTTL, false, func() (ytChannelInfo, error) {
+		var channels struct {
+			Items []struct {
+				ID      string `json:"id"`
+				Snippet struct {
+					Title     string `json:"title"`
+					CustomURL string `json:"customUrl"`
+				} `json:"snippet"`
+				Statistics struct {
+					SubscriberCount string `json:"subscriberCount"`
+					ViewCount       string `json:"viewCount"`
+					VideoCount      string `json:"videoCount"`
+				} `json:"statistics"`
+			} `json:"items"`
+		}
+		status, err := getJSON(youtubeChannelsURL, headers, &channels)
+		channelStatus = status
+		if err != nil {
+			return ytChannelInfo{}, err
+		}
+		out := ytChannelInfo{}
+		if len(channels.Items) > 0 {
+			ch := channels.Items[0]
+			out.Name = ch.Snippet.Title
+			if ch.Snippet.CustomURL != "" {
+				out.URL = "https://youtube.com/" + ch.Snippet.CustomURL
+			} else if ch.ID != "" {
+				out.URL = "https://youtube.com/channel/" + ch.ID
+			}
+			out.Details = []DetailItem{
+				{"Subscribers", fmtCount(atoi64(ch.Statistics.SubscriberCount))},
+				{"Total channel views", fmtCount(atoi64(ch.Statistics.ViewCount))},
+				{"Videos", fmtCount(atoi64(ch.Statistics.VideoCount))},
+			}
+		}
+		return out, nil
+	})
 	if err != nil {
 		log.Printf("jax: youtube channels: %v", err)
-		if status == http.StatusUnauthorized {
+		if channelStatus == http.StatusUnauthorized {
 			ls.Error = errReauth
 		} else {
 			ls.Error = "Could not reach the YouTube API."
 		}
 		return ls
 	}
-	if len(channels.Items) > 0 {
-		ch := channels.Items[0]
-		ls.ChannelName = firstNonEmpty(ch.Snippet.Title, ls.ChannelName)
-		if ch.Snippet.CustomURL != "" {
-			ls.ChannelURL = "https://youtube.com/" + ch.Snippet.CustomURL
-		} else if ch.ID != "" {
-			ls.ChannelURL = "https://youtube.com/channel/" + ch.ID
+	ls.ChannelName = firstNonEmpty(info.Name, ls.ChannelName)
+	ls.ChannelURL = firstNonEmpty(info.URL, ls.ChannelURL)
+	ls.Details = append(ls.Details, info.Details...)
+
+	// Live status. Only probe the broadcast list while we believe we are
+	// offline; once live, the videos.list refresh below detects the end.
+	videoID := a.cachedYTVideoID()
+	if videoID == "" {
+		var broadcasts struct {
+			Items []struct {
+				ID string `json:"id"`
+			} `json:"items"`
 		}
-		ls.Details = append(ls.Details,
-			DetailItem{"Subscribers", fmtCount(atoi64(ch.Statistics.SubscriberCount))},
-			DetailItem{"Total channel views", fmtCount(atoi64(ch.Statistics.ViewCount))},
-			DetailItem{"Videos", fmtCount(atoi64(ch.Statistics.VideoCount))},
-		)
+		if _, err := getJSON(youtubeBroadcastsURL, headers, &broadcasts); err != nil {
+			log.Printf("jax: youtube liveBroadcasts: %v", err)
+			ls.Error = "Could not check for an active YouTube broadcast."
+			return ls
+		}
+		if len(broadcasts.Items) == 0 {
+			return ls // connected, not live
+		}
+		videoID = broadcasts.Items[0].ID
+		a.setYTVideoID(videoID)
 	}
 
-	// Active broadcast, if any.
-	var broadcasts struct {
-		Items []struct {
-			ID     string `json:"id"`
-			Status struct {
-				PrivacyStatus string `json:"privacyStatus"`
-			} `json:"status"`
-		} `json:"items"`
-	}
-	if _, err := getJSON(youtubeBroadcastsURL, headers, &broadcasts); err != nil {
-		log.Printf("jax: youtube liveBroadcasts: %v", err)
-		ls.Error = "Could not check for an active YouTube broadcast."
-		return ls
-	}
-	if len(broadcasts.Items) == 0 {
-		return ls // connected, not live
-	}
-
-	b := broadcasts.Items[0]
-	videoID := b.ID
-	ls.Live = true
-	ls.StreamURL = "https://youtube.com/watch?v=" + videoID
-	ls.Details = append(ls.Details,
-		DetailItem{"Video ID", videoID},
-		DetailItem{"Privacy", b.Status.PrivacyStatus},
-	)
-
-	// Real-time video metrics for the live broadcast.
+	// Real-time metrics for the live broadcast.
 	var videos struct {
 		Items []struct {
 			Snippet struct {
 				Title      string `json:"title"`
-				CategoryID string `json:"categoryId"`
 				Thumbnails struct {
 					Medium struct {
 						URL string `json:"url"`
@@ -362,26 +471,42 @@ func (a *App) fetchYouTubeLive(conn serviceConn) LiveStream {
 				ViewCount string `json:"viewCount"`
 				LikeCount string `json:"likeCount"`
 			} `json:"statistics"`
+			Status struct {
+				PrivacyStatus string `json:"privacyStatus"`
+			} `json:"status"`
 			LiveStreamingDetails struct {
 				ActualStartTime   string `json:"actualStartTime"`
+				ActualEndTime     string `json:"actualEndTime"`
 				ConcurrentViewers string `json:"concurrentViewers"`
 			} `json:"liveStreamingDetails"`
 		} `json:"items"`
 	}
-	if _, err := getJSON(youtubeVideosURL+videoID, headers, &videos); err == nil && len(videos.Items) > 0 {
-		v := videos.Items[0]
-		ls.Title = v.Snippet.Title
-		ls.ViewerCount = int(atoi64(v.LiveStreamingDetails.ConcurrentViewers))
-		ls.StartedAt = v.LiveStreamingDetails.ActualStartTime
-		ls.ThumbnailURL = firstNonEmpty(
-			v.Snippet.Thumbnails.High.URL,
-			v.Snippet.Thumbnails.Medium.URL,
-		)
-		ls.Details = append(ls.Details,
-			DetailItem{"Stream views so far", fmtCount(atoi64(v.Statistics.ViewCount))},
-			DetailItem{"Likes", fmtCount(atoi64(v.Statistics.LikeCount))},
-		)
+	if _, err := getJSON(youtubeVideosURL+videoID, headers, &videos); err != nil {
+		log.Printf("jax: youtube live video: %v", err)
+		a.setYTVideoID("") // re-probe on the next refresh
+		return ls
+	}
+	if len(videos.Items) == 0 ||
+		videos.Items[0].LiveStreamingDetails.ActualEndTime != "" {
+		a.setYTVideoID("") // the broadcast ended
+		return ls
 	}
 
+	v := videos.Items[0]
+	ls.Live = true
+	ls.StreamURL = "https://youtube.com/watch?v=" + videoID
+	ls.Title = v.Snippet.Title
+	ls.ViewerCount = int(atoi64(v.LiveStreamingDetails.ConcurrentViewers))
+	ls.StartedAt = v.LiveStreamingDetails.ActualStartTime
+	ls.ThumbnailURL = firstNonEmpty(
+		v.Snippet.Thumbnails.High.URL,
+		v.Snippet.Thumbnails.Medium.URL,
+	)
+	ls.Details = append(ls.Details,
+		DetailItem{"Video ID", videoID},
+		DetailItem{"Privacy", v.Status.PrivacyStatus},
+		DetailItem{"Stream views so far", fmtCount(atoi64(v.Statistics.ViewCount))},
+		DetailItem{"Likes", fmtCount(atoi64(v.Statistics.LikeCount))},
+	)
 	return ls
 }

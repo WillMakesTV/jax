@@ -50,36 +50,54 @@ func broadcastKey(b PastBroadcast) string {
 	return b.Platform + "|" + b.URL
 }
 
-// GetPastStreams fetches recent past broadcasts from every connected platform
-// and aggregates them by title. Never returns nil; platform failures degrade
-// to the platforms that did respond.
-func (a *App) GetPastStreams() []PastStream {
-	var (
-		wg  sync.WaitGroup
-		mu  sync.Mutex
-		all []PastBroadcast
-	)
-	fetch := func(name string, f func(serviceConn) ([]PastBroadcast, error)) {
-		conn, ok := a.freshConn(name)
-		if !ok {
-			return
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			items, err := f(conn)
-			if err != nil {
-				log.Printf("jax: %s past broadcasts: %v", name, err)
+// GetPastStreams returns recent past broadcasts from every connected platform,
+// aggregated by timing. The platform fetches are not real-time data, so they
+// are cached for apiCacheTTL (see cache.go); forceRefresh bypasses the cache.
+// Manual grouping is applied fresh on every call, so group/ungroup operations
+// stay instant. Never returns nil; platform failures degrade to the platforms
+// that did respond.
+func (a *App) GetPastStreams(forceRefresh bool) []PastStream {
+	fetchAll := func() ([]PastBroadcast, error) {
+		var (
+			wg        sync.WaitGroup
+			mu        sync.Mutex
+			all       []PastBroadcast
+			attempted int
+		)
+		fetch := func(name string, f func(serviceConn) ([]PastBroadcast, error)) {
+			conn, ok := a.freshConn(name)
+			if !ok {
 				return
 			}
-			mu.Lock()
-			all = append(all, items...)
-			mu.Unlock()
-		}()
+			attempted++
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				items, err := f(conn)
+				if err != nil {
+					log.Printf("jax: %s past broadcasts: %v", name, err)
+					return
+				}
+				mu.Lock()
+				all = append(all, items...)
+				mu.Unlock()
+			}()
+		}
+		fetch("twitch", fetchTwitchArchives)
+		fetch("youtube", fetchYouTubeCompleted)
+		wg.Wait()
+
+		if attempted == 0 {
+			return nil, fmt.Errorf("no services connected")
+		}
+		return all, nil
 	}
-	fetch("twitch", fetchTwitchArchives)
-	fetch("youtube", fetchYouTubeCompleted)
-	wg.Wait()
+
+	all, _, _, err := cachedJSON(a, a.connsCacheKey("past_broadcasts"), apiCacheTTL, forceRefresh, fetchAll)
+	if err != nil {
+		log.Printf("jax: GetPastStreams: %v", err)
+		return []PastStream{}
+	}
 
 	// Manual group assignments take precedence; the rest cluster by timing.
 	groups := map[string]int64{}
