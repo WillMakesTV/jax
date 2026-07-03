@@ -11,8 +11,96 @@ export interface ObsConfig {
 const OP_HELLO = 0
 const OP_IDENTIFY = 1
 const OP_IDENTIFIED = 2
+const OP_REIDENTIFY = 3
+const OP_EVENT = 5
 const OP_REQUEST = 6
 const OP_REQUEST_RESPONSE = 7
+
+// Event-subscription bits (protocol EventSubscription enum).
+const EVENTS_INPUTS = 1 << 3
+const EVENTS_INPUT_VOLUME_METERS = 1 << 16
+
+/** Always-on subscriptions: input events (mute state changes are cheap). */
+export const OBS_EVENTS_BASE = EVENTS_INPUTS
+/** Base plus the high-volume per-input volume meters (~20 events/s). */
+export const OBS_EVENTS_WITH_METERS = EVENTS_INPUTS | EVENTS_INPUT_VOLUME_METERS
+
+/**
+ * Change the identified socket's event subscriptions (Reidentify). Used to
+ * switch the high-volume volume-meter stream on only while a meter UI is
+ * actually on screen.
+ */
+export function setObsEventSubscriptions(
+  ws: WebSocket,
+  eventSubscriptions: number,
+): void {
+  if (ws.readyState !== WebSocket.OPEN) return
+  ws.send(JSON.stringify({op: OP_REIDENTIFY, d: {eventSubscriptions}}))
+}
+
+/**
+ * Listen for one OBS event type on an identified socket. Returns the
+ * unsubscribe function. Uses addEventListener, so it coexists with pending
+ * requests and other listeners.
+ */
+export function onObsEvent<T = Record<string, unknown>>(
+  ws: WebSocket,
+  eventType: string,
+  handler: (data: T) => void,
+): () => void {
+  const onMessage = (event: MessageEvent) => {
+    let message: {op: number; d: any}
+    try {
+      message = JSON.parse(event.data as string)
+    } catch {
+      return
+    }
+    if (message.op === OP_EVENT && message.d?.eventType === eventType) {
+      handler((message.d.eventData ?? {}) as T)
+    }
+  }
+  ws.addEventListener('message', onMessage)
+  return () => ws.removeEventListener('message', onMessage)
+}
+
+// ---------------------------------------------------------------------------
+// Audio input capture devices
+// ---------------------------------------------------------------------------
+
+/** One audio input capture device (microphone) in OBS. */
+export interface ObsMic {
+  name: string
+  muted: boolean
+}
+
+/** Input kinds that are microphones ("Audio Input Capture") per platform. */
+const INPUT_CAPTURE_KINDS = new Set([
+  'wasapi_input_capture', // Windows
+  'coreaudio_input_capture', // macOS
+  'pulse_input_capture', // Linux (PulseAudio)
+  'alsa_input_capture', // Linux (ALSA)
+])
+
+/**
+ * List OBS's audio input capture devices and their mute state. `request` is
+ * the ServicesProvider's obsRequest.
+ */
+export async function fetchObsMics(
+  request: <T>(type: string, data?: Record<string, unknown>) => Promise<T>,
+): Promise<ObsMic[]> {
+  const {inputs} = await request<{
+    inputs: {inputName: string; inputKind: string}[]
+  }>('GetInputList')
+  const mics = (inputs ?? []).filter((i) => INPUT_CAPTURE_KINDS.has(i.inputKind))
+  return Promise.all(
+    mics.map(async (i) => {
+      const {inputMuted} = await request<{inputMuted: boolean}>('GetInputMute', {
+        inputName: i.inputName,
+      })
+      return {name: i.inputName, muted: inputMuted}
+    }),
+  )
+}
 
 async function sha256Bytes(input: string): Promise<Uint8Array> {
   const digest = await crypto.subtle.digest(
@@ -92,6 +180,37 @@ export function obsRequest<T = Record<string, unknown>>(
 }
 
 /**
+ * The display name of the device an OBS audio input captures, from the
+ * input's own property list ('' when OBS uses the OS default). The
+ * transcriber sidecar opens the same device by this name.
+ */
+export async function obsMicDeviceLabel(
+  request: <T>(type: string, data?: Record<string, unknown>) => Promise<T>,
+  micName: string,
+): Promise<string> {
+  const settings = await request<{
+    inputSettings: Record<string, unknown>
+  }>('GetInputSettings', {inputName: micName})
+  const obsDeviceId = String(settings.inputSettings?.device_id ?? 'default')
+  if (obsDeviceId === 'default') return ''
+
+  try {
+    const props = await request<{
+      propertyItems: {itemName: string; itemValue: unknown}[]
+    }>('GetInputPropertiesListPropertyItems', {
+      inputName: micName,
+      propertyName: 'device_id',
+    })
+    return (
+      props.propertyItems?.find((i) => String(i.itemValue) === obsDeviceId)
+        ?.itemName ?? ''
+    )
+  } catch {
+    return '' // property introspection unavailable; use the default device
+  }
+}
+
+/**
  * Connect to an OBS instance and complete the v5 handshake (including auth when
  * the server requires it). Resolves with the open WebSocket once Identified, or
  * rejects with a human-readable error.
@@ -141,7 +260,7 @@ export function connectObs(config: ObsConfig): Promise<WebSocket> {
         const hello = message.d
         const identify: Record<string, unknown> = {
           rpcVersion: hello.rpcVersion ?? 1,
-          eventSubscriptions: 0,
+          eventSubscriptions: OBS_EVENTS_BASE,
         }
         if (hello.authentication) {
           if (!config.password) {

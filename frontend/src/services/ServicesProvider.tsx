@@ -17,6 +17,10 @@ import {
 import {
   connectObs,
   obsRequest as sendObsRequest,
+  onObsEvent as attachObsEvent,
+  setObsEventSubscriptions,
+  OBS_EVENTS_BASE,
+  OBS_EVENTS_WITH_METERS,
   type ObsConfig,
 } from '../lib/obs'
 import type {ServiceId} from './services'
@@ -56,6 +60,9 @@ const DEFAULT_CONFIGS: ServiceConfigs = {
 
 const EMPTY_STATUS: ServiceStatus = {connected: false, account: ''}
 
+/** How often to probe for OBS while it is unreachable. */
+const OBS_RETRY_MS = 10_000
+
 const emptyStatuses = (): Record<ServiceId, ServiceStatus> => ({
   twitch: {...EMPTY_STATUS},
   youtube: {...EMPTY_STATUS},
@@ -77,6 +84,20 @@ interface ServicesContextValue {
     type: string,
     data?: Record<string, unknown>,
   ) => Promise<T>
+  /**
+   * Listen for one OBS event type on the current connection. Returns the
+   * unsubscribe function (a no-op when OBS is not connected). Re-subscribe
+   * when the OBS connection status changes.
+   */
+  onObsEvent: <T = Record<string, unknown>>(
+    eventType: string,
+    handler: (data: T) => void,
+  ) => () => void
+  /**
+   * Toggle the high-volume InputVolumeMeters event stream. Enable it only
+   * while a meter UI is on screen; it fires ~20 events per second.
+   */
+  setObsMeterEvents: (enabled: boolean) => void
 }
 
 const ServicesContext = createContext<ServicesContextValue | undefined>(
@@ -160,26 +181,45 @@ export function ServicesProvider({children}: {children: ReactNode}) {
     [setStatus, updateConfigs],
   )
 
-  // Re-establish the OBS connection on launch when one was active last session.
-  // One attempt only; failures are silent (OBS may simply not be running).
-  const obsAutoTried = useRef(false)
+  // Establish the OBS connection on launch and keep watching: while OBS is
+  // unreachable (not running yet), probe again every OBS_RETRY_MS until it
+  // becomes available. The same loop resumes when a connection drops mid-
+  // session. A manual disconnect clears obsAutoConnect and opts out.
+  const obsConnecting = useRef(false)
   useEffect(() => {
-    if (
-      obsAutoTried.current ||
-      !configs.obsAutoConnect ||
-      statuses.obs.connected
-    ) {
-      return
+    if (!configs.obsAutoConnect || statuses.obs.connected) return
+    let cancelled = false
+
+    const tryConnect = () => {
+      if (cancelled || obsConnecting.current) return
+      obsConnecting.current = true
+      connectObsService({
+        host: configs.obsHost.trim() || 'localhost',
+        port: Number(configs.obsPort) || 4455,
+        password: configs.obsPassword,
+      })
+        .catch(() => {
+          // OBS unreachable; the next tick probes again.
+        })
+        .finally(() => {
+          obsConnecting.current = false
+        })
     }
-    obsAutoTried.current = true
-    connectObsService({
-      host: configs.obsHost.trim() || 'localhost',
-      port: Number(configs.obsPort) || 4455,
-      password: configs.obsPassword,
-    }).catch(() => {
-      // OBS unreachable; the user can connect manually from Settings.
-    })
-  }, [configs, statuses.obs.connected, connectObsService])
+
+    tryConnect()
+    const id = window.setInterval(tryConnect, OBS_RETRY_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [
+    configs.obsAutoConnect,
+    configs.obsHost,
+    configs.obsPort,
+    configs.obsPassword,
+    statuses.obs.connected,
+    connectObsService,
+  ])
 
   const obsRequest = useCallback(
     async <T,>(type: string, data?: Record<string, unknown>): Promise<T> => {
@@ -189,6 +229,24 @@ export function ServicesProvider({children}: {children: ReactNode}) {
     },
     [],
   )
+
+  const onObsEvent = useCallback(
+    <T,>(eventType: string, handler: (data: T) => void): (() => void) => {
+      const socket = obsSocket.current
+      if (!socket) return () => {}
+      return attachObsEvent<T>(socket, eventType, handler)
+    },
+    [],
+  )
+
+  const setObsMeterEvents = useCallback((enabled: boolean) => {
+    const socket = obsSocket.current
+    if (!socket) return
+    setObsEventSubscriptions(
+      socket,
+      enabled ? OBS_EVENTS_WITH_METERS : OBS_EVENTS_BASE,
+    )
+  }, [])
 
   const disconnect = useCallback(
     async (id: ServiceId) => {
@@ -227,6 +285,8 @@ export function ServicesProvider({children}: {children: ReactNode}) {
       connectObsService,
       disconnect,
       obsRequest,
+      onObsEvent,
+      setObsMeterEvents,
     }),
     [
       statuses,
@@ -236,6 +296,8 @@ export function ServicesProvider({children}: {children: ReactNode}) {
       connectObsService,
       disconnect,
       obsRequest,
+      onObsEvent,
+      setObsMeterEvents,
     ],
   )
 
