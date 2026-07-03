@@ -102,7 +102,41 @@ CREATE TABLE IF NOT EXISTS service_conns (
 CREATE TABLE IF NOT EXISTS stream_groups (
 	broadcast_key TEXT PRIMARY KEY,
 	group_id      INTEGER NOT NULL
-);`
+);
+CREATE TABLE IF NOT EXISTS api_cache (
+	key        TEXT PRIMARY KEY,
+	value      TEXT NOT NULL,
+	fetched_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS transcript_sessions (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	started_at TEXT NOT NULL,
+	title      TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS transcript_lines (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	session_id INTEGER NOT NULL,
+	at         INTEGER NOT NULL,
+	end_at     INTEGER NOT NULL,
+	text       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_transcript_lines_session
+	ON transcript_lines(session_id, at);
+CREATE TABLE IF NOT EXISTS chat_messages (
+	platform     TEXT NOT NULL,
+	id           TEXT NOT NULL,
+	author       TEXT NOT NULL DEFAULT '',
+	author_id    TEXT NOT NULL DEFAULT '',
+	author_login TEXT NOT NULL DEFAULT '',
+	avatar_url   TEXT NOT NULL DEFAULT '',
+	badges       TEXT NOT NULL DEFAULT '[]',
+	color        TEXT NOT NULL DEFAULT '',
+	text         TEXT NOT NULL,
+	at           INTEGER NOT NULL,
+	read         INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (platform, id)
+);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_at ON chat_messages(at);`
 	_, err := s.db.Exec(schema)
 	return err
 }
@@ -151,6 +185,40 @@ func (s *Store) setJSON(key string, value any) error {
 		return err
 	}
 	return s.setSetting(key, string(raw))
+}
+
+// ---------------------------------------------------------------------------
+// API response cache
+//
+// Platform API responses that are not live/real-time (video lists, past
+// broadcasts, per-video analytics) are cached here so browsing the app does
+// not burn API quota. Freshness policy lives in cache.go.
+// ---------------------------------------------------------------------------
+
+// getCacheEntry returns the cached payload for key and when it was fetched.
+// ok is false when the key has never been cached.
+func (s *Store) getCacheEntry(key string) (raw string, fetchedAt time.Time, ok bool, err error) {
+	var at int64
+	err = s.db.QueryRow(
+		`SELECT value, fetched_at FROM api_cache WHERE key = ?`, key,
+	).Scan(&raw, &at)
+	if err == sql.ErrNoRows {
+		return "", time.Time{}, false, nil
+	}
+	if err != nil {
+		return "", time.Time{}, false, err
+	}
+	return raw, time.Unix(at, 0), true, nil
+}
+
+// setCacheEntry upserts a cached payload for key, stamped now.
+func (s *Store) setCacheEntry(key, raw string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO api_cache (key, value, fetched_at) VALUES (?, ?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, fetched_at = excluded.fetched_at`,
+		key, raw, time.Now().Unix(),
+	)
+	return err
 }
 
 // ---------------------------------------------------------------------------
@@ -358,6 +426,205 @@ func (s *Store) groupBroadcasts(keys []string) error {
 func (s *Store) ungroupBroadcasts(groupID int64) error {
 	_, err := s.db.Exec(`DELETE FROM stream_groups WHERE group_id = ?`, groupID)
 	return err
+}
+
+// ---------------------------------------------------------------------------
+// Transcript logs
+//
+// One session per stream (keyed by the stream's start timestamp, the same
+// identity past-stream aggregation uses), holding the raw transcribed
+// utterances with their spoken-at times.
+// ---------------------------------------------------------------------------
+
+// beginTranscriptSession returns the session id for a stream start, creating
+// the session on first use so capture restarts within one stream append to
+// the same log.
+func (s *Store) beginTranscriptSession(startedAt, title string) (int64, error) {
+	var id int64
+	err := s.db.QueryRow(
+		`SELECT id FROM transcript_sessions WHERE started_at = ?`, startedAt,
+	).Scan(&id)
+	if err == nil {
+		if title != "" {
+			// Backfill the title (e.g. the first capture began before the
+			// platform reported one).
+			_, _ = s.db.Exec(
+				`UPDATE transcript_sessions SET title = ? WHERE id = ? AND title = ''`,
+				title, id,
+			)
+		}
+		return id, nil
+	}
+	if err != sql.ErrNoRows {
+		return 0, err
+	}
+	res, err := s.db.Exec(
+		`INSERT INTO transcript_sessions (started_at, title) VALUES (?, ?)`,
+		startedAt, title,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// addTranscriptLine appends one utterance to a session's log.
+func (s *Store) addTranscriptLine(sessionID, at, endAt int64, text string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO transcript_lines (session_id, at, end_at, text) VALUES (?, ?, ?, ?)`,
+		sessionID, at, endAt, text,
+	)
+	return err
+}
+
+// transcriptSessionRef is a session's identity for time-window matching.
+type transcriptSessionRef struct {
+	id        int64
+	startedAt string
+}
+
+// getTranscriptSessions returns every session's id and stream start.
+func (s *Store) getTranscriptSessions() ([]transcriptSessionRef, error) {
+	rows, err := s.db.Query(`SELECT id, started_at FROM transcript_sessions`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	sessions := []transcriptSessionRef{}
+	for rows.Next() {
+		var ref transcriptSessionRef
+		if err := rows.Scan(&ref.id, &ref.startedAt); err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, ref)
+	}
+	return sessions, rows.Err()
+}
+
+// getTranscriptLines returns the lines of the given sessions in spoken order.
+func (s *Store) getTranscriptLines(sessionIDs []int64) ([]TranscriptLineRec, error) {
+	if len(sessionIDs) == 0 {
+		return []TranscriptLineRec{}, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(sessionIDs)), ",")
+	args := make([]any, len(sessionIDs))
+	for i, id := range sessionIDs {
+		args[i] = id
+	}
+	rows, err := s.db.Query(
+		`SELECT at, end_at, text FROM transcript_lines
+		 WHERE session_id IN (`+placeholders+`) ORDER BY at`,
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	lines := []TranscriptLineRec{}
+	for rows.Next() {
+		var l TranscriptLineRec
+		if err := rows.Scan(&l.At, &l.EndAt, &l.Text); err != nil {
+			return nil, err
+		}
+		lines = append(lines, l)
+	}
+	return lines, rows.Err()
+}
+
+// ---------------------------------------------------------------------------
+// Chat log
+//
+// Every chat message the app sees is kept locally so history is available
+// instantly on launch (and offline) without replaying the platform APIs.
+// ---------------------------------------------------------------------------
+
+// chatLogKeep bounds the chat log; the oldest rows beyond it are pruned.
+const chatLogKeep = 5000
+
+// saveChatMessages inserts new messages (existing platform+id rows are left
+// untouched, preserving their read state) and prunes the log.
+func (s *Store) saveChatMessages(items []StoredChatMessage) error {
+	if len(items) == 0 {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, m := range items {
+		badges, err := json.Marshal(m.Badges)
+		if err != nil {
+			badges = []byte("[]")
+		}
+		if _, err := tx.Exec(
+			`INSERT INTO chat_messages
+				(platform, id, author, author_id, author_login, avatar_url, badges, color, text, at, read)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(platform, id) DO NOTHING`,
+			m.Platform, m.ID, m.Author, m.AuthorID, m.AuthorLogin,
+			m.AvatarURL, string(badges), m.Color, m.Text, m.At, boolToInt(m.Read),
+		); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(
+		`DELETE FROM chat_messages WHERE rowid NOT IN (
+			SELECT rowid FROM chat_messages ORDER BY at DESC LIMIT ?
+		)`, chatLogKeep,
+	); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// getChatHistory returns the newest limit messages in chronological order.
+func (s *Store) getChatHistory(limit int) ([]StoredChatMessage, error) {
+	rows, err := s.db.Query(
+		`SELECT platform, id, author, author_id, author_login, avatar_url, badges, color, text, at, read
+		 FROM (
+			SELECT * FROM chat_messages ORDER BY at DESC LIMIT ?
+		 ) ORDER BY at ASC`, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	messages := []StoredChatMessage{}
+	for rows.Next() {
+		var m StoredChatMessage
+		var badges string
+		var read int
+		if err := rows.Scan(
+			&m.Platform, &m.ID, &m.Author, &m.AuthorID, &m.AuthorLogin,
+			&m.AvatarURL, &badges, &m.Color, &m.Text, &m.At, &read,
+		); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(badges), &m.Badges); err != nil || m.Badges == nil {
+			m.Badges = []string{}
+		}
+		m.Read = read != 0
+		messages = append(messages, m)
+	}
+	return messages, rows.Err()
+}
+
+// markAllChatRead flips every stored message to read.
+func (s *Store) markAllChatRead() error {
+	_, err := s.db.Exec(`UPDATE chat_messages SET read = 1 WHERE read = 0`)
+	return err
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // getChannelSources returns every stored channel source (never nil).
