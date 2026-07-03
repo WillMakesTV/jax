@@ -9,6 +9,14 @@ import type {ServiceDef} from '../services'
 import {DeviceAuthForm} from './DeviceAuthForm'
 import {ObsConnectForm} from './ObsConnectForm'
 
+/**
+ * Twitch scopes requested on connect: sending chat as the broadcaster
+ * (broadcast messages), follower/subscriber lookups (chat user popup and
+ * follow events), and bits:read for cheer events.
+ */
+const TWITCH_SCOPES =
+  'user:write:chat moderator:read:followers channel:read:subscriptions bits:read'
+
 const ExternalHint = ({href, children}: {href: string; children: string}) => (
   <>
     {children}{' '}
@@ -59,9 +67,9 @@ export function ServiceModal({
               From the Twitch Developer Console.
             </ExternalHint>
           }
-          start={(clientId) => StartTwitchDeviceAuth(clientId, '')}
+          start={(clientId) => StartTwitchDeviceAuth(clientId, TWITCH_SCOPES)}
           poll={(deviceCode, clientId) =>
-            PollTwitchDeviceAuth(clientId, deviceCode, '')
+            PollTwitchDeviceAuth(clientId, deviceCode, TWITCH_SCOPES)
           }
         />
       )}

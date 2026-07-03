@@ -279,9 +279,13 @@ func (a *App) fetchTwitchUser(clientID, token string) twitchUser {
 // ---------------------------------------------------------------------------
 
 const (
-	googleDeviceURL   = "https://oauth2.googleapis.com/device/code"
-	googleTokenURL    = "https://oauth2.googleapis.com/token"
-	youtubeScope      = "https://www.googleapis.com/auth/youtube.readonly"
+	googleDeviceURL = "https://oauth2.googleapis.com/device/code"
+	googleTokenURL  = "https://oauth2.googleapis.com/token"
+	// The full youtube scope covers reading plus live-chat writes (broadcast
+	// messages). It must be one of the scopes Google's limited-input device
+	// flow allows — youtube.force-ssl is NOT (the device-code request itself
+	// fails with invalid_scope), and youtube.readonly cannot send chat.
+	youtubeScope      = "https://www.googleapis.com/auth/youtube"
 	youtubeChannelURL = "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true"
 )
 
