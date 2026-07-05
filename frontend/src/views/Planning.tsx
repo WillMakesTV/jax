@@ -1,18 +1,23 @@
 import clsx from 'clsx'
-import {useState} from 'react'
 import {main} from '../../wailsjs/go/models'
 import {ContentSeriesPanel} from './ContentSeries'
 import {PastStreamsSection, PlanningSection} from './Streams'
 
-type PlanningTab = 'dashboard' | 'series'
+export type PlanningTab = 'dashboard' | 'series'
 
 interface PlanningProps {
+  /** The active tab; lives in the app's navigation history so returning from
+   *  a sub-page (e.g. the series editor) restores the tab. */
+  tab: PlanningTab
+  onTabChange: (tab: PlanningTab) => void
   /** Open the details view for an aggregated past stream. */
   onOpenStream: (stream: main.PastStream) => void
   /** Open the details view for the current live stream. */
   onOpenLive: () => void
   /** Open the "Plan a stream" form. */
   onPlanStream: () => void
+  /** Open the series editor page (null = create a new series). */
+  onEditSeries: (series: main.ContentSeries | null) => void
 }
 
 /**
@@ -20,12 +25,13 @@ interface PlanningProps {
  * Content Series tab (reusable context for recurring shows).
  */
 export function Planning({
+  tab,
+  onTabChange,
   onOpenStream,
   onOpenLive,
   onPlanStream,
+  onEditSeries,
 }: PlanningProps) {
-  const [tab, setTab] = useState<PlanningTab>('dashboard')
-
   const tabs: {id: PlanningTab; label: string}[] = [
     {id: 'dashboard', label: 'Dashboard'},
     {id: 'series', label: 'Content Series'},
@@ -44,7 +50,7 @@ export function Planning({
             type="button"
             role="tab"
             aria-selected={tab === t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => onTabChange(t.id)}
             className={clsx(
               'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
               tab === t.id
@@ -67,7 +73,7 @@ export function Planning({
           />
         </div>
       )}
-      {tab === 'series' && <ContentSeriesPanel />}
+      {tab === 'series' && <ContentSeriesPanel onEditSeries={onEditSeries} />}
     </div>
   )
 }

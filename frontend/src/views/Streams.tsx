@@ -21,7 +21,7 @@ import {
 import {main} from '../../wailsjs/go/models'
 import {BrandTile} from '../components/BrandTile'
 import {openExternal} from '../lib/browser'
-import {formatCompact, formatDate} from '../lib/format'
+import {formatCompact, formatDate, formatDurationMs} from '../lib/format'
 import {useLiveData} from '../live/LiveDataProvider'
 import {SERVICES, platformName} from '../services/services'
 
@@ -337,7 +337,11 @@ function BroadcastChip({
   )
 }
 
-/** The current broadcast, aggregated across platforms, leading the grid. */
+/**
+ * The current broadcast, leading the grid. It is shaped into a PastStream and
+ * rendered through the same card as every finished stream — same fields, same
+ * layout — with the card's live mode adding the on-air signals.
+ */
 function LiveNowCard({
   live,
   onOpen,
@@ -345,76 +349,58 @@ function LiveNowCard({
   live: main.LiveStream[]
   onOpen: () => void
 }) {
-  const title = live.find((p) => p.title)?.title ?? 'Live now'
-  const thumbnail = live.find((p) => p.thumbnailUrl)?.thumbnailUrl ?? ''
-  const viewers = live.reduce((sum, p) => sum + p.viewerCount, 0)
+  const stream = main.PastStream.createFrom({
+    title: live.find((p) => p.title)?.title ?? 'Live now',
+    thumbnailUrl: live.find((p) => p.thumbnailUrl)?.thumbnailUrl ?? '',
+    startedAt: live.map((p) => p.startedAt).filter(Boolean).sort()[0] ?? '',
+    totalViews: live.reduce((sum, p) => sum + p.viewerCount, 0),
+    groupId: '',
+    seriesId: '',
+    episodeNumber: 0,
+    episodeDescription: '',
+    broadcasts: live.map((p) => ({
+      platform: p.platform,
+      title: p.title,
+      url: p.streamUrl,
+      thumbnailUrl: p.thumbnailUrl,
+      startedAt: p.startedAt,
+      duration: '',
+      durationSecs: 0,
+      viewCount: p.viewerCount,
+    })),
+  })
 
-  return (
-    <article className="flex flex-col overflow-hidden rounded-xl border border-red-500/40 bg-surface">
-      {/* Thumbnail and title open the live details view; the platform chips
-          below deep-link to each channel's stream instead. */}
-      <button
-        type="button"
-        onClick={onOpen}
-        aria-label="Open live stream details"
-        className="text-left transition-opacity hover:opacity-90"
-      >
-        <CardThumbnail
-          url={thumbnail}
-          alt="Current live stream preview"
-          overlay={
-            <span className="absolute left-2 top-2 inline-flex items-center gap-1.5 rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-semibold text-white">
-              <span className="relative flex h-1.5 w-1.5" aria-hidden>
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
-              </span>
-              Live
-            </span>
-          }
-        />
-      </button>
-      <div className="flex flex-1 flex-col p-4">
-        <button
-          type="button"
-          onClick={onOpen}
-          className="truncate text-left text-sm font-semibold text-fg hover:underline"
-        >
-          {title}
-        </button>
-        <p className="mt-1 text-xs text-fg-muted">
-          {formatCompact(viewers)} watching now
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {live.map((p) => (
-            <BroadcastChip
-              key={p.platform}
-              platform={p.platform}
-              label={`${formatCompact(p.viewerCount)} watching`}
-              url={p.streamUrl}
-            />
-          ))}
-        </div>
-      </div>
-    </article>
-  )
+  return <PastStreamCard stream={stream} onOpen={onOpen} live />
 }
 
 function PastStreamCard({
   stream,
-  selected,
+  selected = false,
   onToggleSelect,
   onOpen,
+  live = false,
 }: {
   stream: main.PastStream
-  selected: boolean
-  onToggleSelect: () => void
+  selected?: boolean
+  /** Absent on the live card — an active broadcast cannot be grouped. */
+  onToggleSelect?: () => void
   onOpen: () => void
+  /** Renders the same card with active-broadcast signals. */
+  live?: boolean
 }) {
-  const duration = stream.broadcasts.find((b) => b.duration)?.duration
+  // Live: runtime so far; past: the recorded duration.
+  const startedMs = Date.parse(stream.startedAt)
+  const duration = live
+    ? Number.isFinite(startedMs)
+      ? formatDurationMs(Date.now() - startedMs)
+      : ''
+    : stream.broadcasts.find((b) => b.duration)?.duration
   const meta = [
     formatDate(stream.startedAt),
     duration,
-    stream.totalViews > 0 ? `${formatCompact(stream.totalViews)} views` : '',
+    stream.totalViews > 0
+      ? `${formatCompact(stream.totalViews)} ${live ? 'watching now' : 'views'}`
+      : '',
   ]
     .filter(Boolean)
     .join(' · ')
@@ -423,24 +409,31 @@ function PastStreamCard({
     <article
       className={clsx(
         'relative flex flex-col overflow-hidden rounded-xl border bg-surface',
-        selected ? 'border-accent ring-1 ring-accent' : 'border-edge',
+        live
+          ? 'border-red-500/40'
+          : selected
+            ? 'border-accent ring-1 ring-accent'
+            : 'border-edge',
       )}
     >
-      {/* Selection checkbox for manual grouping, floating over the thumbnail. */}
-      <label
-        className="absolute left-2 top-2 z-10 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border border-edge bg-bg/85 backdrop-blur-sm"
-        title="Select stream for grouping"
-      >
-        <input
-          type="checkbox"
-          checked={selected}
-          onChange={onToggleSelect}
-          aria-label={`Select ${stream.title || 'untitled stream'} for grouping`}
-          className="h-3.5 w-3.5 accent-accent"
-        />
-      </label>
+      {/* Selection checkbox for manual grouping, floating over the thumbnail;
+          the live card carries the on-air badge in that corner instead. */}
+      {!live && onToggleSelect && (
+        <label
+          className="absolute left-2 top-2 z-10 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border border-edge bg-bg/85 backdrop-blur-sm"
+          title="Select stream for grouping"
+        >
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelect}
+            aria-label={`Select ${stream.title || 'untitled stream'} for grouping`}
+            className="h-3.5 w-3.5 accent-accent"
+          />
+        </label>
+      )}
       {/* Thumbnail and title open the stream's details view; the platform
-          chips below deep-link to each channel's VOD instead. */}
+          chips below deep-link to each channel's copy instead. */}
       <button
         type="button"
         onClick={onOpen}
@@ -450,6 +443,17 @@ function PastStreamCard({
         <CardThumbnail
           url={stream.thumbnailUrl}
           alt={`${stream.title || 'Untitled stream'} thumbnail`}
+          overlay={
+            live ? (
+              <span className="absolute left-2 top-2 inline-flex items-center gap-1.5 rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-semibold text-white">
+                <span className="relative flex h-1.5 w-1.5" aria-hidden>
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+                </span>
+                Live
+              </span>
+            ) : undefined
+          }
         />
       </button>
       <div className="flex flex-1 flex-col p-4">
@@ -467,7 +471,11 @@ function PastStreamCard({
               key={`${b.platform}-${b.url}`}
               platform={b.platform}
               label={
-                b.viewCount > 0 ? `${formatCompact(b.viewCount)} views` : 'Watch'
+                live
+                  ? `${formatCompact(b.viewCount)} watching`
+                  : b.viewCount > 0
+                    ? `${formatCompact(b.viewCount)} views`
+                    : 'Watch'
               }
               url={b.url}
             />

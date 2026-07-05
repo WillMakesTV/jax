@@ -8,11 +8,21 @@ export function BeginTranscriptSession(arg1:string,arg2:string):Promise<number>;
 
 export function CancelDownload():Promise<void>;
 
+export function CancelTranscribeDownload(arg1:string):Promise<void>;
+
+export function ConnectAnthropicAPIKey(arg1:string):Promise<main.ServiceStatus>;
+
+export function ConnectAnthropicAccount():Promise<main.ServiceStatus>;
+
 export function DefaultDownloadDir():Promise<string>;
 
 export function DeleteContentSeries(arg1:string):Promise<void>;
 
 export function DeletePlannedStream(arg1:string):Promise<void>;
+
+export function DeleteRoutine(arg1:string):Promise<void>;
+
+export function DeleteSeriesType(arg1:string):Promise<void>;
 
 export function DisconnectService(arg1:string):Promise<void>;
 
@@ -30,6 +40,8 @@ export function GetContentSeries():Promise<Array<main.ContentSeries>>;
 
 export function GetDownloads():Promise<Array<main.DownloadedVideo>>;
 
+export function GetLiveStreamMeta(arg1:string):Promise<main.LiveStreamMeta>;
+
 export function GetLiveStreams():Promise<Array<main.LiveStream>>;
 
 export function GetPastStreams(arg1:boolean):Promise<Array<main.PastStream>>;
@@ -38,13 +50,21 @@ export function GetPlannedStreams():Promise<Array<main.PlannedStream>>;
 
 export function GetProfile():Promise<main.Profile>;
 
+export function GetRoutines():Promise<Array<main.Routine>>;
+
+export function GetSeriesTypes():Promise<Array<main.SeriesType>>;
+
 export function GetServiceConfig():Promise<main.ServiceConfig>;
 
 export function GetServiceStatuses():Promise<Array<main.ServiceStatus>>;
 
 export function GetSetting(arg1:string):Promise<string>;
 
+export function GetStreamdeckMultiActions():Promise<Array<main.StreamdeckMultiAction>>;
+
 export function GetStreams():Promise<Array<main.Stream>>;
+
+export function GetTranscribeJobs():Promise<Array<main.TranscribeJob>>;
 
 export function GetTranscriptForStream(arg1:string):Promise<Array<main.TranscriptLineRec>>;
 
@@ -52,15 +72,21 @@ export function GetVideoDetails(arg1:string,arg2:string,arg3:boolean):Promise<ma
 
 export function GetVideos(arg1:boolean):Promise<main.VideoList>;
 
+export function GetYouTubeCategories():Promise<Array<main.ServiceCategory>>;
+
 export function GetYouTubeLiveChat(arg1:string):Promise<main.LiveChatPage>;
 
 export function GroupPastStreams(arg1:Array<string>):Promise<void>;
 
 export function MarkAllChatRead():Promise<void>;
 
+export function NextEpisodeNumber(arg1:string):Promise<number>;
+
 export function PollTwitchDeviceAuth(arg1:string,arg2:string,arg3:string):Promise<main.AuthPollResult>;
 
 export function PollYouTubeDeviceAuth(arg1:string,arg2:string,arg3:string):Promise<main.AuthPollResult>;
+
+export function PollYouTubeSubscribers():Promise<Array<main.LiveEvent>>;
 
 export function RefreshChannelInfo():Promise<void>;
 
@@ -74,17 +100,29 @@ export function SavePlannedStream(arg1:main.PlannedStream):Promise<main.PlannedS
 
 export function SaveProfile(arg1:main.Profile):Promise<void>;
 
+export function SaveRoutine(arg1:main.Routine):Promise<main.Routine>;
+
+export function SaveSeriesType(arg1:main.SeriesType):Promise<main.SeriesType>;
+
 export function SaveServiceConfig(arg1:main.ServiceConfig):Promise<void>;
 
 export function SaveStreams(arg1:Array<main.Stream>):Promise<void>;
+
+export function SearchTwitchCategories(arg1:string):Promise<Array<main.ServiceCategory>>;
 
 export function SelectDirectory(arg1:string):Promise<string>;
 
 export function SendBroadcastChat(arg1:string):Promise<Array<main.BroadcastSendResult>>;
 
+export function SetDefaultContentSeries(arg1:string):Promise<void>;
+
+export function SetDefaultSeriesType(arg1:string):Promise<void>;
+
 export function SetPastStreamSeries(arg1:Array<string>,arg2:string):Promise<void>;
 
 export function SetSetting(arg1:string,arg2:string):Promise<void>;
+
+export function SetStreamEpisode(arg1:Array<string>,arg2:number,arg3:string):Promise<void>;
 
 export function StartDownload(arg1:string,arg2:string,arg3:string,arg4:Array<string>):Promise<void>;
 
@@ -98,4 +136,8 @@ export function StopTranscription():Promise<void>;
 
 export function SubscribeTwitchEvents(arg1:string):Promise<Array<string>>;
 
+export function TranscribeDownload(arg1:string):Promise<void>;
+
 export function UngroupPastStreams(arg1:string):Promise<void>;
+
+export function UsedEpisodeNumbers(arg1:string):Promise<Array<number>>;

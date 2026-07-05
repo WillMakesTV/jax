@@ -140,14 +140,31 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class ServiceCategory {
+	    id: string;
+	    name: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ServiceCategory(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	    }
+	}
 	export class ContentSeries {
 	    id: string;
 	    title: string;
 	    description: string;
-	    category: string;
+	    twitchCategory: ServiceCategory;
+	    youtubeCategory: ServiceCategory;
 	    tags: string[];
 	    notes: string;
 	    createdAt: string;
+	    isDefault: boolean;
+	    typeId: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ContentSeries(source);
@@ -158,11 +175,32 @@ export namespace main {
 	        this.id = source["id"];
 	        this.title = source["title"];
 	        this.description = source["description"];
-	        this.category = source["category"];
+	        this.twitchCategory = this.convertValues(source["twitchCategory"], ServiceCategory);
+	        this.youtubeCategory = this.convertValues(source["youtubeCategory"], ServiceCategory);
 	        this.tags = source["tags"];
 	        this.notes = source["notes"];
 	        this.createdAt = source["createdAt"];
+	        this.isDefault = source["isDefault"];
+	        this.typeId = source["typeId"];
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	
 	export class DeviceCodeInfo {
@@ -340,6 +378,22 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class LiveStreamMeta {
+	    seriesId: string;
+	    episodeNumber: number;
+	    episodeDescription: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LiveStreamMeta(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.seriesId = source["seriesId"];
+	        this.episodeNumber = source["episodeNumber"];
+	        this.episodeDescription = source["episodeDescription"];
+	    }
+	}
 	export class PastBroadcast {
 	    platform: string;
 	    title: string;
@@ -373,6 +427,8 @@ export namespace main {
 	    totalViews: number;
 	    groupId: string;
 	    seriesId: string;
+	    episodeNumber: number;
+	    episodeDescription: string;
 	    broadcasts: PastBroadcast[];
 	
 	    static createFrom(source: any = {}) {
@@ -387,6 +443,8 @@ export namespace main {
 	        this.totalViews = source["totalViews"];
 	        this.groupId = source["groupId"];
 	        this.seriesId = source["seriesId"];
+	        this.episodeNumber = source["episodeNumber"];
+	        this.episodeDescription = source["episodeDescription"];
 	        this.broadcasts = this.convertValues(source["broadcasts"], PastBroadcast);
 	    }
 	
@@ -414,6 +472,7 @@ export namespace main {
 	    description: string;
 	    channels: string[];
 	    seriesId: string;
+	    episodeNumber: number;
 	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
@@ -427,6 +486,7 @@ export namespace main {
 	        this.description = source["description"];
 	        this.channels = source["channels"];
 	        this.seriesId = source["seriesId"];
+	        this.episodeNumber = source["episodeNumber"];
 	        this.createdAt = source["createdAt"];
 	    }
 	}
@@ -444,6 +504,108 @@ export namespace main {
 	        this.email = source["email"];
 	    }
 	}
+	export class RoutineStep {
+	    kind: string;
+	    scene?: string;
+	    target?: string;
+	    source?: string;
+	    sceneItemId?: number;
+	    mode?: string;
+	    delayMs?: number;
+	    description?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RoutineStep(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.scene = source["scene"];
+	        this.target = source["target"];
+	        this.source = source["source"];
+	        this.sceneItemId = source["sceneItemId"];
+	        this.mode = source["mode"];
+	        this.delayMs = source["delayMs"];
+	        this.description = source["description"];
+	    }
+	}
+	export class Routine {
+	    id: string;
+	    name: string;
+	    trigger: string;
+	    builtIn: boolean;
+	    manager: string;
+	    streamdeckActionId: string;
+	    streamdeckTitle: string;
+	    streamdeckAfterActionId: string;
+	    streamdeckAfterTitle: string;
+	    steps: RoutineStep[];
+	    afterSteps: RoutineStep[];
+	    createdAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Routine(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.trigger = source["trigger"];
+	        this.builtIn = source["builtIn"];
+	        this.manager = source["manager"];
+	        this.streamdeckActionId = source["streamdeckActionId"];
+	        this.streamdeckTitle = source["streamdeckTitle"];
+	        this.streamdeckAfterActionId = source["streamdeckAfterActionId"];
+	        this.streamdeckAfterTitle = source["streamdeckAfterTitle"];
+	        this.steps = this.convertValues(source["steps"], RoutineStep);
+	        this.afterSteps = this.convertValues(source["afterSteps"], RoutineStep);
+	        this.createdAt = source["createdAt"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	export class SeriesType {
+	    id: string;
+	    title: string;
+	    episodic: boolean;
+	    description: string;
+	    createdAt: string;
+	    isDefault: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new SeriesType(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.episodic = source["episodic"];
+	        this.description = source["description"];
+	        this.createdAt = source["createdAt"];
+	        this.isDefault = source["isDefault"];
+	    }
+	}
+	
 	export class ServiceConfig {
 	    twitchClientId: string;
 	    youtubeClientId: string;
@@ -551,6 +713,58 @@ export namespace main {
 		    }
 		    return a;
 		}
+	}
+	export class StreamdeckMultiAction {
+	    id: string;
+	    title: string;
+	    profile: string;
+	    coordinates: string;
+	    steps: RoutineStep[];
+	
+	    static createFrom(source: any = {}) {
+	        return new StreamdeckMultiAction(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.profile = source["profile"];
+	        this.coordinates = source["coordinates"];
+	        this.steps = this.convertValues(source["steps"], RoutineStep);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class TranscribeJob {
+	    subfolder: string;
+	    state: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TranscribeJob(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.subfolder = source["subfolder"];
+	        this.state = source["state"];
+	    }
 	}
 	export class TranscriptLineRec {
 	    at: number;

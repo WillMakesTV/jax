@@ -11,20 +11,30 @@ import (
 // Content series
 //
 // A ContentSeries captures the recurring context/metadata for a series of
-// content (a show, segment, or theme): its title, description, category, tags,
-// and freeform notes. Plans reference a series so its context is on hand while
-// planning a stream. Stored as a single JSON blob in the settings table.
+// content (a show, segment, or theme): its title, description, per-platform
+// categories, tags, and freeform notes. Plans reference a series so its
+// context is on hand while planning a stream. Stored as a single JSON blob in
+// the settings table.
 // ---------------------------------------------------------------------------
 
 // ContentSeries is the reusable context for a series of content.
 type ContentSeries struct {
-	ID          string   `json:"id"`
-	Title       string   `json:"title"`
-	Description string   `json:"description"`
-	Category    string   `json:"category"` // game / category the series usually runs in
-	Tags        []string `json:"tags"`
-	Notes       string   `json:"notes"` // freeform planning context
-	CreatedAt   string   `json:"createdAt"`
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	// Per-platform categories (see categories.go); the IDs feed the platforms'
+	// channel/broadcast update APIs when the series goes live. Required for
+	// each connected broadcast service.
+	TwitchCategory  ServiceCategory `json:"twitchCategory"`
+	YouTubeCategory ServiceCategory `json:"youtubeCategory"`
+	Tags            []string        `json:"tags"`
+	Notes           string          `json:"notes"` // freeform planning context
+	CreatedAt       string          `json:"createdAt"`
+	// IsDefault marks the series preselected when planning; at most one
+	// series holds it (see SetDefaultContentSeries).
+	IsDefault bool `json:"isDefault"`
+	// TypeID references a SeriesType ("" = untyped); see series_types.go.
+	TypeID string `json:"typeId"`
 }
 
 // GetContentSeries returns the saved content series, newest first. Never nil.
@@ -51,6 +61,16 @@ func (a *App) SaveContentSeries(series ContentSeries) (ContentSeries, error) {
 	if strings.TrimSpace(series.Title) == "" {
 		return series, fmt.Errorf("a title is required")
 	}
+	// A category per connected broadcast service is mandatory — it is what
+	// updates the stream information on that platform when the series airs.
+	// Only connected services are enforced: their catalogues are the only
+	// source of valid category IDs.
+	if _, ok := a.getConn("twitch"); ok && series.TwitchCategory.ID == "" {
+		return series, fmt.Errorf("choose a Twitch category for this series")
+	}
+	if _, ok := a.getConn("youtube"); ok && series.YouTubeCategory.ID == "" {
+		return series, fmt.Errorf("choose a YouTube category for this series")
+	}
 	if series.Tags == nil {
 		series.Tags = []string{}
 	}
@@ -66,6 +86,9 @@ func (a *App) SaveContentSeries(series ContentSeries) (ContentSeries, error) {
 	replaced := false
 	for i, s := range all {
 		if s.ID == series.ID {
+			// The default flag is managed by SetDefaultContentSeries, not the
+			// edit form; an edit must not silently drop it.
+			series.IsDefault = s.IsDefault
 			all[i] = series
 			replaced = true
 			break
@@ -79,6 +102,27 @@ func (a *App) SaveContentSeries(series ContentSeries) (ContentSeries, error) {
 		return series, err
 	}
 	return series, nil
+}
+
+// SetDefaultContentSeries marks one series (by ID) as the default,
+// unsetting whichever held it before — at most one series is the default at
+// a time. An empty id clears the default entirely.
+func (a *App) SetDefaultContentSeries(id string) error {
+	if a.store == nil {
+		return fmt.Errorf("storage unavailable")
+	}
+	all := a.GetContentSeries()
+	found := id == ""
+	for i := range all {
+		all[i].IsDefault = all[i].ID == id
+		if all[i].IsDefault {
+			found = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("that series no longer exists")
+	}
+	return a.store.setJSON(keyContentSeries, all)
 }
 
 // DeleteContentSeries removes a series by ID.

@@ -42,8 +42,12 @@ type PastStream struct {
 	// escape hatch for when timing-based matching misses); empty otherwise.
 	GroupID string `json:"groupId"`
 	// SeriesID links this past stream to a ContentSeries (assigned by the user).
-	SeriesID   string          `json:"seriesId"`
-	Broadcasts []PastBroadcast `json:"broadcasts"`
+	SeriesID string `json:"seriesId"`
+	// Episode data, set when the stream's series is episodic (see episodes.go;
+	// number 0 = the stream is not part of an episodic series).
+	EpisodeNumber      int             `json:"episodeNumber"`
+	EpisodeDescription string          `json:"episodeDescription"`
+	Broadcasts         []PastBroadcast `json:"broadcasts"`
 }
 
 // broadcastKey is the stable identity of one platform's broadcast, used to
@@ -142,12 +146,186 @@ func (a *App) GetPastStreams(forceRefresh bool) []PastStream {
 		}
 	}
 
+	// Assignments made while the stream was live migrate onto its finished
+	// broadcasts once the VODs appear.
+	a.adoptLiveAssignments(out)
+
+	// Episodic series carry an episode number per stream, initialised by date
+	// on first sight (see episodes.go).
+	a.applyStreamEpisodes(out)
+
 	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt > out[j].StartedAt })
 	return out
 }
 
 // keyPastStreamSeries stores the broadcastKey -> content series id assignments.
 const keyPastStreamSeries = "past_stream_series"
+
+// liveKeyPrefix marks series/episode assignments made while the stream was
+// still on the air, keyed by its go-live time ("live|<RFC3339>") — the VOD
+// urls that normally identify a stream don't exist yet. Once the finished
+// stream shows up, adoptLiveAssignments copies them onto its broadcast keys.
+const liveKeyPrefix = "live|"
+
+// liveMetaKey builds the assignment key for a running broadcast.
+func liveMetaKey(startedAt string) string {
+	return liveKeyPrefix + startedAt
+}
+
+// parseLiveKey extracts the go-live time from a live assignment key.
+func parseLiveKey(key string) (time.Time, bool) {
+	raw, ok := strings.CutPrefix(key, liveKeyPrefix)
+	if !ok {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
+// LiveStreamMeta is the planning metadata attached to the running broadcast:
+// its content series and, for episodic series, its episode slot.
+type LiveStreamMeta struct {
+	SeriesID           string `json:"seriesId"`
+	EpisodeNumber      int    `json:"episodeNumber"`
+	EpisodeDescription string `json:"episodeDescription"`
+}
+
+// GetLiveStreamMeta returns the series/episode assigned to the broadcast that
+// went live at startedAt (RFC3339), matching within the aggregation margin.
+func (a *App) GetLiveStreamMeta(startedAt string) LiveStreamMeta {
+	var meta LiveStreamMeta
+	target, err := time.Parse(time.RFC3339, startedAt)
+	if err != nil {
+		return meta
+	}
+	margin := a.pastMatchMargin()
+	within := func(key string) bool {
+		t, ok := parseLiveKey(key)
+		if !ok {
+			return false
+		}
+		dt := target.Sub(t)
+		if dt < 0 {
+			dt = -dt
+		}
+		return dt <= margin
+	}
+
+	for key, sid := range a.pastStreamSeries() {
+		if within(key) {
+			meta.SeriesID = sid
+			break
+		}
+	}
+	for key, e := range a.streamEpisodes() {
+		if within(key) {
+			meta.EpisodeNumber = e.Number
+			meta.EpisodeDescription = e.Description
+			break
+		}
+	}
+	return meta
+}
+
+// liveAssignmentMaxAge is how long unmatched live assignments are kept; past
+// it they are considered orphaned (the VOD never appeared) and pruned.
+const liveAssignmentMaxAge = 48 * time.Hour
+
+// adoptLiveAssignments copies series/episode assignments made during a live
+// broadcast onto the finished stream's broadcast keys, matched by go-live
+// time. Live keys stay until they age out — the stream may still be running
+// (Twitch exposes in-progress archives) and the live page reads them.
+func (a *App) adoptLiveAssignments(out []PastStream) {
+	if a.store == nil {
+		return
+	}
+	margin := a.pastMatchMargin()
+	match := func(key string, s *PastStream) bool {
+		t, ok := parseLiveKey(key)
+		if !ok {
+			return false
+		}
+		st, err := time.Parse(time.RFC3339, s.StartedAt)
+		if err != nil {
+			return false
+		}
+		dt := st.Sub(t)
+		if dt < 0 {
+			dt = -dt
+		}
+		return dt <= margin
+	}
+	prune := func(key string) bool {
+		t, ok := parseLiveKey(key)
+		return ok && time.Since(t) > liveAssignmentMaxAge
+	}
+
+	series := a.pastStreamSeries()
+	changed := false
+	for key, sid := range series {
+		if _, ok := parseLiveKey(key); !ok {
+			continue
+		}
+		for i := range out {
+			if out[i].SeriesID == "" && match(key, &out[i]) {
+				out[i].SeriesID = sid
+				for _, b := range out[i].Broadcasts {
+					series[broadcastKey(b)] = sid
+				}
+				changed = true
+				break
+			}
+		}
+		if prune(key) {
+			delete(series, key)
+			changed = true
+		}
+	}
+	if changed {
+		if err := a.store.setJSON(keyPastStreamSeries, series); err != nil {
+			log.Printf("jax: adopt live series: %v", err)
+		}
+	}
+
+	episodes := a.streamEpisodes()
+	changed = false
+	for key, e := range episodes {
+		if _, ok := parseLiveKey(key); !ok {
+			continue
+		}
+		for i := range out {
+			if !match(key, &out[i]) {
+				continue
+			}
+			has := false
+			for _, b := range out[i].Broadcasts {
+				if _, ok := episodes[broadcastKey(b)]; ok {
+					has = true
+					break
+				}
+			}
+			if !has {
+				for _, b := range out[i].Broadcasts {
+					episodes[broadcastKey(b)] = e
+				}
+				changed = true
+			}
+			break
+		}
+		if prune(key) {
+			delete(episodes, key)
+			changed = true
+		}
+	}
+	if changed {
+		if err := a.store.setJSON(keyStreamEpisodes, episodes); err != nil {
+			log.Printf("jax: adopt live episodes: %v", err)
+		}
+	}
+}
 
 // pastStreamSeries loads the saved broadcastKey -> seriesID map. Never nil.
 func (a *App) pastStreamSeries() map[string]string {

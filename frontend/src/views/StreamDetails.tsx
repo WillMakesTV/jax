@@ -8,22 +8,33 @@ import {
   Download,
   ExternalLink,
   Eye,
+  LayoutGrid,
   Loader2,
+  MessageSquare,
   PlayCircle,
+  PlaySquare,
   Radio,
   Video,
 } from 'lucide-react'
+import clsx from 'clsx'
 import {useEffect, useState} from 'react'
 import {
   GetContentSeries,
-  GetTranscriptForStream,
+  GetPastStreams,
+  GetSeriesTypes,
   SetPastStreamSeries,
+  SetStreamEpisode,
   StartDownload,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {BrandTile} from '../components/BrandTile'
 import {Modal} from '../components/Modal'
 import {PageHeader} from '../components/PageHeader'
+import {
+  ChatLogPanel,
+  MediaEmptyState,
+  TranscriptPanel,
+} from '../components/StreamMedia'
 import {useDownloadStatus} from '../downloads/DownloadProvider'
 import {useDownloads} from '../downloads/useDownloads'
 import {openExternal} from '../lib/browser'
@@ -125,27 +136,31 @@ function resolveDownload(
   return {platform, urls, picks}
 }
 
+type StreamTab = 'overview' | 'video' | 'chat' | 'transcript'
+
 interface StreamDetailsProps {
   stream: main.PastStream
   onBack: () => void
-  /** Open the stream's transcript on its own page. */
-  onOpenTranscript: () => void
   /** Open a downloaded broadcast's video page (player + chat + transcript). */
   onOpenDownload: (download: main.DownloadedVideo) => void
 }
 
 /**
- * Detail view for one aggregated stream: a summary of the broadcast plus a
- * condensed list of its per-channel videos (sorted by go-live time), each
- * opening that channel's specific stream info.
+ * Detail view for one aggregated stream, in tabs: an Overview (summary plus a
+ * condensed list of its per-channel videos, each opening that channel's
+ * specific stream info), the downloaded video, the unified cross-channel chat,
+ * and the transcript.
  */
 export function StreamDetails({
   stream,
   onBack,
-  onOpenTranscript,
   onOpenDownload,
 }: StreamDetailsProps) {
+  const [tab, setTab] = useState<StreamTab>('overview')
   const [detail, setDetail] = useState<main.PastBroadcast | null>(null)
+  // The stream's content series assignment, lifted here so the episode
+  // editor reacts when it changes.
+  const [seriesId, setSeriesId] = useState(stream.seriesId ?? '')
   const {byUrl} = useDownloads()
   // A downloaded copy of this stream (any of its broadcasts), if present.
   const streamDownload = stream.broadcasts
@@ -168,6 +183,15 @@ export function StreamDetails({
     (sum, c) => sum + (c.find((b) => b.durationSecs > 0)?.durationSecs ?? 0),
     0,
   )
+  // The unified chat window: the stream's start through the last broadcast's
+  // end, so multi-sitting streams cover the gap between segments too.
+  const streamStartMs = Date.parse(stream.startedAt)
+  const chatDurationSecs = stream.broadcasts.reduce((max, b) => {
+    const t = Date.parse(b.startedAt)
+    if (Number.isNaN(t) || Number.isNaN(streamStartMs)) return max
+    const end = Math.round((t - streamStartMs) / 1000) + (b.durationSecs || 0)
+    return Math.max(max, end)
+  }, totalDurationSecs)
 
   // Video download: resolve the preferred source, run the sidecar. Progress is
   // reported app-wide in the status bar (see DownloadProvider).
@@ -241,10 +265,6 @@ export function StreamDetails({
         } across ${channelCount} channel${channelCount === 1 ? '' : 's'}.`}
         actions={
           <div className="flex items-center gap-2">
-            <TranscriptCTA
-              startedAt={stream.startedAt}
-              onOpen={onOpenTranscript}
-            />
             {streamDownload ? (
               <button
                 type="button"
@@ -279,7 +299,49 @@ export function StreamDetails({
         }
       />
 
-      <StreamSeriesSelect stream={stream} />
+      <StreamTabs tab={tab} onChange={setTab} />
+
+      {tab === 'video' &&
+        (streamDownload ? (
+          <div className="overflow-hidden rounded-2xl border border-edge bg-black">
+            <video
+              key={streamDownload.mediaUrl}
+              controls
+              autoPlay
+              poster={streamDownload.thumbnailUrl || stream.thumbnailUrl || undefined}
+              src={streamDownload.mediaUrl}
+              className="aspect-video w-full bg-black"
+            />
+          </div>
+        ) : (
+          <MediaEmptyState
+            icon={PlaySquare}
+            text="No downloaded copy of this stream yet — use “Download videos” above to fetch its VODs and play them here."
+          />
+        ))}
+      {tab === 'chat' && (
+        <ChatLogPanel
+          startedAt={stream.startedAt}
+          durationSecs={chatDurationSecs}
+          noun="stream"
+        />
+      )}
+      {tab === 'transcript' && (
+        <TranscriptPanel
+          startedAt={stream.startedAt}
+          subfolder={streamDownload?.subfolder}
+          noun="stream"
+        />
+      )}
+
+      {tab === 'overview' && (
+        <>
+      <StreamSeriesSelect
+        stream={stream}
+        seriesId={seriesId}
+        onChange={setSeriesId}
+      />
+      <EpisodeEditor stream={stream} seriesId={seriesId} />
 
       {/* Summary: thumbnail + aggregate tiles. */}
       <section
@@ -389,6 +451,8 @@ export function StreamDetails({
           </div>
         ))}
       </div>
+        </>
+      )}
 
       <BroadcastDetailModal
         broadcast={detail}
@@ -398,13 +462,63 @@ export function StreamDetails({
   )
 }
 
+/** The details page's section tabs. */
+function StreamTabs({
+  tab,
+  onChange,
+}: {
+  tab: StreamTab
+  onChange: (tab: StreamTab) => void
+}) {
+  const tabs: {id: StreamTab; label: string; icon: typeof LayoutGrid}[] = [
+    {id: 'overview', label: 'Overview', icon: LayoutGrid},
+    {id: 'video', label: 'Video', icon: PlaySquare},
+    {id: 'chat', label: 'Chat', icon: MessageSquare},
+    {id: 'transcript', label: 'Transcript', icon: Captions},
+  ]
+  return (
+    <div
+      role="tablist"
+      aria-label="Stream sections"
+      className="mb-6 flex w-fit items-center gap-1 rounded-lg border border-edge bg-surface p-1"
+    >
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          role="tab"
+          aria-selected={tab === t.id}
+          onClick={() => onChange(t.id)}
+          className={clsx(
+            'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+            tab === t.id
+              ? 'bg-accent text-accent-fg'
+              : 'text-fg-muted hover:bg-surface-hover hover:text-fg',
+          )}
+        >
+          <t.icon size={14} aria-hidden />
+          {t.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 /**
  * Assign (or clear) a content series for this past stream. The assignment is
- * persisted per broadcast so it survives refetches.
+ * persisted per broadcast so it survives refetches. `onChange` fires after
+ * the save commits, so dependents (the episode editor) read fresh state.
  */
-function StreamSeriesSelect({stream}: {stream: main.PastStream}) {
+function StreamSeriesSelect({
+  stream,
+  seriesId,
+  onChange,
+}: {
+  stream: main.PastStream
+  seriesId: string
+  onChange: (id: string) => void
+}) {
   const [series, setSeries] = useState<main.ContentSeries[]>([])
-  const [seriesId, setSeriesId] = useState(stream.seriesId ?? '')
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
@@ -416,7 +530,6 @@ function StreamSeriesSelect({stream}: {stream: main.PastStream}) {
   if (series.length === 0) return null
 
   const change = async (id: string) => {
-    setSeriesId(id)
     const keys = stream.broadcasts.map((b) => `${b.platform}|${b.url}`)
     try {
       await SetPastStreamSeries(keys, id)
@@ -425,6 +538,7 @@ function StreamSeriesSelect({stream}: {stream: main.PastStream}) {
     } catch {
       // Non-fatal; the value reconciles on the next load.
     }
+    onChange(id)
   }
 
   return (
@@ -456,41 +570,134 @@ function StreamSeriesSelect({stream}: {stream: main.PastStream}) {
 }
 
 /**
- * "View transcript" action, shown only when the stream has a stored
- * transcript. Sessions are matched to the stream by start-time.
+ * Episode number + short description for streams in an episodic series.
+ * Hidden unless the assigned series' type is episodic. Numbers initialise by
+ * date on the backend (oldest stream = episode one); both fields are editable
+ * here, persisted per broadcast like the series assignment.
  */
-function TranscriptCTA({
-  startedAt,
-  onOpen,
+function EpisodeEditor({
+  stream,
+  seriesId,
 }: {
-  startedAt: string
-  onOpen: () => void
+  stream: main.PastStream
+  seriesId: string
 }) {
-  const [hasTranscript, setHasTranscript] = useState(false)
+  const [episodic, setEpisodic] = useState(false)
+  const [number, setNumber] = useState(
+    stream.episodeNumber > 0 ? String(stream.episodeNumber) : '',
+  )
+  const [description, setDescription] = useState(
+    stream.episodeDescription ?? '',
+  )
+  const [saved, setSaved] = useState(false)
 
+  // Is the assigned series episodic (via its series type)?
   useEffect(() => {
+    if (!seriesId) {
+      setEpisodic(false)
+      return
+    }
     let cancelled = false
-    GetTranscriptForStream(startedAt)
-      .then((result) => {
-        if (!cancelled) setHasTranscript((result ?? []).length > 0)
+    Promise.all([GetContentSeries(), GetSeriesTypes()])
+      .then(([series, types]) => {
+        if (cancelled) return
+        const s = (series ?? []).find((x) => x.id === seriesId)
+        setEpisodic(
+          Boolean((types ?? []).find((t) => t.id === s?.typeId)?.episodic),
+        )
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [startedAt])
+  }, [seriesId])
 
-  if (!hasTranscript) return null
+  // Read the current assignment fresh: default initialisation happens inside
+  // GetPastStreams, so the navigation prop can predate it (or the series was
+  // just assigned on this page).
+  useEffect(() => {
+    if (!episodic) return
+    let cancelled = false
+    const keys = new Set(
+      stream.broadcasts.map((b) => `${b.platform}|${b.url}`),
+    )
+    GetPastStreams(false)
+      .then((streams) => {
+        if (cancelled) return
+        const cur = (streams ?? []).find((s) =>
+          (s.broadcasts ?? []).some((b) => keys.has(`${b.platform}|${b.url}`)),
+        )
+        if (cur && cur.episodeNumber > 0) {
+          setNumber(String(cur.episodeNumber))
+          setDescription(cur.episodeDescription ?? '')
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [episodic, stream])
+
+  if (!episodic) return null
+
+  const parsed = Number(number)
+  const valid = Number.isInteger(parsed) && parsed >= 1
+
+  const save = async () => {
+    if (!valid) return
+    const keys = stream.broadcasts.map((b) => `${b.platform}|${b.url}`)
+    try {
+      await SetStreamEpisode(keys, parsed, description.trim())
+      setSaved(true)
+      window.setTimeout(() => setSaved(false), 1_500)
+    } catch {
+      // Non-fatal; the values reconcile on the next load.
+    }
+  }
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="inline-flex items-center gap-2 rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-semibold text-fg transition-colors hover:bg-surface-hover"
-    >
-      <Captions size={16} aria-hidden />
-      View transcript
-    </button>
+    <div className="mb-6 -mt-3 flex flex-wrap items-center gap-2">
+      <label htmlFor="stream-episode" className="text-sm font-medium text-fg">
+        Episode
+      </label>
+      <input
+        id="stream-episode"
+        type="number"
+        inputMode="numeric"
+        min={1}
+        step={1}
+        value={number}
+        onChange={(e) => {
+          setNumber(e.target.value)
+          setSaved(false)
+        }}
+        className="w-20 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm text-fg outline-none focus:border-accent"
+      />
+      <input
+        aria-label="Episode description"
+        value={description}
+        onChange={(e) => {
+          setDescription(e.target.value)
+          setSaved(false)
+        }}
+        placeholder="Short episode description"
+        className="w-full max-w-md flex-1 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm text-fg outline-none focus:border-accent"
+      />
+      <button
+        type="button"
+        onClick={() => void save()}
+        disabled={!valid}
+        className="rounded-lg border border-edge bg-surface px-3 py-1.5 text-sm font-semibold text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+      >
+        Save
+      </button>
+      {saved && (
+        <span className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+          <Check size={13} aria-hidden />
+          Saved
+        </span>
+      )}
+    </div>
   )
 }
 

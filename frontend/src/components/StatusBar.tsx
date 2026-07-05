@@ -1,5 +1,6 @@
 import {
   Bell,
+  Captions,
   Clock,
   Download,
   Gauge,
@@ -19,12 +20,19 @@ import {useDownloadStatus} from '../downloads/DownloadProvider'
 import {useEvents} from '../events/EventsProvider'
 import {formatCompact, formatDurationMs, formatKbps} from '../lib/format'
 import {aggregateLive, useLiveData} from '../live/LiveDataProvider'
+import {
+  useVodTranscribe,
+  type VodJob,
+  type VodNotice,
+} from '../transcript/VodTranscribeProvider'
 
 interface StatusBarProps {
   /** Navigate to the Chat page (unread-messages notification). */
   onOpenChat: () => void
   /** Navigate to the Live Events tab (unread-events notification). */
   onOpenEvents: () => void
+  /** Open the stream whose download is being transcribed (by subfolder). */
+  onOpenTranscribing: (subfolder: string) => void
 }
 
 /**
@@ -32,12 +40,17 @@ interface StatusBarProps {
  * indicator, uptime, unread chat/event notifications, encoder health, and
  * total viewers across all channels.
  */
-export function StatusBar({onOpenChat, onOpenEvents}: StatusBarProps) {
+export function StatusBar({
+  onOpenChat,
+  onOpenEvents,
+  onOpenTranscribing,
+}: StatusBarProps) {
   const {platforms, obs, mics, music, camera, micSourceName, obsConnected} =
     useLiveData()
   const {unreadCount} = useChat()
   const {unreadCount: unreadEvents} = useEvents()
   const download = useDownloadStatus()
+  const vodTranscribe = useVodTranscribe()
 
   // Prefer the designated primary mic; otherwise "on" when any mic is
   // unmuted. Hidden entirely when OBS is away or has no mic devices.
@@ -181,6 +194,14 @@ export function StatusBar({onOpenChat, onOpenEvents}: StatusBarProps) {
         </span>
       )}
 
+      {/* Downloaded-video transcription queue; click through to the stream
+          being transcribed. */}
+      <TranscribeStatus
+        jobs={vodTranscribe.jobs}
+        notice={vodTranscribe.notice}
+        onOpen={onOpenTranscribing}
+      />
+
       {/* Unread events notification; click through to the Live Events tab. */}
       {unreadEvents > 0 && (
         <button
@@ -217,5 +238,62 @@ export function StatusBar({onOpenChat, onOpenEvents}: StatusBarProps) {
         {anyLive ? `${formatCompact(totalViewers)} viewers` : '—'}
       </span>
     </footer>
+  )
+}
+
+/**
+ * Transcription-queue chip: while jobs exist it is a button that jumps to the
+ * stream being transcribed; afterwards the end-of-run notice lingers briefly.
+ */
+function TranscribeStatus({
+  jobs,
+  notice,
+  onOpen,
+}: {
+  jobs: VodJob[]
+  notice: VodNotice | null
+  onOpen: (subfolder: string) => void
+}) {
+  if (jobs.length > 0) {
+    const running = jobs.filter((j) => j.state === 'running')
+    const queued = jobs.length - running.length
+    const label =
+      running.length === 0
+        ? `${queued} queued for transcription`
+        : running.length === 1 && queued === 0
+          ? running[0].detail
+          : `Transcribing ${running.length} video${running.length === 1 ? '' : 's'}${
+              queued > 0 ? ` · ${queued} queued` : ''
+            }`
+    const target = running[0] ?? jobs[0]
+    return (
+      <button
+        type="button"
+        onClick={() => onOpen(target.subfolder)}
+        title="Open the stream being transcribed"
+        className="inline-flex min-w-0 items-center gap-1.5 font-medium text-fg transition-colors hover:text-accent"
+      >
+        <Loader2 size={12} aria-hidden className="animate-spin" />
+        <span className="max-w-[22rem] truncate">{label}</span>
+      </button>
+    )
+  }
+
+  if (!notice) return null
+  return (
+    <span
+      title={notice.detail}
+      className={
+        notice.state === 'error'
+          ? 'inline-flex min-w-0 items-center gap-1.5 font-medium text-red-500 dark:text-red-400'
+          : 'inline-flex min-w-0 items-center gap-1.5 font-medium text-green-600 dark:text-green-400'
+      }
+    >
+      <Captions size={12} aria-hidden />
+      <span className="max-w-[22rem] truncate">
+        {notice.state === 'done' ? '✓ ' : ''}
+        {notice.detail}
+      </span>
+    </span>
   )
 }

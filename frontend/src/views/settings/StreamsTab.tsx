@@ -51,6 +51,7 @@ export function StreamsTab() {
   return (
     <div className="flex max-w-2xl flex-col gap-6">
     <DownloadsSection />
+    <TranscriptionSection />
     <section
       aria-labelledby="stream-matching-heading"
       className="rounded-xl border border-edge bg-surface p-6"
@@ -113,6 +114,64 @@ export function StreamsTab() {
       </form>
     </section>
     </div>
+  )
+}
+
+/** Mirrors maxTranscribeConcurrency in transcribe_video.go. */
+const DEFAULT_TRANSCRIBE_CONCURRENCY = '2'
+
+/** How many downloaded videos may be transcribed at the same time. */
+function TranscriptionSection() {
+  const [concurrency, setConcurrency] = useState(
+    DEFAULT_TRANSCRIBE_CONCURRENCY,
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    loadSetting(SETTING_KEYS.transcribeConcurrency).then((value) => {
+      if (cancelled) return
+      if (value === '1' || value === '2') setConcurrency(value)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const change = (value: string) => {
+    setConcurrency(value)
+    saveSetting(SETTING_KEYS.transcribeConcurrency, value)
+  }
+
+  return (
+    <section
+      aria-labelledby="transcription-heading"
+      className="rounded-xl border border-edge bg-surface p-6"
+    >
+      <h2 id="transcription-heading" className="text-base font-semibold text-fg">
+        Video transcription
+      </h2>
+      <p className="mt-1 text-sm text-fg-muted">
+        Downloaded videos queue for transcription; this controls how many are
+        processed at the same time. Each run keeps a CPU-heavy speech model
+        busy, so lower this if the app feels sluggish while transcribing.
+      </p>
+
+      <label
+        htmlFor="transcribe-concurrency"
+        className="mb-1.5 mt-4 block text-sm font-medium text-fg"
+      >
+        Simultaneous transcriptions
+      </label>
+      <select
+        id="transcribe-concurrency"
+        value={concurrency}
+        onChange={(e) => change(e.target.value)}
+        className="w-full max-w-xs rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg"
+      >
+        <option value="1">1 — one at a time</option>
+        <option value="2">2 — two at once</option>
+      </select>
+    </section>
   )
 }
 

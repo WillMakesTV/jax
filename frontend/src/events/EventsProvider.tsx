@@ -7,7 +7,10 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import {SubscribeTwitchEvents} from '../../wailsjs/go/main/App'
+import {
+  PollYouTubeSubscribers,
+  SubscribeTwitchEvents,
+} from '../../wailsjs/go/main/App'
 import {connectTwitchEventSub} from '../lib/twitchEventSub'
 import {useLiveData} from '../live/LiveDataProvider'
 import {useServices} from '../services/ServicesProvider'
@@ -28,6 +31,10 @@ export interface LiveEventItem {
 /** Keep a bounded history so a busy stream cannot grow without limit. */
 const MAX_EVENTS = 200
 
+/** YouTube subscriber-poll cadence: quicker while live, relaxed otherwise. */
+const YT_SUBS_LIVE_MS = 20_000
+const YT_SUBS_IDLE_MS = 60_000
+
 interface EventsContextValue {
   events: LiveEventItem[]
   /** Number of events not yet seen on the Live Events tab. */
@@ -45,8 +52,9 @@ const EventsContext = createContext<EventsContextValue | undefined>(undefined)
 /**
  * Aggregates channel events while live: Twitch over an EventSub WebSocket
  * (follows, subs, gifts, resubs, cheers, raids), YouTube via the events the
- * chat poll extracts (members, milestones, Super Chats/Stickers). Mounted
- * app-wide so the feed and unread counts survive navigation.
+ * chat poll extracts (members, milestones, Super Chats/Stickers) plus a
+ * subscriber poll that feeds new subscribers into the events by name.
+ * Mounted app-wide so the feed and unread counts survive navigation.
  */
 export function EventsProvider({children}: {children: ReactNode}) {
   const {statuses} = useServices()
@@ -93,6 +101,50 @@ export function EventsProvider({children}: {children: ReactNode}) {
       (message) => setWarnings([message]),
     )
   }, [twitchLive, pushEvents])
+
+  // YouTube has no push channel for subscribers, so poll while connected.
+  // The backend diffs against its session baseline, so a poll only reports
+  // subscribers that are genuinely new; they join the feed like any other
+  // event, named like a Twitch follow (the API only exposes subscribers
+  // whose subscriptions are public).
+  const youtubeConnected = statuses.youtube.connected
+  const youtubeLive = platforms.some(
+    (p) => p.platform === 'youtube' && p.live,
+  )
+  useEffect(() => {
+    if (!youtubeConnected) return
+    let cancelled = false
+    let timer: number | undefined
+    const tick = async () => {
+      try {
+        const fresh = await PollYouTubeSubscribers()
+        if (cancelled) return
+        pushEvents(
+          (fresh ?? []).map((e) => ({
+            id: e.id,
+            platform: e.platform,
+            type: e.type,
+            author: e.author,
+            detail: e.detail,
+            at: Date.parse(e.publishedAt) || Date.now(),
+          })),
+        )
+      } catch {
+        // Transient API/auth trouble; try again next tick.
+      }
+      if (!cancelled) {
+        timer = window.setTimeout(
+          () => void tick(),
+          youtubeLive ? YT_SUBS_LIVE_MS : YT_SUBS_IDLE_MS,
+        )
+      }
+    }
+    void tick()
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [youtubeConnected, youtubeLive, pushEvents])
 
   const unreadCount = useMemo(
     () => events.reduce((n, e) => n + (e.read ? 0 : 1), 0),

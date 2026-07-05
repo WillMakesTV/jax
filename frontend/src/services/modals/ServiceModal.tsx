@@ -8,6 +8,7 @@ import {
 import {Modal} from '../../components/Modal'
 import {SETTING_KEYS, loadSetting, saveSetting} from '../../lib/settings'
 import type {ServiceDef} from '../services'
+import {AnthropicConnectForm} from './AnthropicConnectForm'
 import {DeviceAuthForm} from './DeviceAuthForm'
 import {ObsConnectForm} from './ObsConnectForm'
 
@@ -59,6 +60,8 @@ export function ServiceModal({
       icon={icon}
     >
       {service?.id === 'obs' && <ObsConnectForm onClose={onClose} />}
+
+      {service?.id === 'anthropic' && <AnthropicConnectForm />}
 
       {service?.id === 'twitch' && (
         <DeviceAuthForm

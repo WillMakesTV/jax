@@ -15,6 +15,8 @@ export const SETTING_KEYS = {
   downloadDir: 'download_dir',
   /** Preferred platform to download from: 'auto' | 'youtube' | 'twitch'. */
   downloadSource: 'download_source',
+  /** How many downloaded videos may be transcribed at once: '1' | '2'. */
+  transcribeConcurrency: 'transcribe_concurrency',
   /** OBS input name of the audio input capture designated as primary mic. */
   obsMicSource: 'obs_mic_source',
   /** OBS input name of the Application Audio Capture designated as "Music". */

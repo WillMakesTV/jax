@@ -17,6 +17,8 @@ const (
 	keyServiceConfig  = "service_config"
 	keyPlannedStreams = "planned_streams"
 	keyContentSeries  = "content_series"
+	keySeriesTypes    = "series_types"
+	keyRoutines       = "routines"
 )
 
 // Store wraps the SQLite database that persists all app data. The database
@@ -124,6 +126,20 @@ CREATE TABLE IF NOT EXISTS transcript_lines (
 );
 CREATE INDEX IF NOT EXISTS idx_transcript_lines_session
 	ON transcript_lines(session_id, at);
+CREATE TABLE IF NOT EXISTS transcribe_jobs (
+	subfolder TEXT PRIMARY KEY,
+	queued_at TEXT NOT NULL DEFAULT '',
+	pos_secs  REAL NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS transcribe_staged_lines (
+	id        INTEGER PRIMARY KEY AUTOINCREMENT,
+	subfolder TEXT NOT NULL,
+	at        INTEGER NOT NULL,
+	end_at    INTEGER NOT NULL,
+	text      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_transcribe_staged_subfolder
+	ON transcribe_staged_lines(subfolder, at);
 CREATE TABLE IF NOT EXISTS chat_messages (
 	platform     TEXT NOT NULL,
 	id           TEXT NOT NULL,
@@ -539,6 +555,176 @@ func (s *Store) getTranscriptLines(sessionIDs []int64) ([]TranscriptLineRec, err
 		lines = append(lines, l)
 	}
 	return lines, rows.Err()
+}
+
+// replaceTranscript atomically swaps a stream's transcript: the given old
+// sessions (and their lines) are removed and one new session holding the
+// supplied lines takes their place. Used when re-producing a transcript from
+// a downloaded video, replacing whatever was captured live.
+func (s *Store) replaceTranscript(oldSessionIDs []int64, startedAt, title string, lines []TranscriptLineRec) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if len(oldSessionIDs) > 0 {
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(oldSessionIDs)), ",")
+		args := make([]any, len(oldSessionIDs))
+		for i, id := range oldSessionIDs {
+			args[i] = id
+		}
+		if _, err := tx.Exec(
+			`DELETE FROM transcript_lines WHERE session_id IN (`+placeholders+`)`, args...,
+		); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(
+			`DELETE FROM transcript_sessions WHERE id IN (`+placeholders+`)`, args...,
+		); err != nil {
+			return err
+		}
+	}
+
+	res, err := tx.Exec(
+		`INSERT INTO transcript_sessions (started_at, title) VALUES (?, ?)`,
+		startedAt, title,
+	)
+	if err != nil {
+		return err
+	}
+	sessionID, err := res.LastInsertId()
+	if err != nil {
+		return err
+	}
+	for _, l := range lines {
+		if _, err := tx.Exec(
+			`INSERT INTO transcript_lines (session_id, at, end_at, text) VALUES (?, ?, ?, ?)`,
+			sessionID, l.At, l.EndAt, l.Text,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// ---------------------------------------------------------------------------
+// Transcription queue persistence
+//
+// Queued and running video-transcription jobs survive an app restart: the
+// queue order and each job's media checkpoint live in transcribe_jobs, and
+// utterances land in transcribe_staged_lines as they arrive. On relaunch the
+// job resumes from its checkpoint; only on completion does the staged text
+// replace the stream's transcript (see transcribe_video.go).
+// ---------------------------------------------------------------------------
+
+// upsertTranscribeJob records a queued job; an existing row (a resumed job)
+// keeps its checkpoint.
+func (s *Store) upsertTranscribeJob(subfolder, queuedAt string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO transcribe_jobs (subfolder, queued_at, pos_secs) VALUES (?, ?, 0)
+		 ON CONFLICT(subfolder) DO NOTHING`,
+		subfolder, queuedAt,
+	)
+	return err
+}
+
+// setTranscribeJobPos advances a job's media checkpoint (seconds into the video).
+func (s *Store) setTranscribeJobPos(subfolder string, pos float64) error {
+	_, err := s.db.Exec(
+		`UPDATE transcribe_jobs SET pos_secs = ? WHERE subfolder = ?`,
+		pos, subfolder,
+	)
+	return err
+}
+
+// getTranscribeJobPos returns a job's checkpoint, 0 when it never ran.
+func (s *Store) getTranscribeJobPos(subfolder string) (float64, error) {
+	var pos float64
+	err := s.db.QueryRow(
+		`SELECT pos_secs FROM transcribe_jobs WHERE subfolder = ?`, subfolder,
+	).Scan(&pos)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return pos, err
+}
+
+// getTranscribeJobSubfolders returns the persisted queue in enqueue order.
+func (s *Store) getTranscribeJobSubfolders() ([]string, error) {
+	rows, err := s.db.Query(
+		`SELECT subfolder FROM transcribe_jobs ORDER BY queued_at, subfolder`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	subs := []string{}
+	for rows.Next() {
+		var sub string
+		if err := rows.Scan(&sub); err != nil {
+			return nil, err
+		}
+		subs = append(subs, sub)
+	}
+	return subs, rows.Err()
+}
+
+// deleteTranscribeJob removes a job and its staged lines (job finished,
+// failed, or was cancelled).
+func (s *Store) deleteTranscribeJob(subfolder string) error {
+	if _, err := s.db.Exec(
+		`DELETE FROM transcribe_staged_lines WHERE subfolder = ?`, subfolder,
+	); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(
+		`DELETE FROM transcribe_jobs WHERE subfolder = ?`, subfolder,
+	)
+	return err
+}
+
+// addTranscribeStagedLine stages one transcribed utterance for a job.
+func (s *Store) addTranscribeStagedLine(subfolder string, l TranscriptLineRec) error {
+	_, err := s.db.Exec(
+		`INSERT INTO transcribe_staged_lines (subfolder, at, end_at, text) VALUES (?, ?, ?, ?)`,
+		subfolder, l.At, l.EndAt, l.Text,
+	)
+	return err
+}
+
+// getTranscribeStagedLines returns a job's staged utterances in spoken order.
+func (s *Store) getTranscribeStagedLines(subfolder string) ([]TranscriptLineRec, error) {
+	rows, err := s.db.Query(
+		`SELECT at, end_at, text FROM transcribe_staged_lines
+		 WHERE subfolder = ? ORDER BY at`,
+		subfolder,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	lines := []TranscriptLineRec{}
+	for rows.Next() {
+		var l TranscriptLineRec
+		if err := rows.Scan(&l.At, &l.EndAt, &l.Text); err != nil {
+			return nil, err
+		}
+		lines = append(lines, l)
+	}
+	return lines, rows.Err()
+}
+
+// deleteTranscribeStagedFrom drops staged lines at or after a timestamp — the
+// stretch a resumed job is about to replay.
+func (s *Store) deleteTranscribeStagedFrom(subfolder string, at int64) error {
+	_, err := s.db.Exec(
+		`DELETE FROM transcribe_staged_lines WHERE subfolder = ? AND at >= ?`,
+		subfolder, at,
+	)
+	return err
 }
 
 // ---------------------------------------------------------------------------

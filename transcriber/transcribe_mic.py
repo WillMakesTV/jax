@@ -56,7 +56,10 @@ FRAME_BYTES = FRAME_SAMPLES * 2
 FRAME_SECONDS = FRAME_SAMPLES / SAMPLE_RATE
 SILENCE_END_MS = 700
 PREROLL_FRAMES = 5  # ~160ms of audio kept before speech onset
-MAX_UTTERANCE_SECONDS = 20.0
+# Continuous speech is flushed at this length so live captions keep flowing
+# during monologues; the cut can land mid-sentence, but the next chunk picks
+# right up and low latency matters more on a live tab.
+MAX_UTTERANCE_SECONDS = 8.0
 MIN_UTTERANCE_SECONDS = 0.3  # skip blips too short to contain a word
 
 

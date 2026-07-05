@@ -14,6 +14,18 @@ export function CancelDownload() {
   return window['go']['main']['App']['CancelDownload']();
 }
 
+export function CancelTranscribeDownload(arg1) {
+  return window['go']['main']['App']['CancelTranscribeDownload'](arg1);
+}
+
+export function ConnectAnthropicAPIKey(arg1) {
+  return window['go']['main']['App']['ConnectAnthropicAPIKey'](arg1);
+}
+
+export function ConnectAnthropicAccount() {
+  return window['go']['main']['App']['ConnectAnthropicAccount']();
+}
+
 export function DefaultDownloadDir() {
   return window['go']['main']['App']['DefaultDownloadDir']();
 }
@@ -24,6 +36,14 @@ export function DeleteContentSeries(arg1) {
 
 export function DeletePlannedStream(arg1) {
   return window['go']['main']['App']['DeletePlannedStream'](arg1);
+}
+
+export function DeleteRoutine(arg1) {
+  return window['go']['main']['App']['DeleteRoutine'](arg1);
+}
+
+export function DeleteSeriesType(arg1) {
+  return window['go']['main']['App']['DeleteSeriesType'](arg1);
 }
 
 export function DisconnectService(arg1) {
@@ -58,6 +78,10 @@ export function GetDownloads() {
   return window['go']['main']['App']['GetDownloads']();
 }
 
+export function GetLiveStreamMeta(arg1) {
+  return window['go']['main']['App']['GetLiveStreamMeta'](arg1);
+}
+
 export function GetLiveStreams() {
   return window['go']['main']['App']['GetLiveStreams']();
 }
@@ -74,6 +98,14 @@ export function GetProfile() {
   return window['go']['main']['App']['GetProfile']();
 }
 
+export function GetRoutines() {
+  return window['go']['main']['App']['GetRoutines']();
+}
+
+export function GetSeriesTypes() {
+  return window['go']['main']['App']['GetSeriesTypes']();
+}
+
 export function GetServiceConfig() {
   return window['go']['main']['App']['GetServiceConfig']();
 }
@@ -86,8 +118,16 @@ export function GetSetting(arg1) {
   return window['go']['main']['App']['GetSetting'](arg1);
 }
 
+export function GetStreamdeckMultiActions() {
+  return window['go']['main']['App']['GetStreamdeckMultiActions']();
+}
+
 export function GetStreams() {
   return window['go']['main']['App']['GetStreams']();
+}
+
+export function GetTranscribeJobs() {
+  return window['go']['main']['App']['GetTranscribeJobs']();
 }
 
 export function GetTranscriptForStream(arg1) {
@@ -102,6 +142,10 @@ export function GetVideos(arg1) {
   return window['go']['main']['App']['GetVideos'](arg1);
 }
 
+export function GetYouTubeCategories() {
+  return window['go']['main']['App']['GetYouTubeCategories']();
+}
+
 export function GetYouTubeLiveChat(arg1) {
   return window['go']['main']['App']['GetYouTubeLiveChat'](arg1);
 }
@@ -114,12 +158,20 @@ export function MarkAllChatRead() {
   return window['go']['main']['App']['MarkAllChatRead']();
 }
 
+export function NextEpisodeNumber(arg1) {
+  return window['go']['main']['App']['NextEpisodeNumber'](arg1);
+}
+
 export function PollTwitchDeviceAuth(arg1, arg2, arg3) {
   return window['go']['main']['App']['PollTwitchDeviceAuth'](arg1, arg2, arg3);
 }
 
 export function PollYouTubeDeviceAuth(arg1, arg2, arg3) {
   return window['go']['main']['App']['PollYouTubeDeviceAuth'](arg1, arg2, arg3);
+}
+
+export function PollYouTubeSubscribers() {
+  return window['go']['main']['App']['PollYouTubeSubscribers']();
 }
 
 export function RefreshChannelInfo() {
@@ -146,12 +198,24 @@ export function SaveProfile(arg1) {
   return window['go']['main']['App']['SaveProfile'](arg1);
 }
 
+export function SaveRoutine(arg1) {
+  return window['go']['main']['App']['SaveRoutine'](arg1);
+}
+
+export function SaveSeriesType(arg1) {
+  return window['go']['main']['App']['SaveSeriesType'](arg1);
+}
+
 export function SaveServiceConfig(arg1) {
   return window['go']['main']['App']['SaveServiceConfig'](arg1);
 }
 
 export function SaveStreams(arg1) {
   return window['go']['main']['App']['SaveStreams'](arg1);
+}
+
+export function SearchTwitchCategories(arg1) {
+  return window['go']['main']['App']['SearchTwitchCategories'](arg1);
 }
 
 export function SelectDirectory(arg1) {
@@ -162,12 +226,24 @@ export function SendBroadcastChat(arg1) {
   return window['go']['main']['App']['SendBroadcastChat'](arg1);
 }
 
+export function SetDefaultContentSeries(arg1) {
+  return window['go']['main']['App']['SetDefaultContentSeries'](arg1);
+}
+
+export function SetDefaultSeriesType(arg1) {
+  return window['go']['main']['App']['SetDefaultSeriesType'](arg1);
+}
+
 export function SetPastStreamSeries(arg1, arg2) {
   return window['go']['main']['App']['SetPastStreamSeries'](arg1, arg2);
 }
 
 export function SetSetting(arg1, arg2) {
   return window['go']['main']['App']['SetSetting'](arg1, arg2);
+}
+
+export function SetStreamEpisode(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetStreamEpisode'](arg1, arg2, arg3);
 }
 
 export function StartDownload(arg1, arg2, arg3, arg4) {
@@ -194,6 +270,14 @@ export function SubscribeTwitchEvents(arg1) {
   return window['go']['main']['App']['SubscribeTwitchEvents'](arg1);
 }
 
+export function TranscribeDownload(arg1) {
+  return window['go']['main']['App']['TranscribeDownload'](arg1);
+}
+
 export function UngroupPastStreams(arg1) {
   return window['go']['main']['App']['UngroupPastStreams'](arg1);
+}
+
+export function UsedEpisodeNumbers(arg1) {
+  return window['go']['main']['App']['UsedEpisodeNumbers'](arg1);
 }

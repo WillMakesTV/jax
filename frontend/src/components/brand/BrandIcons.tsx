@@ -39,6 +39,15 @@ export function YouTubeIcon({size = 24, className, title}: BrandIconProps) {
   )
 }
 
+export function AnthropicIcon({size = 24, className, title}: BrandIconProps) {
+  return (
+    <svg {...svgProps(size, className, title)}>
+      {title && <title>{title}</title>}
+      <path d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5527h3.7442L10.5363 3.541Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z" />
+    </svg>
+  )
+}
+
 export function ObsIcon({size = 24, className, title}: BrandIconProps) {
   return (
     <svg {...svgProps(size, className, title)}>

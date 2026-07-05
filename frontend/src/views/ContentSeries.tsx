@@ -1,25 +1,37 @@
-import {Layers, Pencil, Plus, Trash2} from 'lucide-react'
+import {Layers, Pencil, Plus, Shapes, Star, Trash2} from 'lucide-react'
 import {useEffect, useState} from 'react'
 import {
   DeleteContentSeries,
   GetContentSeries,
-  SaveContentSeries,
+  GetSeriesTypes,
+  SetDefaultContentSeries,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
-import {Modal} from '../components/Modal'
+import {SERVICES} from '../services/services'
+import {SeriesTypesSection} from './SeriesTypes'
 
 /**
  * The Planning section's "Content Series" tab: reusable context/metadata for
- * recurring shows and segments, referenced when planning a stream.
+ * recurring shows and segments, referenced when planning a stream. Adding and
+ * editing happen on their own page (see EditSeries). A "Series Types"
+ * sub-section manages the classifications a series can carry.
  */
-export function ContentSeriesPanel() {
+export function ContentSeriesPanel({
+  onEditSeries,
+}: {
+  /** Open the series editor page (null = create a new series). */
+  onEditSeries: (series: main.ContentSeries | null) => void
+}) {
   const [series, setSeries] = useState<main.ContentSeries[]>([])
-  const [editing, setEditing] = useState<main.ContentSeries | null>(null)
-  const [creating, setCreating] = useState(false)
+  const [types, setTypes] = useState<main.SeriesType[]>([])
+  const [showTypes, setShowTypes] = useState(false)
 
   const load = () => {
     GetContentSeries()
       .then((s) => setSeries(s ?? []))
+      .catch(() => {})
+    GetSeriesTypes()
+      .then((t) => setTypes(t ?? []))
       .catch(() => {})
   }
   useEffect(() => {
@@ -35,13 +47,33 @@ export function ContentSeriesPanel() {
     }
   }
 
-  const closeModal = () => {
-    setCreating(false)
-    setEditing(null)
+  // Clicking the current default's star clears it; anything else takes over
+  // as the sole default (the backend unsets the previous holder).
+  const setDefault = async (s: main.ContentSeries) => {
+    const id = s.isDefault ? '' : s.id
+    try {
+      await SetDefaultContentSeries(id)
+      setSeries((prev) =>
+        prev.map((p) =>
+          main.ContentSeries.createFrom({...p, isDefault: p.id === id}),
+        ),
+      )
+    } catch {
+      // Non-fatal; the list reconciles on the next load.
+    }
   }
-  const onSaved = () => {
-    closeModal()
-    load()
+
+  // The Series Types sub-section; deleting a type can clear series
+  // references, so the list reloads on the way back.
+  if (showTypes) {
+    return (
+      <SeriesTypesSection
+        onBack={() => {
+          setShowTypes(false)
+          load()
+        }}
+      />
+    )
   }
 
   return (
@@ -51,22 +83,32 @@ export function ContentSeriesPanel() {
           Reusable context for your recurring shows and segments — reference
           them when planning a stream.
         </p>
-        {series.length > 0 && (
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setCreating(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90"
+            onClick={() => setShowTypes(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-3 py-1.5 text-sm font-semibold text-fg transition-colors hover:bg-surface-hover"
           >
-            <Plus size={14} aria-hidden />
-            Add series
+            <Shapes size={14} aria-hidden />
+            Series Types
           </button>
-        )}
+          {series.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onEditSeries(null)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90"
+            >
+              <Plus size={14} aria-hidden />
+              Add series
+            </button>
+          )}
+        </div>
       </div>
 
       {series.length === 0 ? (
         <button
           type="button"
-          onClick={() => setCreating(true)}
+          onClick={() => onEditSeries(null)}
           className="flex w-full items-start gap-4 rounded-xl border border-dashed border-edge bg-surface p-5 text-left transition-colors hover:bg-surface-hover sm:w-1/2"
         >
           <span
@@ -80,8 +122,8 @@ export function ContentSeriesPanel() {
               Add a content series
             </span>
             <p className="mt-1 text-sm text-fg-muted">
-              Capture the title, category, tags, and notes for a recurring show
-              so planning is a click.
+              Capture the title, categories, tags, and notes for a recurring
+              show so planning is a click.
             </p>
           </div>
         </button>
@@ -91,36 +133,84 @@ export function ContentSeriesPanel() {
             <SeriesCard
               key={s.id}
               series={s}
-              onEdit={() => setEditing(s)}
+              typeTitle={types.find((t) => t.id === s.typeId)?.title ?? ''}
+              onEdit={() => onEditSeries(s)}
               onDelete={() => remove(s.id)}
+              onToggleDefault={() => void setDefault(s)}
             />
           ))}
         </ul>
-      )}
-
-      {(creating || editing) && (
-        <SeriesModal series={editing} onClose={closeModal} onSaved={onSaved} />
       )}
     </div>
   )
 }
 
+/** Chip showing a platform's category, with the service's brand icon. */
+function CategoryChip({
+  serviceId,
+  category,
+}: {
+  serviceId: 'twitch' | 'youtube'
+  category: main.ServiceCategory | undefined
+}) {
+  const svc = SERVICES.find((s) => s.id === serviceId)
+  if (!svc || !category?.id) return null
+  return (
+    <span className="inline-flex w-fit items-center gap-1 rounded-full border border-edge bg-bg px-2 py-0.5 text-xs font-medium text-fg-muted">
+      <svc.Icon size={11} title={svc.name} />
+      {category.name}
+    </span>
+  )
+}
+
 function SeriesCard({
   series,
+  typeTitle,
   onEdit,
   onDelete,
+  onToggleDefault,
 }: {
   series: main.ContentSeries
+  /** Title of the series' type, '' when untyped. */
+  typeTitle: string
   onEdit: () => void
   onDelete: () => void
+  onToggleDefault: () => void
 }) {
+  const hasCategories =
+    Boolean(series.twitchCategory?.id) || Boolean(series.youtubeCategory?.id)
   return (
-    <li className="flex flex-col rounded-xl border border-edge bg-surface p-4">
+    <li
+      className={`flex flex-col rounded-xl border bg-surface p-4 ${
+        series.isDefault ? 'border-accent/50' : 'border-edge'
+      }`}
+    >
       <div className="flex items-start justify-between gap-3">
         <p className="min-w-0 flex-1 text-sm font-semibold text-fg">
           {series.title}
         </p>
         <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={onToggleDefault}
+            aria-pressed={series.isDefault}
+            title={
+              series.isDefault
+                ? 'Default series — click to unset'
+                : 'Make this the default series'
+            }
+            className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-surface-hover ${
+              series.isDefault
+                ? 'text-accent'
+                : 'text-fg-muted hover:text-fg'
+            }`}
+          >
+            <Star
+              size={14}
+              aria-hidden
+              fill={series.isDefault ? 'currentColor' : 'none'}
+            />
+          </button>
           <button
             type="button"
             onClick={onEdit}
@@ -140,10 +230,23 @@ function SeriesCard({
         </div>
       </div>
 
-      {series.category && (
-        <span className="mt-1 w-fit rounded-full border border-edge bg-bg px-2 py-0.5 text-xs font-medium text-fg-muted">
-          {series.category}
-        </span>
+      {(series.isDefault || hasCategories || typeTitle) && (
+      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+        {series.isDefault && (
+          <span className="inline-flex w-fit items-center gap-1 rounded-full bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent">
+            <Star size={11} aria-hidden fill="currentColor" />
+            Default
+          </span>
+        )}
+        {typeTitle && (
+          <span className="inline-flex w-fit items-center gap-1 rounded-full border border-edge bg-bg px-2 py-0.5 text-xs font-medium text-fg-muted">
+            <Shapes size={11} aria-hidden />
+            {typeTitle}
+          </span>
+        )}
+        <CategoryChip serviceId="twitch" category={series.twitchCategory} />
+        <CategoryChip serviceId="youtube" category={series.youtubeCategory} />
+      </div>
       )}
 
       {series.description && (
@@ -165,169 +268,5 @@ function SeriesCard({
         </div>
       )}
     </li>
-  )
-}
-
-function SeriesModal({
-  series,
-  onClose,
-  onSaved,
-}: {
-  series: main.ContentSeries | null
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const [title, setTitle] = useState(series?.title ?? '')
-  const [description, setDescription] = useState(series?.description ?? '')
-  const [category, setCategory] = useState(series?.category ?? '')
-  const [tags, setTags] = useState((series?.tags ?? []).join(', '))
-  const [notes, setNotes] = useState(series?.notes ?? '')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-
-  const save = async () => {
-    if (!title.trim()) {
-      setError('Give the series a title.')
-      return
-    }
-    setSaving(true)
-    setError('')
-    try {
-      await SaveContentSeries(
-        main.ContentSeries.createFrom({
-          id: series?.id ?? '',
-          title: title.trim(),
-          description: description.trim(),
-          category: category.trim(),
-          tags: tags
-            .split(',')
-            .map((t) => t.trim())
-            .filter(Boolean),
-          notes: notes.trim(),
-          createdAt: series?.createdAt ?? '',
-        }),
-      )
-      onSaved()
-    } catch (err) {
-      setError(
-        err instanceof Error && err.message
-          ? err.message
-          : 'Could not save the series.',
-      )
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const field =
-    'w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent'
-  const labelCls = 'mb-1.5 block text-sm font-medium text-fg'
-
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title={series ? 'Edit series' : 'New content series'}
-      icon={<Layers size={18} aria-hidden className="text-fg-muted" />}
-      maxWidthClass="max-w-xl"
-    >
-      <form
-        onSubmit={(e) => {
-          e.preventDefault()
-          void save()
-        }}
-        className="flex flex-col gap-4"
-      >
-        <div>
-          <label htmlFor="series-title" className={labelCls}>
-            Title
-          </label>
-          <input
-            id="series-title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. Building AI Bots"
-            autoFocus
-            className={field}
-          />
-        </div>
-
-        <div>
-          <label htmlFor="series-category" className={labelCls}>
-            Category <span className="font-normal text-fg-muted">(optional)</span>
-          </label>
-          <input
-            id="series-category"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            placeholder="e.g. Software & Game Development"
-            className={field}
-          />
-        </div>
-
-        <div>
-          <label htmlFor="series-description" className={labelCls}>
-            Description{' '}
-            <span className="font-normal text-fg-muted">(optional)</span>
-          </label>
-          <textarea
-            id="series-description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={2}
-            placeholder="What is this series about?"
-            className={`${field} resize-y`}
-          />
-        </div>
-
-        <div>
-          <label htmlFor="series-tags" className={labelCls}>
-            Tags <span className="font-normal text-fg-muted">(comma-separated)</span>
-          </label>
-          <input
-            id="series-tags"
-            value={tags}
-            onChange={(e) => setTags(e.target.value)}
-            placeholder="ai, coding, twitch, youtube"
-            className={field}
-          />
-        </div>
-
-        <div>
-          <label htmlFor="series-notes" className={labelCls}>
-            Notes <span className="font-normal text-fg-muted">(context)</span>
-          </label>
-          <textarea
-            id="series-notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={4}
-            placeholder="Recurring talking points, links, format, sponsors…"
-            className={`${field} resize-y`}
-          />
-        </div>
-
-        {error && (
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-        )}
-
-        <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-lg bg-accent px-5 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : 'Save series'}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-edge bg-surface px-5 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
-          >
-            Cancel
-          </button>
-        </div>
-      </form>
-    </Modal>
   )
 }

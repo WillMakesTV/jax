@@ -34,9 +34,10 @@ const EVENT_ICONS: Record<string, LucideIcon> = {
 }
 
 /**
- * The Live Events feed: follows, subs, gifts, cheers, raids, members, and
- * Super Chats across every live channel, newest last. Events count as read
- * once displayed here while the window has focus (same semantics as chat).
+ * The Live Events feed: follows, subs, gifts, cheers, raids, members, Super
+ * Chats, and new YouTube subscribers across every live channel, newest last.
+ * Events count as read once displayed here while the window has focus (same
+ * semantics as chat).
  */
 export function EventsPanel() {
   const {events, markAllRead, warnings} = useEvents()

@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   RadioTower,
   CalendarClock,
+  FolderKanban,
   MonitorPlay,
   Clapperboard,
   Settings,
@@ -18,15 +19,17 @@ export type ViewId =
   | 'dashboard'
   | 'live'
   | 'planning'
+  | 'projects'
   | 'obs'
   | 'stream-details'
-  | 'stream-transcript'
   | 'live-details'
   | 'channel-details'
   | 'videos'
   | 'video-details'
   | 'download-video'
   | 'plan-stream'
+  | 'edit-series'
+  | 'edit-routine'
   | 'settings'
   | 'profile'
 
@@ -47,6 +50,7 @@ export const PRIMARY_NAV: NavItemConfig[] = [
   {id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard},
   {id: 'live', label: 'Broadcast', icon: RadioTower},
   {id: 'planning', label: 'Planning', icon: CalendarClock},
+  {id: 'projects', label: 'Projects', icon: FolderKanban},
   {id: 'obs', label: 'OBS Studio', icon: MonitorPlay},
   {id: 'videos', label: 'Videos', icon: Clapperboard},
 ]

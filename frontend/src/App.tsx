@@ -1,4 +1,5 @@
 import {useCallback, useEffect, useMemo, useState} from 'react'
+import {GetDownloads, GetPastStreams} from '../wailsjs/go/main/App'
 import {main} from '../wailsjs/go/models'
 import {WindowSetTitle} from '../wailsjs/runtime/runtime'
 import {Sidebar} from './components/Sidebar'
@@ -8,17 +9,19 @@ import {SETTING_KEYS, loadSetting, saveSetting} from './lib/settings'
 import type {ViewId} from './navigation'
 import {useProfile} from './profile/ProfileProvider'
 import {platformName} from './services/services'
-import {ObsStudio} from './obs/ObsStudio'
+import {ObsStudio, type ObsTab} from './obs/ObsStudio'
 import {SmartSourcesUpdater} from './obs/SmartSourcesUpdater'
 import {ChannelDetails} from './views/ChannelDetails'
 import {Dashboard} from './views/Dashboard'
 import {DownloadVideo} from './views/DownloadVideo'
+import {EditRoutine} from './views/EditRoutine'
+import {EditSeries} from './views/EditSeries'
 import {LiveStream, type LiveStreamTab} from './views/LiveStream'
 import {LiveStreamDetails} from './views/LiveStreamDetails'
-import {Planning} from './views/Planning'
+import {Planning, type PlanningTab} from './views/Planning'
 import {PlanStream} from './views/PlanStream'
+import {Projects} from './views/Projects'
 import {StreamDetails} from './views/StreamDetails'
-import {StreamTranscript} from './views/StreamTranscript'
 import {Videos} from './views/Videos'
 import {VideoDetails} from './views/VideoDetails'
 import {Settings} from './views/Settings'
@@ -41,28 +44,42 @@ const readCollapsed = (): boolean => {
 interface NavState {
   view: ViewId
   liveTab: LiveStreamTab
+  planningTab: PlanningTab
+  obsTab: ObsTab
   stream: main.PastStream | null
   video: main.Video | null
   channel: string
   download: main.DownloadedVideo | null
+  /** The content series being edited; null = creating a new one. */
+  series: main.ContentSeries | null
+  /** The routine being edited; null = creating a new one. */
+  routine: main.Routine | null
 }
 
 const INITIAL_NAV: NavState = {
   view: 'dashboard',
   liveTab: 'dashboard',
+  planningTab: 'dashboard',
+  obsTab: 'dashboard',
   stream: null,
   video: null,
   channel: '',
   download: null,
+  series: null,
+  routine: null,
 }
 
 const sameNav = (a: NavState, b: NavState) =>
   a.view === b.view &&
   a.liveTab === b.liveTab &&
+  a.planningTab === b.planningTab &&
+  a.obsTab === b.obsTab &&
   a.stream === b.stream &&
   a.video === b.video &&
   a.channel === b.channel &&
-  a.download === b.download
+  a.download === b.download &&
+  a.series === b.series &&
+  a.routine === b.routine
 
 function App() {
   const [collapsed, setCollapsed] = useState<boolean>(readCollapsed)
@@ -106,6 +123,14 @@ function App() {
     (t: LiveStreamTab) => navigate({view: 'live', liveTab: t}),
     [navigate],
   )
+  const setPlanningTab = useCallback(
+    (t: PlanningTab) => navigate({view: 'planning', planningTab: t}),
+    [navigate],
+  )
+  const setObsTab = useCallback(
+    (t: ObsTab) => navigate({view: 'obs', obsTab: t}),
+    [navigate],
+  )
   const openStreamDetails = useCallback(
     (stream: main.PastStream) => navigate({view: 'stream-details', stream}),
     [navigate],
@@ -130,6 +155,50 @@ function App() {
   )
   const openPlanStream = useCallback(
     () => navigate({view: 'plan-stream'}),
+    [navigate],
+  )
+  const openEditSeries = useCallback(
+    (series: main.ContentSeries | null) =>
+      navigate({view: 'edit-series', series}),
+    [navigate],
+  )
+  const backToContentSeries = useCallback(
+    () => navigate({view: 'planning', planningTab: 'series', series: null}),
+    [navigate],
+  )
+  const openEditRoutine = useCallback(
+    (routine: main.Routine | null) =>
+      navigate({view: 'edit-routine', routine}),
+    [navigate],
+  )
+  const backToRoutines = useCallback(
+    () => navigate({view: 'obs', obsTab: 'routines', routine: null}),
+    [navigate],
+  )
+  // Status-bar transcription chip: jump to the stream whose downloaded video
+  // is being transcribed — its details page when the past stream is found,
+  // otherwise the download's own video page.
+  const openTranscribingStream = useCallback(
+    async (subfolder: string) => {
+      try {
+        const downloads = await GetDownloads()
+        const download = (downloads ?? []).find(
+          (d) => d.subfolder === subfolder,
+        )
+        if (!download) return
+        const streams = await GetPastStreams(false)
+        const stream = (streams ?? []).find((s) =>
+          (s.broadcasts ?? []).some((b) => (download.urls ?? []).includes(b.url)),
+        )
+        if (stream) {
+          navigate({view: 'stream-details', stream})
+        } else {
+          navigate({view: 'download-video', download})
+        }
+      } catch {
+        // Lookup failed (e.g. platforms unreachable); stay where we are.
+      }
+    },
     [navigate],
   )
 
@@ -169,6 +238,8 @@ function App() {
         return 'Broadcast'
       case 'planning':
         return 'Planning'
+      case 'projects':
+        return 'Projects'
       case 'obs':
         return 'OBS Studio'
       case 'videos':
@@ -179,8 +250,6 @@ function App() {
         return 'Profile'
       case 'stream-details':
         return detailStream?.title || 'Stream details'
-      case 'stream-transcript':
-        return 'Transcript'
       case 'live-details':
         return 'Live stream'
       case 'channel-details':
@@ -191,10 +260,14 @@ function App() {
         return detailDownload?.title || 'Video'
       case 'plan-stream':
         return 'Plan a stream'
+      case 'edit-series':
+        return cur.series ? 'Edit series' : 'New content series'
+      case 'edit-routine':
+        return cur.routine ? 'Edit routine' : 'New routine'
       default:
         return 'Jax'
     }
-  }, [view, detailStream, detailVideo, detailChannel, detailDownload])
+  }, [view, detailStream, detailVideo, detailChannel, detailDownload, cur.series, cur.routine])
 
   // Reconcile with the backend store on mount (and seed it on first run).
   useEffect(() => {
@@ -228,16 +301,18 @@ function App() {
           // Keep the parent item highlighted while a details view is open.
           activeView={
             view === 'stream-details' ||
-            view === 'stream-transcript' ||
             view === 'live-details' ||
             view === 'download-video' ||
-            view === 'plan-stream'
+            view === 'plan-stream' ||
+            view === 'edit-series'
               ? 'planning'
-              : view === 'video-details'
-                ? 'videos'
-                : view === 'channel-details'
-                  ? 'dashboard'
-                  : view
+              : view === 'edit-routine'
+                ? 'obs'
+                : view === 'video-details'
+                  ? 'videos'
+                  : view === 'channel-details'
+                    ? 'dashboard'
+                    : view
           }
           onNavigate={setView}
           collapsed={collapsed}
@@ -272,9 +347,12 @@ function App() {
             )}
             {view === 'planning' && (
               <Planning
+                tab={cur.planningTab}
+                onTabChange={setPlanningTab}
                 onOpenStream={openStreamDetails}
                 onOpenLive={() => setView('live-details')}
                 onPlanStream={openPlanStream}
+                onEditSeries={openEditSeries}
               />
             )}
             {view === 'plan-stream' && (
@@ -283,12 +361,32 @@ function App() {
                 onSaved={backToPastStreams}
               />
             )}
-            {view === 'obs' && <ObsStudio />}
+            {view === 'edit-series' && (
+              <EditSeries
+                series={cur.series}
+                onBack={() => back()}
+                onSaved={backToContentSeries}
+              />
+            )}
+            {view === 'projects' && <Projects />}
+            {view === 'obs' && (
+              <ObsStudio
+                tab={cur.obsTab}
+                onTabChange={setObsTab}
+                onEditRoutine={openEditRoutine}
+              />
+            )}
+            {view === 'edit-routine' && (
+              <EditRoutine
+                routine={cur.routine}
+                onBack={() => back()}
+                onSaved={backToRoutines}
+              />
+            )}
             {view === 'stream-details' && detailStream && (
               <StreamDetails
                 stream={detailStream}
                 onBack={backToPastStreams}
-                onOpenTranscript={() => setView('stream-transcript')}
                 onOpenDownload={openDownloadVideo}
               />
             )}
@@ -296,12 +394,6 @@ function App() {
               <DownloadVideo
                 download={detailDownload}
                 onBack={() => back()}
-              />
-            )}
-            {view === 'stream-transcript' && detailStream && (
-              <StreamTranscript
-                stream={detailStream}
-                onBack={() => setView('stream-details')}
               />
             )}
             {view === 'live-details' && (
@@ -323,6 +415,9 @@ function App() {
       <StatusBar
         onOpenChat={() => setLiveTab('chat')}
         onOpenEvents={() => setLiveTab('events')}
+        onOpenTranscribing={(subfolder) =>
+          void openTranscribingStream(subfolder)
+        }
       />
     </div>
   )

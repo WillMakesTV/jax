@@ -1,11 +1,14 @@
 import clsx from 'clsx'
 import {useEffect, useState} from 'react'
 import {useLiveData} from '../live/LiveDataProvider'
+import {END_ROUTINE, runStreamRoutine, START_ROUTINE} from './routines'
 import {useServices} from '../services/ServicesProvider'
 
 /**
- * Inline stream controls: start/stop the OBS broadcast with a confirm step.
- * Rendered beneath the program preview, so it stays compact and horizontal.
+ * Inline stream controls: start/stop the OBS broadcast with a confirm step,
+ * running the built-in Start/End Stream routine's steps first (see the
+ * Routines tab). Rendered beneath the program preview, so it stays compact
+ * and horizontal.
  */
 export function StreamControls() {
   const {statuses, obsRequest} = useServices()
@@ -28,7 +31,11 @@ export function StreamControls() {
     setBusy(true)
     setError('')
     try {
-      await obsRequest(streaming ? 'StopStream' : 'StartStream')
+      const warnings = await runStreamRoutine(
+        streaming ? END_ROUTINE : START_ROUTINE,
+        obsRequest,
+      )
+      setError(warnings.join(' · '))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'The OBS request failed.')
     } finally {

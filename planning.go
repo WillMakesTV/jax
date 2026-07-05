@@ -23,9 +23,13 @@ type PlannedStream struct {
 	// Channels are platform ids the stream should broadcast to ("twitch",
 	// "youtube").
 	Channels []string `json:"channels"`
-	// SeriesID optionally links the plan to a ContentSeries for shared context.
-	SeriesID  string `json:"seriesId"`
-	CreatedAt string `json:"createdAt"` // RFC3339
+	// SeriesID optionally links the plan to a ContentSeries for shared
+	// context; the series' type (episodic or not) is inferred from it.
+	SeriesID string `json:"seriesId"`
+	// EpisodeNumber slots the plan into an episodic series' sequence; plans
+	// for such a series prefill the next number (see episodes.go). 0 = none.
+	EpisodeNumber int    `json:"episodeNumber"`
+	CreatedAt     string `json:"createdAt"` // RFC3339
 }
 
 // GetPlannedStreams returns the saved stream plans, newest first. Never nil.

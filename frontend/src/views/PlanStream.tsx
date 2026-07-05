@@ -1,7 +1,12 @@
 import {ArrowLeft, Check} from 'lucide-react'
 import clsx from 'clsx'
 import {useEffect, useState} from 'react'
-import {GetContentSeries, SavePlannedStream} from '../../wailsjs/go/main/App'
+import {
+  GetContentSeries,
+  GetSeriesTypes,
+  SavePlannedStream,
+  UsedEpisodeNumbers,
+} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {SERVICES} from '../services/services'
 import {useServices} from '../services/ServicesProvider'
@@ -36,16 +41,63 @@ export function PlanStream({
   })
   const [series, setSeries] = useState<main.ContentSeries[]>([])
   const [seriesId, setSeriesId] = useState('')
+  // Series types are only loaded to infer behaviour (episodic or not) from
+  // the chosen series — the plan itself carries no type; the series does.
+  const [types, setTypes] = useState<main.SeriesType[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
     GetContentSeries()
-      .then((s) => setSeries(s ?? []))
+      .then((s) => {
+        const list = s ?? []
+        setSeries(list)
+        // A fresh plan starts on the default series, when one is set; never
+        // override a choice the user already made.
+        const def = list.find((x) => x.isDefault)
+        if (def) setSeriesId((cur) => (cur === '' ? def.id : cur))
+      })
+      .catch(() => {})
+    GetSeriesTypes()
+      .then((t) => setTypes(t ?? []))
       .catch(() => {})
   }, [])
 
   const activeSeries = series.find((s) => s.id === seriesId)
+
+  // Planning a stream for an episodic series slots it into the sequence:
+  // prefill one past the highest episode used anywhere in the series — past
+  // streams, open plans, and the broadcast currently on the air.
+  const [episode, setEpisode] = useState('')
+  const [usedEpisodes, setUsedEpisodes] = useState<number[]>([])
+  const episodicPlan = Boolean(
+    types.find((t) => t.id === activeSeries?.typeId)?.episodic,
+  )
+  useEffect(() => {
+    if (!episodicPlan || !seriesId) {
+      setEpisode('')
+      setUsedEpisodes([])
+      return
+    }
+    let cancelled = false
+    UsedEpisodeNumbers(seriesId)
+      .then((used) => {
+        if (cancelled) return
+        const list = used ?? []
+        setUsedEpisodes(list)
+        setEpisode(String((list[list.length - 1] ?? 0) + 1))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [episodicPlan, seriesId])
+
+  const episodeNum = Number(episode)
+  const episodeValid =
+    episode.trim() === '' || (Number.isInteger(episodeNum) && episodeNum >= 1)
+  const episodeTaken =
+    episodicPlan && episodeValid && usedEpisodes.includes(episodeNum)
 
   const toggle = (id: string) =>
     setSelected((prev) => {
@@ -60,6 +112,18 @@ export function PlanStream({
       setError('Give your stream a title.')
       return
     }
+    if (episodicPlan && episode.trim() !== '') {
+      if (!episodeValid) {
+        setError('The episode number must be a whole number of 1 or more.')
+        return
+      }
+      if (episodeTaken) {
+        setError(
+          `Episode ${episodeNum} is already used in this series — pick another number.`,
+        )
+        return
+      }
+    }
     setSaving(true)
     setError('')
     try {
@@ -70,6 +134,10 @@ export function PlanStream({
           description: description.trim(),
           channels: [...selected],
           seriesId,
+          episodeNumber:
+            episodicPlan && episode.trim() !== '' && episodeValid
+              ? episodeNum
+              : 0,
           createdAt: '',
         }),
       )
@@ -119,7 +187,7 @@ export function PlanStream({
               id="plan-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Episode 6 | Building the planner"
+              placeholder="e.g. Building the planner"
               autoFocus
               className="w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
             />
@@ -127,32 +195,94 @@ export function PlanStream({
 
           {series.length > 0 && (
             <div>
-              <label
-                htmlFor="plan-series"
-                className="mb-1.5 block text-sm font-medium text-fg"
-              >
-                Content series{' '}
-                <span className="font-normal text-fg-muted">(optional)</span>
-              </label>
-              <select
-                id="plan-series"
-                value={seriesId}
-                onChange={(e) => setSeriesId(e.target.value)}
-                className="w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-              >
-                <option value="">None</option>
-                {series.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.title}
-                  </option>
-                ))}
-              </select>
+              {/* Series and episode share one row; the episode column only
+                  appears for episodic series. */}
+              <div className="flex flex-wrap gap-4">
+                <div className="min-w-0 flex-1">
+                  <label
+                    htmlFor="plan-series"
+                    className="mb-1.5 block text-sm font-medium text-fg"
+                  >
+                    Content series{' '}
+                    <span className="font-normal text-fg-muted">
+                      (optional)
+                    </span>
+                  </label>
+                  <select
+                    id="plan-series"
+                    value={seriesId}
+                    onChange={(e) => setSeriesId(e.target.value)}
+                    className="w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+                  >
+                    <option value="">None</option>
+                    {series.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {episodicPlan && (
+                  <div className="w-28 shrink-0">
+                    <label
+                      htmlFor="plan-episode"
+                      className="mb-1.5 block text-sm font-medium text-fg"
+                    >
+                      Episode
+                    </label>
+                    <input
+                      id="plan-episode"
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      step={1}
+                      value={episode}
+                      onChange={(e) => setEpisode(e.target.value)}
+                      aria-invalid={episodeTaken || !episodeValid}
+                      className={clsx(
+                        'w-full rounded-lg border bg-bg px-3 py-2 text-sm text-fg outline-none',
+                        episodeTaken || !episodeValid
+                          ? 'border-red-500/60 focus:border-red-500'
+                          : 'border-edge focus:border-accent',
+                      )}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {episodicPlan && (
+                <p
+                  className={clsx(
+                    'mt-1.5 text-xs',
+                    episodeTaken || !episodeValid
+                      ? 'text-red-600 dark:text-red-400'
+                      : 'text-fg-muted',
+                  )}
+                >
+                  {!episodeValid
+                    ? 'Enter a whole number of 1 or more.'
+                    : episodeTaken
+                      ? `Episode ${episodeNum} is already used in this series (past stream, plan, or the current live stream).`
+                      : "Prefilled with the next episode in this series' sequence."}
+                </p>
+              )}
 
               {activeSeries && (
                 <div className="mt-2 rounded-lg border border-edge bg-surface p-3 text-sm">
-                  {activeSeries.category && (
+                  {(activeSeries.twitchCategory?.id ||
+                    activeSeries.youtubeCategory?.id) && (
                     <p className="text-xs font-medium text-fg-muted">
-                      {activeSeries.category}
+                      {[
+                        activeSeries.twitchCategory?.id
+                          ? `Twitch: ${activeSeries.twitchCategory.name}`
+                          : '',
+                        activeSeries.youtubeCategory?.id
+                          ? `YouTube: ${activeSeries.youtubeCategory.name}`
+                          : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
                     </p>
                   )}
                   {activeSeries.description && (

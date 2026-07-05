@@ -44,9 +44,18 @@ type App struct {
 	// Video-download sidecar process (guarded by mu; see download.go).
 	downloadCmd *exec.Cmd
 
+	// Downloaded-video transcription queue: queued and running jobs, oldest
+	// first (guarded by mu; see transcribe_video.go).
+	vodJobs []*vodJob
+
 	// mediaBaseURL is the loopback URL of the local media server that streams
 	// downloaded videos (guarded by mu; see media.go). Empty until startup.
 	mediaBaseURL string
+
+	// ytSubsSeen tracks which YouTube subscription ids the subscriber poll has
+	// already reported, so only genuinely new subscribers become feed events.
+	// nil until the first poll baselines it (guarded by mu; see subscribers.go).
+	ytSubsSeen map[string]bool
 }
 
 // NewApp creates a new App application struct
@@ -97,6 +106,8 @@ func (a *App) startup(ctx context.Context) {
 	// Keep the cached app icon in sync with the profile's Gravatar; the
 	// build step embeds it (see icon.go).
 	go a.refreshAppIcon()
+	// Pick the transcription queue back up where the last session left off.
+	go a.restoreTranscribeQueue()
 }
 
 // shutdown is called when the app closes. It ends the sidecar processes and
@@ -104,6 +115,7 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) shutdown(ctx context.Context) {
 	a.killTranscriber()
 	a.CancelDownload()
+	a.killVodJobs()
 	if a.store != nil {
 		_ = a.store.Close()
 	}

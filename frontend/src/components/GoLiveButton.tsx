@@ -2,12 +2,14 @@ import {Radio, Square} from 'lucide-react'
 import clsx from 'clsx'
 import {useEffect, useState} from 'react'
 import {useLiveData} from '../live/LiveDataProvider'
+import {END_ROUTINE, runStreamRoutine, START_ROUTINE} from '../obs/routines'
 import {useServices} from '../services/ServicesProvider'
 
 /**
- * Top-bar Go Live / Stop Stream CTA. Starts or stops the OBS broadcast with a
- * confirm step. Enabled once OBS and at least one channel are connected;
- * hidden entirely when OBS is not connected.
+ * Top-bar Go Live / Stop Stream CTA. Runs the built-in Start/End Stream
+ * routine (OBS Studio → Routines), which performs its steps and then starts
+ * or stops the OBS broadcast, with a confirm step. Enabled once OBS and at
+ * least one channel are connected; hidden entirely when OBS is not connected.
  */
 export function GoLiveButton() {
   const {statuses, obsRequest} = useServices()
@@ -30,7 +32,7 @@ export function GoLiveButton() {
   const toggle = async () => {
     setBusy(true)
     try {
-      await obsRequest(streaming ? 'StopStream' : 'StartStream')
+      await runStreamRoutine(streaming ? END_ROUTINE : START_ROUTINE, obsRequest)
     } catch {
       // The button state reflects the real status on the next poll.
     } finally {

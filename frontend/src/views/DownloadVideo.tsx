@@ -1,29 +1,21 @@
 import {ArrowLeft, Captions, MessageSquare, PlaySquare} from 'lucide-react'
 import clsx from 'clsx'
-import {useEffect, useState} from 'react'
-import {
-  GetChatForStream,
-  GetTranscriptForStream,
-} from '../../wailsjs/go/main/App'
+import {useState} from 'react'
 import {main} from '../../wailsjs/go/models'
 import {BrandTile} from '../components/BrandTile'
-import {formatCompact, formatDate} from '../lib/format'
 import {
-  groupTranscriptLines,
-  type TranscriptLine,
-} from '../transcript/TranscriptProvider'
+  ChatLogPanel,
+  TranscriptPanel,
+} from '../components/StreamMedia'
+import {formatCompact, formatDate} from '../lib/format'
 
 type VideoTab = 'video' | 'chat' | 'transcript'
 
-const timeFmt = new Intl.DateTimeFormat('en', {
-  hour: 'numeric',
-  minute: '2-digit',
-  second: '2-digit',
-})
-
 /**
  * A downloaded broadcast's page: the embedded local video with tabs for the
- * chat and transcript captured during the stream.
+ * chat and transcript captured during the stream. The chat here is only this
+ * broadcast's channel — the unified cross-channel chat lives on the stream's
+ * details page.
  */
 export function DownloadVideo({
   download,
@@ -101,137 +93,19 @@ export function DownloadVideo({
           />
         </div>
       )}
-      {tab === 'chat' && <ChatTab download={download} />}
-      {tab === 'transcript' && <TranscriptTab download={download} />}
-    </div>
-  )
-}
-
-function ChatTab({download}: {download: main.DownloadedVideo}) {
-  const [messages, setMessages] = useState<main.StoredChatMessage[]>([])
-  const [loaded, setLoaded] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-    GetChatForStream(download.startedAt, download.durationSecs)
-      .then((r) => {
-        if (!cancelled) setMessages(r ?? [])
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setLoaded(true)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [download.startedAt, download.durationSecs])
-
-  if (!loaded) return <p className="text-sm text-fg-muted">Loading chat…</p>
-  if (messages.length === 0) {
-    return (
-      <EmptyState
-        icon={MessageSquare}
-        text="No chat was captured during this broadcast's window."
-      />
-    )
-  }
-
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-edge bg-surface p-4">
-      <ul className="space-y-2">
-        {messages.map((m) => (
-          <li key={`${m.platform}-${m.id}`} className="flex items-start gap-2 text-sm">
-            <BrandTile platform={m.platform} size={14} />
-            <span className="min-w-0 flex-1 break-words leading-relaxed">
-              <span
-                className="font-semibold"
-                style={m.color ? {color: m.color} : undefined}
-              >
-                {m.author}
-              </span>
-              <span className="text-fg-muted">: </span>
-              <span className="text-fg">{m.text}</span>
-            </span>
-            <span
-              className="shrink-0 font-mono text-[11px] text-fg-muted"
-              title={new Date(m.at).toLocaleString()}
-            >
-              {timeFmt.format(m.at)}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-function TranscriptTab({download}: {download: main.DownloadedVideo}) {
-  const [lines, setLines] = useState<TranscriptLine[]>([])
-  const [loaded, setLoaded] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-    GetTranscriptForStream(download.startedAt)
-      .then((r) => {
-        if (!cancelled) setLines(groupTranscriptLines(r ?? []))
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setLoaded(true)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [download.startedAt])
-
-  if (!loaded)
-    return <p className="text-sm text-fg-muted">Loading transcript…</p>
-  if (lines.length === 0) {
-    return (
-      <EmptyState
-        icon={Captions}
-        text="No transcript was captured for this broadcast."
-      />
-    )
-  }
-
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-edge bg-surface p-4">
-      <ul className="space-y-3">
-        {lines.map((line) => (
-          <li key={line.id} className="flex items-start gap-3">
-            <span
-              className="shrink-0 pt-0.5 font-mono text-[11px] text-fg-muted"
-              title={new Date(line.at).toLocaleString()}
-            >
-              {timeFmt.format(line.at)}
-            </span>
-            <p className="min-w-0 flex-1 break-words text-sm leading-relaxed text-fg">
-              {line.text}
-            </p>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-function EmptyState({
-  icon: Icon,
-  text,
-}: {
-  icon: typeof Captions
-  text: string
-}) {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-edge bg-surface p-8 text-center">
-      <span
-        aria-hidden
-        className="flex h-12 w-12 items-center justify-center rounded-lg bg-surface-hover text-fg-muted"
-      >
-        <Icon size={24} />
-      </span>
-      <p className="max-w-sm text-sm text-fg-muted">{text}</p>
+      {tab === 'chat' && (
+        <ChatLogPanel
+          startedAt={download.startedAt}
+          durationSecs={download.durationSecs}
+          platform={download.platform}
+        />
+      )}
+      {tab === 'transcript' && (
+        <TranscriptPanel
+          startedAt={download.startedAt}
+          subfolder={download.subfolder}
+        />
+      )}
     </div>
   )
 }

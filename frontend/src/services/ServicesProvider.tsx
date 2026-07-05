@@ -67,6 +67,7 @@ const emptyStatuses = (): Record<ServiceId, ServiceStatus> => ({
   twitch: {...EMPTY_STATUS},
   youtube: {...EMPTY_STATUS},
   obs: {...EMPTY_STATUS},
+  anthropic: {...EMPTY_STATUS},
 })
 
 interface ServicesContextValue {
@@ -148,7 +149,11 @@ export function ServicesProvider({children}: {children: ReactNode}) {
         setStatuses((prev) => {
           const next = {...prev}
           for (const s of result) {
-            if (s.name === 'twitch' || s.name === 'youtube') {
+            if (
+              s.name === 'twitch' ||
+              s.name === 'youtube' ||
+              s.name === 'anthropic'
+            ) {
               next[s.name] = {connected: s.connected, account: s.account}
             }
           }

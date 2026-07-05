@@ -40,21 +40,17 @@ func (a *App) AddTranscriptLine(sessionID, at, endAt int64, text string) error {
 	return a.store.addTranscriptLine(sessionID, at, endAt, text)
 }
 
-// GetTranscriptForStream returns the stored transcript for a stream, matching
-// sessions whose stream start lies within the configured matching margin of
-// startedAt (RFC3339). Never returns nil.
-func (a *App) GetTranscriptForStream(startedAt string) []TranscriptLineRec {
-	if a.store == nil {
-		return []TranscriptLineRec{}
-	}
+// matchingTranscriptSessionIDs returns the ids of sessions whose stream start
+// lies within the configured matching margin of startedAt (RFC3339) — the
+// same margin-based identity past-stream aggregation uses.
+func (a *App) matchingTranscriptSessionIDs(startedAt string) ([]int64, error) {
 	target, err := time.Parse(time.RFC3339, startedAt)
 	if err != nil {
-		return []TranscriptLineRec{}
+		return nil, fmt.Errorf("invalid stream start %q: %w", startedAt, err)
 	}
 	sessions, err := a.store.getTranscriptSessions()
 	if err != nil {
-		log.Printf("jax: transcript sessions: %v", err)
-		return []TranscriptLineRec{}
+		return nil, err
 	}
 
 	margin := a.pastMatchMargin()
@@ -72,6 +68,21 @@ func (a *App) GetTranscriptForStream(startedAt string) []TranscriptLineRec {
 			ids = append(ids, s.id)
 		}
 	}
+	return ids, nil
+}
+
+// GetTranscriptForStream returns the stored transcript for a stream, matching
+// sessions whose stream start lies within the configured matching margin of
+// startedAt (RFC3339). Never returns nil.
+func (a *App) GetTranscriptForStream(startedAt string) []TranscriptLineRec {
+	if a.store == nil {
+		return []TranscriptLineRec{}
+	}
+	ids, err := a.matchingTranscriptSessionIDs(startedAt)
+	if err != nil {
+		log.Printf("jax: transcript sessions: %v", err)
+		return []TranscriptLineRec{}
+	}
 
 	lines, err := a.store.getTranscriptLines(ids)
 	if err != nil {
@@ -79,4 +90,18 @@ func (a *App) GetTranscriptForStream(startedAt string) []TranscriptLineRec {
 		return []TranscriptLineRec{}
 	}
 	return lines
+}
+
+// replaceTranscriptForStream swaps out every transcript session matching the
+// stream (e.g. the one captured live) for a single new session holding the
+// supplied lines.
+func (a *App) replaceTranscriptForStream(startedAt, title string, lines []TranscriptLineRec) error {
+	if a.store == nil {
+		return fmt.Errorf("storage is unavailable")
+	}
+	ids, err := a.matchingTranscriptSessionIDs(startedAt)
+	if err != nil {
+		return err
+	}
+	return a.store.replaceTranscript(ids, startedAt, title, lines)
 }
