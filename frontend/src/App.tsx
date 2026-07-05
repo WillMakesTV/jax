@@ -54,6 +54,8 @@ interface NavState {
   series: main.ContentSeries | null
   /** The routine being edited; null = creating a new one. */
   routine: main.Routine | null
+  /** The stream plan being viewed/edited; null = creating a new one. */
+  plan: main.PlannedStream | null
 }
 
 const INITIAL_NAV: NavState = {
@@ -67,6 +69,7 @@ const INITIAL_NAV: NavState = {
   download: null,
   series: null,
   routine: null,
+  plan: null,
 }
 
 const sameNav = (a: NavState, b: NavState) =>
@@ -79,7 +82,8 @@ const sameNav = (a: NavState, b: NavState) =>
   a.channel === b.channel &&
   a.download === b.download &&
   a.series === b.series &&
-  a.routine === b.routine
+  a.routine === b.routine &&
+  a.plan === b.plan
 
 function App() {
   const [collapsed, setCollapsed] = useState<boolean>(readCollapsed)
@@ -154,7 +158,11 @@ function App() {
     [navigate],
   )
   const openPlanStream = useCallback(
-    () => navigate({view: 'plan-stream'}),
+    () => navigate({view: 'plan-stream', plan: null}),
+    [navigate],
+  )
+  const openPlanDetails = useCallback(
+    (plan: main.PlannedStream) => navigate({view: 'plan-stream', plan}),
     [navigate],
   )
   const openEditSeries = useCallback(
@@ -259,7 +267,7 @@ function App() {
       case 'download-video':
         return detailDownload?.title || 'Video'
       case 'plan-stream':
-        return 'Plan a stream'
+        return cur.plan ? cur.plan.title || 'Edit plan' : 'Plan a stream'
       case 'edit-series':
         return cur.series ? 'Edit series' : 'New content series'
       case 'edit-routine':
@@ -267,7 +275,7 @@ function App() {
       default:
         return 'Jax'
     }
-  }, [view, detailStream, detailVideo, detailChannel, detailDownload, cur.series, cur.routine])
+  }, [view, detailStream, detailVideo, detailChannel, detailDownload, cur.series, cur.routine, cur.plan])
 
   // Reconcile with the backend store on mount (and seed it on first run).
   useEffect(() => {
@@ -352,11 +360,13 @@ function App() {
                 onOpenStream={openStreamDetails}
                 onOpenLive={() => setView('live-details')}
                 onPlanStream={openPlanStream}
+                onOpenPlan={openPlanDetails}
                 onEditSeries={openEditSeries}
               />
             )}
             {view === 'plan-stream' && (
               <PlanStream
+                plan={cur.plan}
                 onBack={() => back()}
                 onSaved={backToPastStreams}
               />

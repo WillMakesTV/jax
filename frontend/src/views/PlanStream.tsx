@@ -17,22 +17,28 @@ const BROADCAST_SERVICES = SERVICES.filter(
 )
 
 /**
- * The "Plan a stream" form on its own page: a title, description, and the
- * connected channels to broadcast to (all connected ones checked by default).
+ * The stream-plan page: create a new plan, or view and edit an existing one
+ * (each planned stream opens here from the Planning dashboard). A title,
+ * description, series/episode, and the connected channels to broadcast to
+ * (all connected ones checked by default on a new plan).
  */
 export function PlanStream({
+  plan,
   onBack,
   onSaved,
 }: {
+  /** The plan being viewed/edited, or null when creating a new one. */
+  plan: main.PlannedStream | null
   onBack: () => void
   /** Called after a plan is saved. */
   onSaved: () => void
 }) {
   const {statuses} = useServices()
 
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
+  const [title, setTitle] = useState(plan?.title ?? '')
+  const [description, setDescription] = useState(plan?.description ?? '')
   const [selected, setSelected] = useState<Set<string>>(() => {
+    if (plan) return new Set(plan.channels ?? [])
     const s = new Set<string>()
     for (const svc of BROADCAST_SERVICES) {
       if (statuses[svc.id]?.connected) s.add(svc.id)
@@ -40,7 +46,7 @@ export function PlanStream({
     return s
   })
   const [series, setSeries] = useState<main.ContentSeries[]>([])
-  const [seriesId, setSeriesId] = useState('')
+  const [seriesId, setSeriesId] = useState(plan?.seriesId ?? '')
   // Series types are only loaded to infer behaviour (episodic or not) from
   // the chosen series — the plan itself carries no type; the series does.
   const [types, setTypes] = useState<main.SeriesType[]>([])
@@ -53,7 +59,8 @@ export function PlanStream({
         const list = s ?? []
         setSeries(list)
         // A fresh plan starts on the default series, when one is set; never
-        // override a choice the user already made.
+        // override a choice the user already made or a saved plan's series.
+        if (plan) return
         const def = list.find((x) => x.isDefault)
         if (def) setSeriesId((cur) => (cur === '' ? def.id : cur))
       })
@@ -61,14 +68,16 @@ export function PlanStream({
     GetSeriesTypes()
       .then((t) => setTypes(t ?? []))
       .catch(() => {})
-  }, [])
+  }, [plan])
 
   const activeSeries = series.find((s) => s.id === seriesId)
 
   // Planning a stream for an episodic series slots it into the sequence:
   // prefill one past the highest episode used anywhere in the series — past
   // streams, open plans, and the broadcast currently on the air.
-  const [episode, setEpisode] = useState('')
+  const [episode, setEpisode] = useState(
+    plan?.episodeNumber ? String(plan.episodeNumber) : '',
+  )
   const [usedEpisodes, setUsedEpisodes] = useState<number[]>([])
   const episodicPlan = Boolean(
     types.find((t) => t.id === activeSeries?.typeId)?.episodic,
@@ -85,19 +94,29 @@ export function PlanStream({
         if (cancelled) return
         const list = used ?? []
         setUsedEpisodes(list)
-        setEpisode(String((list[list.length - 1] ?? 0) + 1))
+        // An edited plan keeps its own number while it stays on its series;
+        // a new plan (or a series switch) prefills the next in sequence.
+        if (plan && seriesId === plan.seriesId) {
+          setEpisode(plan.episodeNumber ? String(plan.episodeNumber) : '')
+        } else {
+          setEpisode(String((list[list.length - 1] ?? 0) + 1))
+        }
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [episodicPlan, seriesId])
+  }, [episodicPlan, seriesId, plan])
 
   const episodeNum = Number(episode)
   const episodeValid =
     episode.trim() === '' || (Number.isInteger(episodeNum) && episodeNum >= 1)
+  // The plan's own saved number is not a conflict with itself.
   const episodeTaken =
-    episodicPlan && episodeValid && usedEpisodes.includes(episodeNum)
+    episodicPlan &&
+    episodeValid &&
+    usedEpisodes.includes(episodeNum) &&
+    !(plan && plan.seriesId === seriesId && plan.episodeNumber === episodeNum)
 
   const toggle = (id: string) =>
     setSelected((prev) => {
@@ -129,7 +148,7 @@ export function PlanStream({
     try {
       await SavePlannedStream(
         main.PlannedStream.createFrom({
-          id: '',
+          id: plan?.id ?? '',
           title: title.trim(),
           description: description.trim(),
           channels: [...selected],
@@ -138,7 +157,7 @@ export function PlanStream({
             episodicPlan && episode.trim() !== '' && episodeValid
               ? episodeNum
               : 0,
-          createdAt: '',
+          createdAt: plan?.createdAt ?? '',
         }),
       )
       onSaved()
@@ -161,12 +180,14 @@ export function PlanStream({
         className="mb-4 inline-flex w-fit items-center gap-1.5 text-sm text-fg-muted transition-colors hover:text-fg"
       >
         <ArrowLeft size={16} aria-hidden />
-        Back to Broadcast
+        Back to Planning
       </button>
 
       <div className="max-w-2xl">
         <p className="mb-6 text-sm text-fg-muted">
-          Outline your next broadcast and choose where it goes out.
+          {plan
+            ? 'Review and adjust this planned broadcast.'
+            : 'Outline your next broadcast and choose where it goes out.'}
         </p>
 
         <form

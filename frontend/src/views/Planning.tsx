@@ -16,6 +16,8 @@ interface PlanningProps {
   onOpenLive: () => void
   /** Open the "Plan a stream" form. */
   onPlanStream: () => void
+  /** Open a planned stream's own view/edit page. */
+  onOpenPlan: (plan: main.PlannedStream) => void
   /** Open the series editor page (null = create a new series). */
   onEditSeries: (series: main.ContentSeries | null) => void
 }
@@ -30,6 +32,7 @@ export function Planning({
   onOpenStream,
   onOpenLive,
   onPlanStream,
+  onOpenPlan,
   onEditSeries,
 }: PlanningProps) {
   const tabs: {id: PlanningTab; label: string}[] = [
@@ -65,7 +68,7 @@ export function Planning({
 
       {tab === 'dashboard' && (
         <div className="flex flex-col gap-8">
-          <PlanningSection onPlanStream={onPlanStream} />
+          <PlanningSection onPlanStream={onPlanStream} onOpenPlan={onOpenPlan} />
           <PastStreamsSection
             onOpenStream={onOpenStream}
             onOpenLive={onOpenLive}

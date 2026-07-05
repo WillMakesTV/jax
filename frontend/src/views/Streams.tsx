@@ -490,7 +490,14 @@ function PastStreamCard({
 // Stream planning
 // ---------------------------------------------------------------------------
 
-export function PlanningSection({onPlanStream}: {onPlanStream: () => void}) {
+export function PlanningSection({
+  onPlanStream,
+  onOpenPlan,
+}: {
+  onPlanStream: () => void
+  /** Open a planned stream's own view/edit page. */
+  onOpenPlan: (plan: main.PlannedStream) => void
+}) {
   const [plans, setPlans] = useState<main.PlannedStream[]>([])
 
   useEffect(() => {
@@ -549,7 +556,12 @@ export function PlanningSection({onPlanStream}: {onPlanStream: () => void}) {
       ) : (
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {plans.map((plan) => (
-            <PlanCard key={plan.id} plan={plan} onDelete={() => remove(plan.id)} />
+            <PlanCard
+              key={plan.id}
+              plan={plan}
+              onOpen={() => onOpenPlan(plan)}
+              onDelete={() => remove(plan.id)}
+            />
           ))}
         </ul>
       )}
@@ -559,17 +571,23 @@ export function PlanningSection({onPlanStream}: {onPlanStream: () => void}) {
 
 function PlanCard({
   plan,
+  onOpen,
   onDelete,
 }: {
   plan: main.PlannedStream
+  onOpen: () => void
   onDelete: () => void
 }) {
   return (
     <li className="flex flex-col rounded-xl border border-edge bg-surface p-4">
       <div className="flex items-start justify-between gap-3">
-        <p className="min-w-0 flex-1 text-sm font-semibold text-fg">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="min-w-0 flex-1 text-left text-sm font-semibold text-fg hover:underline"
+        >
           {plan.title}
-        </p>
+        </button>
         <button
           type="button"
           onClick={onDelete}
@@ -580,9 +598,13 @@ function PlanCard({
         </button>
       </div>
       {plan.description && (
-        <p className="mt-1 line-clamp-3 text-sm text-fg-muted">
-          {plan.description}
-        </p>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="mt-1 text-left text-sm text-fg-muted"
+        >
+          <span className="line-clamp-3">{plan.description}</span>
+        </button>
       )}
       {plan.channels.length > 0 && (
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
