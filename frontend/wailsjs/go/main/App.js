@@ -10,12 +10,36 @@ export function BeginTranscriptSession(arg1, arg2) {
   return window['go']['main']['App']['BeginTranscriptSession'](arg1, arg2);
 }
 
+export function CancelDownload() {
+  return window['go']['main']['App']['CancelDownload']();
+}
+
+export function DefaultDownloadDir() {
+  return window['go']['main']['App']['DefaultDownloadDir']();
+}
+
+export function DeleteContentSeries(arg1) {
+  return window['go']['main']['App']['DeleteContentSeries'](arg1);
+}
+
+export function DeletePlannedStream(arg1) {
+  return window['go']['main']['App']['DeletePlannedStream'](arg1);
+}
+
 export function DisconnectService(arg1) {
   return window['go']['main']['App']['DisconnectService'](arg1);
 }
 
 export function GetChannelSources() {
   return window['go']['main']['App']['GetChannelSources']();
+}
+
+export function GetChannelVideos(arg1) {
+  return window['go']['main']['App']['GetChannelVideos'](arg1);
+}
+
+export function GetChatForStream(arg1, arg2) {
+  return window['go']['main']['App']['GetChatForStream'](arg1, arg2);
 }
 
 export function GetChatHistory(arg1) {
@@ -26,12 +50,24 @@ export function GetChatUserInfo(arg1, arg2, arg3) {
   return window['go']['main']['App']['GetChatUserInfo'](arg1, arg2, arg3);
 }
 
+export function GetContentSeries() {
+  return window['go']['main']['App']['GetContentSeries']();
+}
+
+export function GetDownloads() {
+  return window['go']['main']['App']['GetDownloads']();
+}
+
 export function GetLiveStreams() {
   return window['go']['main']['App']['GetLiveStreams']();
 }
 
 export function GetPastStreams(arg1) {
   return window['go']['main']['App']['GetPastStreams'](arg1);
+}
+
+export function GetPlannedStreams() {
+  return window['go']['main']['App']['GetPlannedStreams']();
 }
 
 export function GetProfile() {
@@ -86,12 +122,24 @@ export function PollYouTubeDeviceAuth(arg1, arg2, arg3) {
   return window['go']['main']['App']['PollYouTubeDeviceAuth'](arg1, arg2, arg3);
 }
 
+export function RefreshChannelInfo() {
+  return window['go']['main']['App']['RefreshChannelInfo']();
+}
+
 export function SaveChannelSources(arg1) {
   return window['go']['main']['App']['SaveChannelSources'](arg1);
 }
 
 export function SaveChatMessages(arg1) {
   return window['go']['main']['App']['SaveChatMessages'](arg1);
+}
+
+export function SaveContentSeries(arg1) {
+  return window['go']['main']['App']['SaveContentSeries'](arg1);
+}
+
+export function SavePlannedStream(arg1) {
+  return window['go']['main']['App']['SavePlannedStream'](arg1);
 }
 
 export function SaveProfile(arg1) {
@@ -106,12 +154,24 @@ export function SaveStreams(arg1) {
   return window['go']['main']['App']['SaveStreams'](arg1);
 }
 
+export function SelectDirectory(arg1) {
+  return window['go']['main']['App']['SelectDirectory'](arg1);
+}
+
 export function SendBroadcastChat(arg1) {
   return window['go']['main']['App']['SendBroadcastChat'](arg1);
 }
 
+export function SetPastStreamSeries(arg1, arg2) {
+  return window['go']['main']['App']['SetPastStreamSeries'](arg1, arg2);
+}
+
 export function SetSetting(arg1, arg2) {
   return window['go']['main']['App']['SetSetting'](arg1, arg2);
+}
+
+export function StartDownload(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['StartDownload'](arg1, arg2, arg3, arg4);
 }
 
 export function StartTranscription(arg1) {

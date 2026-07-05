@@ -6,17 +6,35 @@ export function AddTranscriptLine(arg1:number,arg2:number,arg3:number,arg4:strin
 
 export function BeginTranscriptSession(arg1:string,arg2:string):Promise<number>;
 
+export function CancelDownload():Promise<void>;
+
+export function DefaultDownloadDir():Promise<string>;
+
+export function DeleteContentSeries(arg1:string):Promise<void>;
+
+export function DeletePlannedStream(arg1:string):Promise<void>;
+
 export function DisconnectService(arg1:string):Promise<void>;
 
 export function GetChannelSources():Promise<Array<main.ChannelSource>>;
+
+export function GetChannelVideos(arg1:string):Promise<Array<main.Video>>;
+
+export function GetChatForStream(arg1:string,arg2:number):Promise<Array<main.StoredChatMessage>>;
 
 export function GetChatHistory(arg1:number):Promise<Array<main.StoredChatMessage>>;
 
 export function GetChatUserInfo(arg1:string,arg2:string,arg3:string):Promise<main.ChatUserInfo>;
 
+export function GetContentSeries():Promise<Array<main.ContentSeries>>;
+
+export function GetDownloads():Promise<Array<main.DownloadedVideo>>;
+
 export function GetLiveStreams():Promise<Array<main.LiveStream>>;
 
 export function GetPastStreams(arg1:boolean):Promise<Array<main.PastStream>>;
+
+export function GetPlannedStreams():Promise<Array<main.PlannedStream>>;
 
 export function GetProfile():Promise<main.Profile>;
 
@@ -44,9 +62,15 @@ export function PollTwitchDeviceAuth(arg1:string,arg2:string,arg3:string):Promis
 
 export function PollYouTubeDeviceAuth(arg1:string,arg2:string,arg3:string):Promise<main.AuthPollResult>;
 
+export function RefreshChannelInfo():Promise<void>;
+
 export function SaveChannelSources(arg1:Array<main.ChannelSource>):Promise<void>;
 
 export function SaveChatMessages(arg1:Array<main.StoredChatMessage>):Promise<void>;
+
+export function SaveContentSeries(arg1:main.ContentSeries):Promise<main.ContentSeries>;
+
+export function SavePlannedStream(arg1:main.PlannedStream):Promise<main.PlannedStream>;
 
 export function SaveProfile(arg1:main.Profile):Promise<void>;
 
@@ -54,9 +78,15 @@ export function SaveServiceConfig(arg1:main.ServiceConfig):Promise<void>;
 
 export function SaveStreams(arg1:Array<main.Stream>):Promise<void>;
 
+export function SelectDirectory(arg1:string):Promise<string>;
+
 export function SendBroadcastChat(arg1:string):Promise<Array<main.BroadcastSendResult>>;
 
+export function SetPastStreamSeries(arg1:Array<string>,arg2:string):Promise<void>;
+
 export function SetSetting(arg1:string,arg2:string):Promise<void>;
+
+export function StartDownload(arg1:string,arg2:string,arg3:string,arg4:Array<string>):Promise<void>;
 
 export function StartTranscription(arg1:string):Promise<void>;
 

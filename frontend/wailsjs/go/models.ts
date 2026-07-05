@@ -140,6 +140,30 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class ContentSeries {
+	    id: string;
+	    title: string;
+	    description: string;
+	    category: string;
+	    tags: string[];
+	    notes: string;
+	    createdAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ContentSeries(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.description = source["description"];
+	        this.category = source["category"];
+	        this.tags = source["tags"];
+	        this.notes = source["notes"];
+	        this.createdAt = source["createdAt"];
+	    }
+	}
 	
 	export class DeviceCodeInfo {
 	    deviceCode: string;
@@ -159,6 +183,42 @@ export namespace main {
 	        this.verificationUri = source["verificationUri"];
 	        this.interval = source["interval"];
 	        this.expiresIn = source["expiresIn"];
+	    }
+	}
+	export class DownloadedVideo {
+	    id: string;
+	    title: string;
+	    platform: string;
+	    channelName: string;
+	    startedAt: string;
+	    durationSecs: number;
+	    viewCount: number;
+	    thumbnailUrl: string;
+	    urls: string[];
+	    subfolder: string;
+	    videoFile: string;
+	    downloadedAt: string;
+	    mediaUrl: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DownloadedVideo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.platform = source["platform"];
+	        this.channelName = source["channelName"];
+	        this.startedAt = source["startedAt"];
+	        this.durationSecs = source["durationSecs"];
+	        this.viewCount = source["viewCount"];
+	        this.thumbnailUrl = source["thumbnailUrl"];
+	        this.urls = source["urls"];
+	        this.subfolder = source["subfolder"];
+	        this.videoFile = source["videoFile"];
+	        this.downloadedAt = source["downloadedAt"];
+	        this.mediaUrl = source["mediaUrl"];
 	    }
 	}
 	export class LiveEvent {
@@ -235,6 +295,8 @@ export namespace main {
 	    viewerCount: number;
 	    startedAt: string;
 	    thumbnailUrl: string;
+	    avatarUrl: string;
+	    bannerUrl: string;
 	    details: DetailItem[];
 	
 	    static createFrom(source: any = {}) {
@@ -255,6 +317,8 @@ export namespace main {
 	        this.viewerCount = source["viewerCount"];
 	        this.startedAt = source["startedAt"];
 	        this.thumbnailUrl = source["thumbnailUrl"];
+	        this.avatarUrl = source["avatarUrl"];
+	        this.bannerUrl = source["bannerUrl"];
 	        this.details = this.convertValues(source["details"], DetailItem);
 	    }
 	
@@ -308,6 +372,7 @@ export namespace main {
 	    startedAt: string;
 	    totalViews: number;
 	    groupId: string;
+	    seriesId: string;
 	    broadcasts: PastBroadcast[];
 	
 	    static createFrom(source: any = {}) {
@@ -321,6 +386,7 @@ export namespace main {
 	        this.startedAt = source["startedAt"];
 	        this.totalViews = source["totalViews"];
 	        this.groupId = source["groupId"];
+	        this.seriesId = source["seriesId"];
 	        this.broadcasts = this.convertValues(source["broadcasts"], PastBroadcast);
 	    }
 	
@@ -341,6 +407,28 @@ export namespace main {
 		    }
 		    return a;
 		}
+	}
+	export class PlannedStream {
+	    id: string;
+	    title: string;
+	    description: string;
+	    channels: string[];
+	    seriesId: string;
+	    createdAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PlannedStream(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.description = source["description"];
+	        this.channels = source["channels"];
+	        this.seriesId = source["seriesId"];
+	        this.createdAt = source["createdAt"];
+	    }
 	}
 	export class Profile {
 	    name: string;
