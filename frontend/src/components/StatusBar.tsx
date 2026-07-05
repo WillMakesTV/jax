@@ -1,16 +1,21 @@
 import {
   Bell,
   Clock,
+  Download,
   Gauge,
+  Loader2,
   MessageSquare,
   Mic,
   MicOff,
   Music,
   Users,
+  Video,
+  VideoOff,
   VolumeX,
 } from 'lucide-react'
 import {useEffect, useState} from 'react'
 import {useChat} from '../chat/ChatProvider'
+import {useDownloadStatus} from '../downloads/DownloadProvider'
 import {useEvents} from '../events/EventsProvider'
 import {formatCompact, formatDurationMs, formatKbps} from '../lib/format'
 import {aggregateLive, useLiveData} from '../live/LiveDataProvider'
@@ -28,13 +33,18 @@ interface StatusBarProps {
  * total viewers across all channels.
  */
 export function StatusBar({onOpenChat, onOpenEvents}: StatusBarProps) {
-  const {platforms, obs, mics, music, obsConnected} = useLiveData()
+  const {platforms, obs, mics, music, camera, micSourceName, obsConnected} =
+    useLiveData()
   const {unreadCount} = useChat()
   const {unreadCount: unreadEvents} = useEvents()
+  const download = useDownloadStatus()
 
-  // "Mic on" when at least one of OBS's audio input capture devices is
-  // unmuted; hidden entirely when OBS is away or has no such devices.
-  const micOn = mics.some((m) => !m.muted)
+  // Prefer the designated primary mic; otherwise "on" when any mic is
+  // unmuted. Hidden entirely when OBS is away or has no mic devices.
+  const primaryMic = micSourceName
+    ? mics.find((m) => m.name === micSourceName)
+    : undefined
+  const micOn = primaryMic ? !primaryMic.muted : mics.some((m) => !m.muted)
   const {anyLive, liveCount, totalViewers, uptimeMs} = aggregateLive(
     platforms,
     obs,
@@ -107,8 +117,8 @@ export function StatusBar({onOpenChat, onOpenEvents}: StatusBarProps) {
         </span>
       )}
 
-      {/* Music state: the Application Audio Capture source designated in the
-          Audio Mixer. Hidden until one is designated. */}
+      {/* Music state: the Application Audio Capture source designated in
+          Primary Sources. Hidden until one is designated. */}
       {obsConnected && music && (
         <span
           title={music.name}
@@ -124,6 +134,50 @@ export function StatusBar({onOpenChat, onOpenEvents}: StatusBarProps) {
             <Music size={12} aria-hidden />
           )}
           {music.muted ? 'Music off' : 'Music on'}
+        </span>
+      )}
+
+      {/* Primary webcam of the active scene: shown/hidden. Hidden until a
+          camera is designated for the active scene. */}
+      {obsConnected && camera && (
+        <span
+          title={`${camera.name} · ${camera.sceneName}`}
+          className={
+            camera.enabled
+              ? 'inline-flex items-center gap-1.5 font-semibold text-green-600 dark:text-green-400'
+              : 'inline-flex items-center gap-1.5 font-semibold text-red-500 dark:text-red-400'
+          }
+        >
+          {camera.enabled ? (
+            <Video size={12} aria-hidden />
+          ) : (
+            <VideoOff size={12} aria-hidden />
+          )}
+          {camera.enabled ? 'Camera on' : 'Camera off'}
+        </span>
+      )}
+
+      {/* Download / processing status from the sidecar. */}
+      {download.state !== 'idle' && (
+        <span
+          title={download.detail}
+          className={
+            download.state === 'error'
+              ? 'inline-flex min-w-0 items-center gap-1.5 font-medium text-red-500 dark:text-red-400'
+              : download.state === 'done'
+                ? 'inline-flex min-w-0 items-center gap-1.5 font-medium text-green-600 dark:text-green-400'
+                : 'inline-flex min-w-0 items-center gap-1.5 font-medium text-fg'
+          }
+        >
+          {download.state === 'running' ? (
+            <Loader2 size={12} aria-hidden className="animate-spin" />
+          ) : (
+            <Download size={12} aria-hidden />
+          )}
+          <span className="max-w-[22rem] truncate">
+            {download.state === 'done' ? '✓ ' : ''}
+            {download.detail}
+          </span>
         </span>
       )}
 

@@ -9,8 +9,34 @@ export const SETTING_KEYS = {
   navCollapsed: 'nav_collapsed',
   /** Minutes of tolerance when matching simulcast broadcasts (see past.go). */
   streamMatchMargin: 'stream_match_margin_min',
+  /** "true"/"false": download past streams to disk. */
+  downloadPastStreams: 'download_past_streams',
+  /** Target directory for past-stream downloads ('' = the Videos/jax default). */
+  downloadDir: 'download_dir',
+  /** Preferred platform to download from: 'auto' | 'youtube' | 'twitch'. */
+  downloadSource: 'download_source',
+  /** OBS input name of the audio input capture designated as primary mic. */
+  obsMicSource: 'obs_mic_source',
   /** OBS input name of the Application Audio Capture designated as "Music". */
   obsMusicSource: 'obs_music_source',
+  /**
+   * JSON map of OBS scene name → the source designated as that scene's
+   * primary camera. The active scene's entry drives the Primary Webcam.
+   */
+  obsSceneCameras: 'obs_scene_cameras',
+  /**
+   * JSON map of OBS Text (GDI+) source name → its smart-source template. The
+   * app renders the template's tokens with live values and pushes the result
+   * into the OBS source.
+   */
+  obsSmartSources: 'obs_smart_sources',
+  /**
+   * JSON map of custom smart-source token name → static value. Merged into the
+   * built-in tokens when rendering smart-source templates.
+   */
+  obsSmartTokens: 'obs_smart_tokens',
+  /** Optional Google API key for reading public YouTube comments. */
+  youtubeApiKey: 'youtube_api_key',
 } as const
 
 /**

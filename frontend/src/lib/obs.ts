@@ -17,13 +17,20 @@ const OP_REQUEST = 6
 const OP_REQUEST_RESPONSE = 7
 
 // Event-subscription bits (protocol EventSubscription enum).
+const EVENTS_SCENES = 1 << 2
 const EVENTS_INPUTS = 1 << 3
+const EVENTS_SCENE_ITEMS = 1 << 7
 const EVENTS_INPUT_VOLUME_METERS = 1 << 16
 
-/** Always-on subscriptions: input events (mute state changes are cheap). */
-export const OBS_EVENTS_BASE = EVENTS_INPUTS
+/**
+ * Always-on subscriptions: input mute changes, scene switches, and scene-item
+ * (source) changes. All are low-volume, so they stay subscribed continuously
+ * to drive near-real-time UI (mixer, scene switcher, source visibility).
+ */
+export const OBS_EVENTS_BASE = EVENTS_INPUTS | EVENTS_SCENES | EVENTS_SCENE_ITEMS
 /** Base plus the high-volume per-input volume meters (~20 events/s). */
-export const OBS_EVENTS_WITH_METERS = EVENTS_INPUTS | EVENTS_INPUT_VOLUME_METERS
+export const OBS_EVENTS_WITH_METERS =
+  OBS_EVENTS_BASE | EVENTS_INPUT_VOLUME_METERS
 
 /**
  * Change the identified socket's event subscriptions (Reidentify). Used to
@@ -81,6 +88,20 @@ const INPUT_CAPTURE_KINDS = new Set([
   'alsa_input_capture', // Linux (ALSA)
 ])
 
+/** OBS input kind for "Application Audio Capture" (the Music candidates). */
+export const APP_AUDIO_KIND = 'wasapi_process_output_capture'
+
+/** A designatable primary-source role, or null when a source is none of them. */
+export type SourceRole = 'camera' | 'mic' | 'music'
+
+/** Classify an OBS input kind into a designatable primary-source role. */
+export function sourceRole(kind: string): SourceRole | null {
+  if (CAMERA_KINDS.has(kind)) return 'camera'
+  if (INPUT_CAPTURE_KINDS.has(kind)) return 'mic'
+  if (kind === APP_AUDIO_KIND) return 'music'
+  return null
+}
+
 /**
  * List OBS's audio input capture devices and their mute state. `request` is
  * the ServicesProvider's obsRequest.
@@ -100,6 +121,78 @@ export async function fetchObsMics(
       return {name: i.inputName, muted: inputMuted}
     }),
   )
+}
+
+// ---------------------------------------------------------------------------
+// Cameras (video capture devices)
+//
+// A "primary camera" is designated per scene (see lib/sceneCameras). It is a
+// source placed in that scene, so its on/off state is the scene item's
+// visibility — toggled per scene, and surfaced for whichever scene is active.
+// ---------------------------------------------------------------------------
+
+/** OBS input kinds that are video capture devices (webcams), per platform. */
+export const CAMERA_KINDS = new Set([
+  'dshow_input', // Windows (Video Capture Device)
+  'av_capture_input', // macOS
+  'av_capture_input_v2', // macOS (newer)
+  'v4l2_input', // Linux
+])
+
+/** The primary camera of a scene: a source item and its visibility. */
+export interface ObsCamera {
+  name: string
+  enabled: boolean
+  sceneName: string
+  sceneItemId: number
+}
+
+/**
+ * Resolve a scene's designated primary camera to its live visibility state,
+ * or null when none is designated or the source is not present in the scene.
+ */
+export async function fetchObsCamera(
+  request: <T>(type: string, data?: Record<string, unknown>) => Promise<T>,
+  sceneName: string,
+  sourceName: string,
+): Promise<ObsCamera | null> {
+  if (!sceneName || !sourceName) return null
+  try {
+    const {sceneItemId} = await request<{sceneItemId: number}>(
+      'GetSceneItemId',
+      {sceneName, sourceName},
+    )
+    const {sceneItemEnabled} = await request<{sceneItemEnabled: boolean}>(
+      'GetSceneItemEnabled',
+      {sceneName, sceneItemId},
+    )
+    return {name: sourceName, enabled: sceneItemEnabled, sceneName, sceneItemId}
+  } catch {
+    return null
+  }
+}
+
+/** Camera-kind sources present in a scene, deduped. */
+export async function fetchSceneCameraSources(
+  request: <T>(type: string, data?: Record<string, unknown>) => Promise<T>,
+  sceneName: string,
+): Promise<string[]> {
+  if (!sceneName) return []
+  const [{inputs}, {sceneItems}] = await Promise.all([
+    request<{inputs: {inputName: string; inputKind: string}[]}>('GetInputList'),
+    request<{sceneItems: {sourceName: string}[]}>('GetSceneItemList', {
+      sceneName,
+    }),
+  ])
+  const cameraInputs = new Set(
+    (inputs ?? [])
+      .filter((i) => CAMERA_KINDS.has(i.inputKind))
+      .map((i) => i.inputName),
+  )
+  const inScene = (sceneItems ?? [])
+    .map((i) => i.sourceName)
+    .filter((n) => cameraInputs.has(n))
+  return [...new Set(inScene)]
 }
 
 async function sha256Bytes(input: string): Promise<Uint8Array> {

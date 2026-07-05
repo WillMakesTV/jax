@@ -1,25 +1,32 @@
 import {
+  LayoutDashboard,
   RadioTower,
   CalendarClock,
+  MonitorPlay,
   Clapperboard,
-  MessageSquare,
   Settings,
   type LucideIcon,
 } from 'lucide-react'
 
 /**
- * Identifiers for every routable view in the app. `profile` (user menu) and
- * `stream-details` (selected from the Streams page) are reachable outside the
- * sidebar, so they are intentionally absent from the nav lists below.
+ * Identifiers for every routable view in the app. `profile` (user menu),
+ * `stream-details`, and `video-details` are reachable outside the sidebar, so
+ * they are intentionally absent from the nav lists below. Past streams live
+ * inside the Go Live! section as a tab.
  */
 export type ViewId =
   | 'dashboard'
-  | 'streams'
+  | 'live'
+  | 'planning'
+  | 'obs'
   | 'stream-details'
+  | 'stream-transcript'
   | 'live-details'
-  | 'chat'
+  | 'channel-details'
   | 'videos'
   | 'video-details'
+  | 'download-video'
+  | 'plan-stream'
   | 'settings'
   | 'profile'
 
@@ -31,13 +38,16 @@ export interface NavItemConfig {
 
 /**
  * Primary navigation items, rendered in order at the top of the sidebar.
- * The dashboard item is promoted to "Live Dashboard" with a pulsing live
- * indicator while a broadcast is on the air (see Sidebar).
+ * The Broadcast item's icon pulses/glows red while a broadcast is on the air
+ * (see Sidebar). Broadcast holds the live Dashboard, chat, events, and
+ * transcript tabs; Planning holds stream planning and past streams; OBS Studio
+ * is its own section.
  */
 export const PRIMARY_NAV: NavItemConfig[] = [
-  {id: 'dashboard', label: 'Dashboard', icon: RadioTower},
-  {id: 'streams', label: 'Streams', icon: CalendarClock},
-  {id: 'chat', label: 'Chat', icon: MessageSquare},
+  {id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard},
+  {id: 'live', label: 'Broadcast', icon: RadioTower},
+  {id: 'planning', label: 'Planning', icon: CalendarClock},
+  {id: 'obs', label: 'OBS Studio', icon: MonitorPlay},
   {id: 'videos', label: 'Videos', icon: Clapperboard},
 ]
 

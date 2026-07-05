@@ -40,7 +40,9 @@ type PastStream struct {
 	TotalViews   int    `json:"totalViews"`
 	// GroupID is set when the stream was grouped manually (Settings-proof
 	// escape hatch for when timing-based matching misses); empty otherwise.
-	GroupID    string          `json:"groupId"`
+	GroupID string `json:"groupId"`
+	// SeriesID links this past stream to a ContentSeries (assigned by the user).
+	SeriesID   string          `json:"seriesId"`
 	Broadcasts []PastBroadcast `json:"broadcasts"`
 }
 
@@ -125,8 +127,57 @@ func (a *App) GetPastStreams(forceRefresh bool) []PastStream {
 		ps.GroupID = strconv.FormatInt(gid, 10)
 		out = append(out, ps)
 	}
+
+	// Apply user-assigned content series (keyed by any of the stream's
+	// broadcasts).
+	seriesByKey := a.pastStreamSeries()
+	if len(seriesByKey) > 0 {
+		for i := range out {
+			for _, b := range out[i].Broadcasts {
+				if sid := seriesByKey[broadcastKey(b)]; sid != "" {
+					out[i].SeriesID = sid
+					break
+				}
+			}
+		}
+	}
+
 	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt > out[j].StartedAt })
 	return out
+}
+
+// keyPastStreamSeries stores the broadcastKey -> content series id assignments.
+const keyPastStreamSeries = "past_stream_series"
+
+// pastStreamSeries loads the saved broadcastKey -> seriesID map. Never nil.
+func (a *App) pastStreamSeries() map[string]string {
+	m := map[string]string{}
+	if a.store != nil {
+		if _, err := a.store.getJSON(keyPastStreamSeries, &m); err != nil {
+			log.Printf("jax: load past stream series: %v", err)
+		}
+	}
+	if m == nil {
+		return map[string]string{}
+	}
+	return m
+}
+
+// SetPastStreamSeries assigns a content series to the past stream identified by
+// its broadcast keys ("platform|url"), or clears it when seriesID is empty.
+func (a *App) SetPastStreamSeries(keys []string, seriesID string) error {
+	if a.store == nil {
+		return fmt.Errorf("storage is unavailable")
+	}
+	m := a.pastStreamSeries()
+	for _, k := range keys {
+		if seriesID == "" {
+			delete(m, k)
+		} else {
+			m[k] = seriesID
+		}
+	}
+	return a.store.setJSON(keyPastStreamSeries, m)
 }
 
 // GroupPastStreams manually groups the given broadcasts (broadcastKey format,
@@ -286,6 +337,7 @@ func pickStreamTitle(broadcasts []PastBroadcast) string {
 // ---------------------------------------------------------------------------
 
 const twitchVideosURL = "https://api.twitch.tv/helix/videos"
+const twitchClipsURL = "https://api.twitch.tv/helix/clips"
 
 func fetchTwitchArchives(conn serviceConn) ([]PastBroadcast, error) {
 	if conn.userID == "" {

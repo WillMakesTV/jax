@@ -1,98 +1,46 @@
-import {RadioTower} from 'lucide-react'
+import {RadioTower, RefreshCw} from 'lucide-react'
 import clsx from 'clsx'
-import {ChatPanel} from '../chat/ChatPanel'
-import {useChat} from '../chat/ChatProvider'
-import {EventsPanel} from '../events/EventsPanel'
-import {useEvents} from '../events/EventsProvider'
+import {useState} from 'react'
+import {RefreshChannelInfo} from '../../wailsjs/go/main/App'
 import {aggregateLive, useLiveData} from '../live/LiveDataProvider'
-import {LiveBadge, LiveOverview} from '../live/LiveOverview'
-import {ObsPanel} from '../obs/ObsPanel'
-import {TranscriptPanel} from '../transcript/TranscriptPanel'
-
-/** The Live Dashboard's tabs. App owns the state so the status bar can deep-link. */
-export type DashboardTab = 'overview' | 'chat' | 'events' | 'transcript' | 'obs'
+import {LiveOverview} from '../live/LiveOverview'
 
 interface DashboardProps {
-  tab: DashboardTab
-  onTabChange: (tab: DashboardTab) => void
+  /** Open a channel's detail page (from a hero channel card). */
+  onOpenChannel: (platform: string) => void
 }
 
 /**
- * The Live Dashboard: everything about the current broadcast, split into tabs
- * — the hero-wrapped live overview, the aggregated live chat, live channel
- * events, and OBS Studio (connection info + program preview).
+ * The Dashboard: live broadcast metrics and channel analytics (the hero).
+ * Past streams and streaming tooling live in the Broadcast section.
  */
-export function Dashboard({tab, onTabChange}: DashboardProps) {
-  const {unreadCount: unreadChat} = useChat()
-  const {unreadCount: unreadEvents} = useEvents()
-
-  // Chat, events, and the transcript are feeds that fill the viewport;
-  // overview and OBS flow and scroll naturally.
-  const fills = tab === 'chat' || tab === 'events' || tab === 'transcript'
-
-  const tabs: {id: DashboardTab; label: string; badge?: number}[] = [
-    {id: 'overview', label: 'Overview'},
-    {id: 'chat', label: 'Chat', badge: unreadChat},
-    {id: 'events', label: 'Events', badge: unreadEvents},
-    {id: 'transcript', label: 'Transcript'},
-    {id: 'obs', label: 'OBS Studio'},
-  ]
-
+export function Dashboard({onOpenChannel}: DashboardProps) {
   return (
-    <div className={clsx('flex flex-col gap-6', fills && 'h-full')}>
-      <div
-        role="tablist"
-        aria-label="Live Dashboard sections"
-        className="flex w-fit items-center gap-1 rounded-lg border border-edge bg-surface p-1"
-      >
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === t.id}
-            onClick={() => onTabChange(t.id)}
-            className={clsx(
-              'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-              tab === t.id
-                ? 'bg-accent text-accent-fg'
-                : 'text-fg-muted hover:bg-surface-hover hover:text-fg',
-            )}
-          >
-            {t.label}
-            {Boolean(t.badge) && (
-              <span
-                className={clsx(
-                  'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
-                  tab === t.id
-                    ? 'bg-accent-fg/20 text-accent-fg'
-                    : 'bg-accent text-accent-fg',
-                )}
-              >
-                {t.badge}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'overview' && <Hero />}
-      {tab === 'chat' && <ChatPanel />}
-      {tab === 'events' && <EventsPanel />}
-      {tab === 'transcript' && <TranscriptPanel />}
-      {tab === 'obs' && <ObsPanel />}
+    <div className="flex flex-col gap-8">
+      <Hero onOpenChannel={onOpenChannel} />
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Overview: hero wrapping the live-broadcast panel so the whole thing reads
-// as one "what's happening right now" surface.
+// Hero: the live-broadcast panel (summary tiles + channel/encoder cards).
 // ---------------------------------------------------------------------------
 
-function Hero() {
-  const {platforms, obs} = useLiveData()
+function Hero({onOpenChannel}: {onOpenChannel: (platform: string) => void}) {
+  const {platforms, obs, refreshPlatforms} = useLiveData()
   const {anyLive} = aggregateLive(platforms, obs)
+  const [refreshing, setRefreshing] = useState(false)
+
+  // Channel numbers come from the 1-hour cache; this drops it and re-polls.
+  const onRefresh = async () => {
+    setRefreshing(true)
+    try {
+      await RefreshChannelInfo()
+      refreshPlatforms()
+    } finally {
+      window.setTimeout(() => setRefreshing(false), 1_000)
+    }
+  }
 
   return (
     <section
@@ -110,20 +58,33 @@ function Hero() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="max-w-2xl">
             <p className="text-xs font-semibold uppercase tracking-widest opacity-80">
-              {anyLive ? 'Live Dashboard' : 'Dashboard'}
+              Dashboard
             </p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-              {anyLive ? 'You are on the air' : 'Your broadcast at a glance'}
+              {anyLive ? 'You are on the air' : 'Your channels at a glance'}
             </h1>
             <p className="mt-2 text-sm opacity-90">
-              Everything about the current live stream — viewers, channels, and
-              encoder health — updated in real time.
+              Live metrics, channel analytics, and your streaming history —
+              updated in real time while you broadcast.
             </p>
           </div>
-          <LiveBadge isLive={anyLive} />
+          <button
+            type="button"
+            onClick={() => void onRefresh()}
+            disabled={refreshing}
+            title="Fetch the latest stats from the platforms"
+            className="inline-flex items-center gap-1.5 rounded-full bg-accent-fg/10 px-3 py-1 text-xs font-semibold transition-colors hover:bg-accent-fg/20 disabled:opacity-50"
+          >
+            <RefreshCw
+              size={12}
+              aria-hidden
+              className={clsx(refreshing && 'animate-spin')}
+            />
+            Refresh
+          </button>
         </div>
 
-        <LiveOverview />
+        <LiveOverview onOpenChannel={onOpenChannel} />
       </div>
     </section>
   )

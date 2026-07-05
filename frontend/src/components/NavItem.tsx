@@ -37,7 +37,8 @@ export function NavItem({item, active, collapsed, live, onSelect}: NavItemProps)
         aria-hidden
         className={clsx(
           'shrink-0',
-          live && 'animate-pulse text-red-500 dark:text-red-400',
+          live &&
+            'animate-pulse text-red-500 drop-shadow-[0_0_6px_rgba(239,68,68,0.75)] dark:text-red-400',
         )}
       />
       {!collapsed && <span className="truncate">{item.label}</span>}

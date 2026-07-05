@@ -1,82 +1,37 @@
 import {
+  Calendar,
   CalendarPlus,
+  Eye,
   Link2,
-  Radio,
+  Plus,
   RefreshCw,
+  Trash2,
   Video,
   type LucideIcon,
 } from 'lucide-react'
 import clsx from 'clsx'
 import {useCallback, useEffect, useState, type ReactNode} from 'react'
 import {
+  DeletePlannedStream,
   GetPastStreams,
+  GetPlannedStreams,
   GroupPastStreams,
   UngroupPastStreams,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
+import {BrandTile} from '../components/BrandTile'
 import {openExternal} from '../lib/browser'
 import {formatCompact, formatDate} from '../lib/format'
 import {useLiveData} from '../live/LiveDataProvider'
-import {SERVICES} from '../services/services'
-
-interface StreamsProps {
-  /** Open the details view for an aggregated past stream. */
-  onOpenStream: (stream: main.PastStream) => void
-  /** Open the details view for the current live stream. */
-  onOpenLive: () => void
-}
-
-/**
- * Streams overview: a hero banner, stream-planning cards, and past streams
- * aggregated by timing across platforms. Live broadcast metrics and OBS
- * controls live on the Live Dashboard; chat has its own page.
- */
-export function Streams({onOpenStream, onOpenLive}: StreamsProps) {
-  return (
-    <div className="flex flex-col gap-8">
-      <Hero />
-      <PlanningSection />
-      <PastStreamsSection onOpenStream={onOpenStream} onOpenLive={onOpenLive} />
-    </div>
-  )
-}
+import {SERVICES, platformName} from '../services/services'
 
 // ---------------------------------------------------------------------------
-// Hero
-// ---------------------------------------------------------------------------
-
-function Hero() {
-  return (
-    <section className="relative overflow-hidden rounded-2xl bg-accent p-8 text-accent-fg">
-      {/* Decorative watermark. */}
-      <Radio
-        aria-hidden
-        className="pointer-events-none absolute -right-6 -top-6 opacity-10"
-        size={180}
-        strokeWidth={1.5}
-      />
-      <div className="relative max-w-2xl">
-        <p className="text-xs font-semibold uppercase tracking-widest opacity-80">
-          Streams
-        </p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-          Plan, go live, and review
-        </h1>
-        <p className="mt-2 text-sm opacity-90">
-          Plan what&apos;s next and revisit past streams — all in one place.
-        </p>
-      </div>
-    </section>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Past streams
-//
-// One stream is broadcast to several platforms under the same title, so the
-// backend aggregates Twitch VODs and completed YouTube broadcasts by title
-// into PastStream records referencing each channel's copy. The current live
-// stream (if any) leads the grid.
+// Stream sections rendered as tabs inside the Go Live! section (see
+// LiveStream.tsx): stream planning and past streams. One stream is broadcast
+// to several platforms under the same title, so the backend aggregates Twitch
+// VODs and completed YouTube broadcasts by title into PastStream records
+// referencing each channel's copy. The current live stream (if any) leads the
+// past-streams grid.
 // ---------------------------------------------------------------------------
 
 /** Stable identity for one broadcast; mirrors broadcastKey in past.go. */
@@ -86,12 +41,15 @@ const broadcastKeyOf = (b: main.PastBroadcast) => `${b.platform}|${b.url}`
 const streamKeyOf = (s: main.PastStream) =>
   s.broadcasts.map(broadcastKeyOf).join(',')
 
-function PastStreamsSection({
+export function PastStreamsSection({
   onOpenStream,
   onOpenLive,
+  showSummary,
 }: {
   onOpenStream: (stream: main.PastStream) => void
   onOpenLive: () => void
+  /** Render aggregate stat cards (count, total views, last stream) on top. */
+  showSummary?: boolean
 }) {
   const {platforms} = useLiveData()
   const [past, setPast] = useState<main.PastStream[]>([])
@@ -173,8 +131,32 @@ function PastStreamsSection({
   const live = platforms.filter((p) => p.live)
   const empty = loaded && past.length === 0 && live.length === 0
 
+  const totalViews = past.reduce((sum, s) => sum + s.totalViews, 0)
+  const lastStream = past[0]
+
   return (
     <section aria-label="Past streams">
+      {/* Aggregate stat cards. */}
+      {showSummary && past.length > 0 && (
+        <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-3">
+          <StatTile
+            icon={Video}
+            label="Recent streams"
+            value={String(past.length)}
+          />
+          <StatTile
+            icon={Eye}
+            label="Total stream views"
+            value={totalViews > 0 ? formatCompact(totalViews) : '—'}
+          />
+          <StatTile
+            icon={Calendar}
+            label="Last stream"
+            value={lastStream ? formatDate(lastStream.startedAt) || '—' : '—'}
+          />
+        </div>
+      )}
+
       <div className="mb-3 flex min-h-8 items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
@@ -274,6 +256,27 @@ function PastStreamsSection({
         </div>
       )}
     </section>
+  )
+}
+
+/** Aggregate stat card for the past-streams summary. */
+function StatTile({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: LucideIcon
+  label: string
+  value: string
+}) {
+  return (
+    <div className="rounded-xl border border-edge bg-surface p-4">
+      <div className="flex items-center gap-2 text-fg-muted">
+        <Icon size={16} aria-hidden />
+        <span className="text-xs font-medium">{label}</span>
+      </div>
+      <p className="mt-2 truncate text-2xl font-semibold text-fg">{value}</p>
+    </div>
   )
 }
 
@@ -479,62 +482,113 @@ function PastStreamCard({
 // Stream planning
 // ---------------------------------------------------------------------------
 
-interface PlanningCard {
-  title: string
-  description: string
-  icon: LucideIcon
-}
+export function PlanningSection({onPlanStream}: {onPlanStream: () => void}) {
+  const [plans, setPlans] = useState<main.PlannedStream[]>([])
 
-const PLANNING_CARDS: PlanningCard[] = [
-  {
-    title: 'Plan a stream',
-    description:
-      'Outline your next broadcast — title, description, and the plan for the run.',
-    icon: CalendarPlus,
-  },
-  {
-    title: 'Link a channel source',
-    description:
-      'Associate a Twitch or YouTube channel so streams post to the right place.',
-    icon: Link2,
-  },
-]
+  useEffect(() => {
+    GetPlannedStreams()
+      .then((p) => setPlans(p ?? []))
+      .catch(() => {})
+  }, [])
 
-function PlanningSection() {
+  const remove = async (id: string) => {
+    try {
+      await DeletePlannedStream(id)
+      setPlans((prev) => prev.filter((p) => p.id !== id))
+    } catch {
+      // Non-fatal; the list will reconcile on the next load.
+    }
+  }
+
   return (
     <section aria-label="Stream planning">
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-fg-muted">
-        Stream planning
-      </h2>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {PLANNING_CARDS.map((card) => {
-          const Icon = card.icon
-          return (
-            <div
-              key={card.title}
-              className="flex items-start gap-4 rounded-xl border border-dashed border-edge bg-surface p-5"
-            >
-              <span
-                aria-hidden
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-fg"
-              >
-                <Icon size={20} />
-              </span>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-fg">
-                    {card.title}
-                  </span>
-                  <span className="rounded-full border border-edge bg-bg px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-fg-muted">
-                    Soon
-                  </span>
-                </div>
-                <p className="mt-1 text-sm text-fg-muted">{card.description}</p>
-              </div>
-            </div>
-          )
-        })}
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+          Stream planning
+        </h2>
+        {plans.length > 0 && (
+          <button
+            type="button"
+            onClick={onPlanStream}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90"
+          >
+            <Plus size={14} aria-hidden />
+            Plan a stream
+          </button>
+        )}
       </div>
+
+      {plans.length === 0 ? (
+        <button
+          type="button"
+          onClick={onPlanStream}
+          className="flex w-full items-start gap-4 rounded-xl border border-dashed border-edge bg-surface p-5 text-left transition-colors hover:bg-surface-hover sm:w-1/2"
+        >
+          <span
+            aria-hidden
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-fg"
+          >
+            <CalendarPlus size={20} />
+          </span>
+          <div>
+            <span className="text-sm font-semibold text-fg">Plan a stream</span>
+            <p className="mt-1 text-sm text-fg-muted">
+              Outline your next broadcast — title, description, and the channels
+              it goes out to.
+            </p>
+          </div>
+        </button>
+      ) : (
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {plans.map((plan) => (
+            <PlanCard key={plan.id} plan={plan} onDelete={() => remove(plan.id)} />
+          ))}
+        </ul>
+      )}
     </section>
+  )
+}
+
+function PlanCard({
+  plan,
+  onDelete,
+}: {
+  plan: main.PlannedStream
+  onDelete: () => void
+}) {
+  return (
+    <li className="flex flex-col rounded-xl border border-edge bg-surface p-4">
+      <div className="flex items-start justify-between gap-3">
+        <p className="min-w-0 flex-1 text-sm font-semibold text-fg">
+          {plan.title}
+        </p>
+        <button
+          type="button"
+          onClick={onDelete}
+          title="Delete plan"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+        >
+          <Trash2 size={14} aria-hidden />
+        </button>
+      </div>
+      {plan.description && (
+        <p className="mt-1 line-clamp-3 text-sm text-fg-muted">
+          {plan.description}
+        </p>
+      )}
+      {plan.channels.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          {plan.channels.map((c) => (
+            <span
+              key={c}
+              className="inline-flex items-center gap-1.5 rounded-full border border-edge bg-bg px-2 py-0.5 text-xs font-medium text-fg-muted"
+            >
+              <BrandTile platform={c} size={14} />
+              {platformName(c)}
+            </span>
+          ))}
+        </div>
+      )}
+    </li>
   )
 }

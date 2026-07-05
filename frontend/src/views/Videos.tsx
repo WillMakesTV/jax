@@ -63,7 +63,6 @@ export function Videos({onOpenVideo}: VideosProps) {
   return (
     <div className="flex flex-col">
       <PageHeader
-        title="Videos"
         description="Every video and VOD from your connected channels, in one place."
         actions={
           <div className="flex items-center gap-3">

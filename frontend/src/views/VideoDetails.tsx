@@ -71,7 +71,6 @@ export function VideoDetails({video, onBack}: VideoDetailsProps) {
       </button>
 
       <PageHeader
-        title={v.title || 'Untitled video'}
         description={`Hosted on ${platformName(v.platform)}${
           v.channelName ? ` · ${v.channelName}` : ''
         }`}

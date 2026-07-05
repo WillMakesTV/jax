@@ -244,6 +244,11 @@ export function ChatProvider({children}: {children: ReactNode}) {
               })),
             )
           }
+        } else if (pageToken !== '') {
+          // The chat was flowing and is now gone: the broadcast ended. Stop
+          // polling immediately instead of waiting for the platform poll to
+          // notice; this effect restarts fresh if YouTube goes live again.
+          return
         }
         timer = window.setTimeout(
           () => void tick(),

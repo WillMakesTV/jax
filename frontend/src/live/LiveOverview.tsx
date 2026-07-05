@@ -4,13 +4,10 @@ import {
   Cpu,
   ExternalLink,
   Eye,
-  Gauge,
   HardDrive,
   MonitorPlay,
   Radio,
-  Users,
   Video,
-  type LucideIcon,
 } from 'lucide-react'
 import {useEffect, useState} from 'react'
 import {main} from '../../wailsjs/go/models'
@@ -27,12 +24,7 @@ import {
   formatUptime,
 } from '../lib/format'
 import {platformName} from '../services/services'
-import {
-  aggregateLive,
-  OBS_POLL_MS,
-  useLiveData,
-  type ObsMetrics,
-} from './LiveDataProvider'
+import {OBS_POLL_MS, useLiveData, type ObsMetrics} from './LiveDataProvider'
 
 // ---------------------------------------------------------------------------
 // Shared live-stream UI: the aggregate overview panel (summary tiles plus
@@ -82,7 +74,15 @@ export function StatusPill({live, label}: {live: boolean; label?: string}) {
  * encoder cards, with their detail dialogs. Requests the fast platform poll
  * cadence while mounted.
  */
-export function LiveOverview() {
+export function LiveOverview({
+  onOpenChannel,
+}: {
+  /**
+   * Open a channel's detail page. When provided, channel cards navigate here
+   * instead of opening the in-place platform modal.
+   */
+  onOpenChannel?: (platform: string) => void
+} = {}) {
   const {platforms, obs, oauthConnected, obsConnected, requestFastPolling} =
     useLiveData()
   const [detail, setDetail] = useState<main.LiveStream | null>(null)
@@ -93,9 +93,6 @@ export function LiveOverview() {
   useEffect(() => requestFastPolling(), [requestFastPolling])
 
   const nothingConnected = !oauthConnected && !obsConnected
-  const livePlatforms = platforms.filter((p) => p.live)
-  const {anyLive, totalViewers, uptimeMs} = aggregateLive(platforms, obs)
-  const uptime = uptimeMs !== null ? formatDurationMs(uptimeMs) : '—'
 
   if (nothingConnected) {
     return (
@@ -119,51 +116,17 @@ export function LiveOverview() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Aggregate summary tiles. */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <SummaryTile
-          icon={Users}
-          label="Total viewers"
-          value={anyLive ? formatCompact(totalViewers) : '—'}
-          hint={
-            livePlatforms.length > 1
-              ? `across ${livePlatforms.length} channels`
-              : undefined
-          }
-        />
-        <SummaryTile
-          icon={Radio}
-          label="Live channels"
-          value={String(livePlatforms.length)}
-          hint={
-            livePlatforms.length
-              ? livePlatforms.map((p) => platformName(p.platform)).join(' + ')
-              : 'none live'
-          }
-        />
-        <SummaryTile icon={Clock} label="Uptime" value={uptime} />
-        <SummaryTile
-          icon={Gauge}
-          label="Encoder"
-          value={
-            !obsConnected
-              ? 'Not connected'
-              : obs?.outputActive
-                ? obs.kbps !== null
-                  ? formatKbps(obs.kbps)
-                  : 'Streaming'
-                : 'Idle'
-          }
-          hint={
-            obs?.outputActive ? `${Math.round(obs.activeFps)} fps` : undefined
-          }
-        />
-      </div>
-
-      {/* Channel + encoder cards; each opens a detail dialog. */}
+      {/* Channel + encoder cards. Channel cards navigate to the channel's
+          detail page when a handler is provided, else open a dialog. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {platforms.map((p) => (
-          <ChannelCard key={p.platform} stream={p} onSelect={() => setDetail(p)} />
+          <ChannelCard
+            key={p.platform}
+            stream={p}
+            onSelect={() =>
+              onOpenChannel ? onOpenChannel(p.platform) : setDetail(p)
+            }
+          />
         ))}
         {obsConnected && (
           <ObsCard obs={obs} onSelect={() => setObsDetailOpen(true)} />
@@ -175,29 +138,6 @@ export function LiveOverview() {
         obs={obsDetailOpen ? obs : null}
         onClose={() => setObsDetailOpen(false)}
       />
-    </div>
-  )
-}
-
-function SummaryTile({
-  icon: Icon,
-  label,
-  value,
-  hint,
-}: {
-  icon: LucideIcon
-  label: string
-  value: string
-  hint?: string
-}) {
-  return (
-    <div className="rounded-xl border border-edge bg-surface p-4">
-      <div className="flex items-center gap-2 text-fg-muted">
-        <Icon size={16} aria-hidden />
-        <span className="text-xs font-medium">{label}</span>
-      </div>
-      <p className="mt-2 truncate text-2xl font-semibold text-fg">{value}</p>
-      {hint && <p className="mt-0.5 truncate text-xs text-fg-muted">{hint}</p>}
     </div>
   )
 }
@@ -249,10 +189,28 @@ function ChannelCard({
             </span>
           )}
         </>
-      ) : (
+      ) : stream.details.length === 0 ? (
         <p className="mt-3 text-sm text-fg-muted">
           Not live. Click for channel details.
         </p>
+      ) : null}
+
+      {/* Channel analytics (followers, subscribers, totals) ride along on
+          the same card so the hero is the one stats surface. */}
+      {!stream.error && stream.details.length > 0 && (
+        <dl className="mt-3 divide-y divide-edge border-t border-edge">
+          {stream.details.map((d) => (
+            <div
+              key={d.label}
+              className="flex items-baseline justify-between gap-4 py-1.5"
+            >
+              <dt className="shrink-0 text-xs text-fg-muted">{d.label}</dt>
+              <dd className="truncate text-right text-sm font-medium text-fg">
+                {d.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
       )}
     </button>
   )

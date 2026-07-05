@@ -10,7 +10,13 @@ import {
 } from 'react'
 import {GetLiveStreams} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
-import {fetchObsMics, type ObsMic} from '../lib/obs'
+import {
+  fetchObsCamera,
+  fetchObsMics,
+  type ObsCamera,
+  type ObsMic,
+} from '../lib/obs'
+import {loadSceneCameras} from '../lib/sceneCameras'
 import {SETTING_KEYS, loadSetting} from '../lib/settings'
 import {useServices} from '../services/ServicesProvider'
 
@@ -71,10 +77,29 @@ interface LiveDataContextValue {
   mics: ObsMic[]
   /**
    * The Application Audio Capture source designated as "Music" (OBS tab →
-   * Audio Mixer) and its mute state; null when none is designated or the
+   * Primary Sources) and its mute state; null when none is designated or the
    * source is missing from OBS.
    */
   music: ObsMic | null
+  /**
+   * The active (program) scene's designated primary camera and its
+   * visibility; null when none is designated or the source is not in the
+   * active scene.
+   */
+  camera: ObsCamera | null
+  /** The current OBS program scene name ('' when unknown/disconnected). */
+  programScene: string
+  /** Input name designated as the primary microphone ('' when unset). */
+  micSourceName: string
+  /** Recompute the active scene's primary camera (after a designation change). */
+  refreshCamera: () => void
+  /**
+   * Bumped whenever a source designation (mic/music/camera) might have
+   * changed; panels re-read their settings when this changes.
+   */
+  sourcesRev: number
+  /** Re-read designations and re-poll OBS immediately (after a change). */
+  refreshObs: () => void
   oauthConnected: boolean
   obsConnected: boolean
   /**
@@ -82,6 +107,8 @@ interface LiveDataContextValue {
    * a cleanup that releases the request — call from a useEffect.
    */
   requestFastPolling: () => () => void
+  /** Re-poll the platforms immediately (e.g. after clearing a cache). */
+  refreshPlatforms: () => void
 }
 
 const LiveDataContext = createContext<LiveDataContextValue | undefined>(
@@ -118,8 +145,16 @@ export function LiveDataProvider({children}: {children: ReactNode}) {
   const [obs, setObs] = useState<ObsMetrics | null>(null)
   const [mics, setMics] = useState<ObsMic[]>([])
   const [music, setMusic] = useState<ObsMic | null>(null)
+  const [camera, setCamera] = useState<ObsCamera | null>(null)
+  const [programScene, setProgramScene] = useState('')
+  const [micSourceName, setMicSourceName] = useState('')
   const [fastCount, setFastCount] = useState(0)
   const prevBytes = useRef<{bytes: number; at: number} | null>(null)
+
+  // Bumped by refreshObs after a designation change; forces the OBS effect to
+  // re-run and signals panels to re-read their settings.
+  const [obsNonce, setObsNonce] = useState(0)
+  const refreshObs = useCallback(() => setObsNonce((n) => n + 1), [])
 
   const oauthConnected = statuses.twitch.connected || statuses.youtube.connected
   const obsConnected = statuses.obs.connected
@@ -128,6 +163,24 @@ export function LiveDataProvider({children}: {children: ReactNode}) {
     setFastCount((c) => c + 1)
     return () => setFastCount((c) => Math.max(0, c - 1))
   }, [])
+
+  // Bumping the nonce re-runs the platform poll effect, ticking immediately.
+  const [pollNonce, setPollNonce] = useState(0)
+  const refreshPlatforms = useCallback(() => setPollNonce((n) => n + 1), [])
+
+  // Resolve the active (program) scene's designated primary camera.
+  const refreshCamera = useCallback(async () => {
+    try {
+      const {currentProgramSceneName: scene} = await obsRequest<{
+        currentProgramSceneName: string
+      }>('GetCurrentProgramScene')
+      setProgramScene(scene)
+      const cams = await loadSceneCameras()
+      setCamera(await fetchObsCamera(obsRequest, scene, cams[scene] ?? ''))
+    } catch {
+      setCamera(null)
+    }
+  }, [obsRequest])
 
   // Twitch / YouTube via the Go backend.
   const platformPollMs =
@@ -153,7 +206,7 @@ export function LiveDataProvider({children}: {children: ReactNode}) {
       cancelled = true
       window.clearInterval(id)
     }
-  }, [oauthConnected, platformPollMs])
+  }, [oauthConnected, platformPollMs, pollNonce])
 
   // OBS encoder stats over its WebSocket.
   useEffect(() => {
@@ -161,6 +214,9 @@ export function LiveDataProvider({children}: {children: ReactNode}) {
       setObs(null)
       setMics([])
       setMusic(null)
+      setCamera(null)
+      setProgramScene('')
+      setMicSourceName('')
       prevBytes.current = null
       return
     }
@@ -175,8 +231,17 @@ export function LiveDataProvider({children}: {children: ReactNode}) {
         if (cancelled) return
         setMics(micList)
 
+        // The designated primary mic (a label over the mic list; drives the
+        // status bar). Re-read each tick to pick up (re)designations.
+        try {
+          const micName = (await loadSetting(SETTING_KEYS.obsMicSource)) ?? ''
+          if (!cancelled) setMicSourceName(micName)
+        } catch {
+          if (!cancelled) setMicSourceName('')
+        }
+
         // The designated Music source's mute state. Re-reading the setting
-        // each tick also picks up (re)designations made in the Audio Mixer.
+        // each tick also picks up (re)designations made in Primary Sources.
         try {
           const name = (await loadSetting(SETTING_KEYS.obsMusicSource)) ?? ''
           if (!name) {
@@ -203,6 +268,7 @@ export function LiveDataProvider({children}: {children: ReactNode}) {
         prevBytes.current = {bytes: stream.outputBytes, at: now}
 
         setObs({...stats, ...stream, kbps})
+        void refreshCamera()
       } catch {
         if (!cancelled) setObs(null)
       }
@@ -213,7 +279,7 @@ export function LiveDataProvider({children}: {children: ReactNode}) {
       cancelled = true
       window.clearInterval(id)
     }
-  }, [obsConnected, obsRequest])
+  }, [obsConnected, obsRequest, refreshCamera, obsNonce])
 
   // Mute toggles apply instantly (from OBS itself or our own UI) between
   // stats polls.
@@ -236,17 +302,64 @@ export function LiveDataProvider({children}: {children: ReactNode}) {
     )
   }, [obsConnected, onObsEvent])
 
+  // Keep the active scene's primary camera fresh: program-scene switches
+  // recompute it; visibility toggles of the camera item apply in place.
+  useEffect(() => {
+    if (!obsConnected) return
+    const offs = [
+      onObsEvent<{sceneName: string}>('CurrentProgramSceneChanged', () => {
+        void refreshCamera()
+      }),
+      onObsEvent<{
+        sceneName: string
+        sceneItemId: number
+        sceneItemEnabled: boolean
+      }>('SceneItemEnableStateChanged', (e) => {
+        setCamera((prev) =>
+          prev &&
+          prev.sceneName === e.sceneName &&
+          prev.sceneItemId === e.sceneItemId
+            ? {...prev, enabled: e.sceneItemEnabled}
+            : prev,
+        )
+      }),
+    ]
+    return () => offs.forEach((off) => off())
+  }, [obsConnected, onObsEvent, refreshCamera])
+
   const value = useMemo<LiveDataContextValue>(
     () => ({
       platforms,
       obs,
       mics,
       music,
+      camera,
+      programScene,
+      micSourceName,
+      refreshCamera,
+      sourcesRev: obsNonce,
+      refreshObs,
       oauthConnected,
       obsConnected,
       requestFastPolling,
+      refreshPlatforms,
     }),
-    [platforms, obs, mics, music, oauthConnected, obsConnected, requestFastPolling],
+    [
+      platforms,
+      obs,
+      mics,
+      music,
+      camera,
+      programScene,
+      micSourceName,
+      refreshCamera,
+      obsNonce,
+      refreshObs,
+      oauthConnected,
+      obsConnected,
+      requestFastPolling,
+      refreshPlatforms,
+    ],
   )
 
   return (

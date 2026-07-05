@@ -1,4 +1,4 @@
-import {ChevronDown, User} from 'lucide-react'
+import {ChevronDown, Eye, EyeOff, User} from 'lucide-react'
 import {useEffect, useRef, useState} from 'react'
 import type {ViewId} from '../navigation'
 import {useProfile} from '../profile/ProfileProvider'
@@ -15,6 +15,8 @@ interface UserMenuProps {
 export function UserMenu({onNavigate}: UserMenuProps) {
   const {profile} = useProfile()
   const [open, setOpen] = useState(false)
+  // The email is masked by default and revealable, like a password.
+  const [showEmail, setShowEmail] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
   // Close on outside click or Escape.
@@ -72,7 +74,24 @@ export function UserMenu({onNavigate}: UserMenuProps) {
                 {trimmedName || 'No name set'}
               </p>
               {trimmedEmail && (
-                <p className="truncate text-xs text-fg-muted">{trimmedEmail}</p>
+                <p className="flex items-center gap-1 text-xs text-fg-muted">
+                  <span className="truncate">
+                    {showEmail ? trimmedEmail : '••••••••••'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowEmail((s) => !s)}
+                    aria-label={showEmail ? 'Hide email' : 'Show email'}
+                    title={showEmail ? 'Hide email' : 'Show email'}
+                    className="shrink-0 rounded p-0.5 transition-colors hover:bg-surface-hover hover:text-fg"
+                  >
+                    {showEmail ? (
+                      <EyeOff size={12} aria-hidden />
+                    ) : (
+                      <Eye size={12} aria-hidden />
+                    )}
+                  </button>
+                </p>
               )}
             </div>
           </div>

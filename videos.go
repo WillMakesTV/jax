@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"sort"
 	"strings"
@@ -86,10 +87,11 @@ type VideoDetails struct {
 // maxVideosPerPlatform bounds how much history each platform contributes.
 const maxVideosPerPlatform = 200
 
-// GetVideos returns every video on the connected channels, newest first.
-// Results are cached for apiCacheTTL; forceRefresh bypasses the cache.
-// Never returns a nil Videos slice.
-func (a *App) GetVideos(forceRefresh bool) VideoList {
+// allVideos fetches every video across the connected platforms (Twitch
+// VODs/highlights/uploads + clips, YouTube uploads excluding live-originated),
+// newest first, cached for apiCacheTTL. No past-stream de-duplication — that is
+// applied by GetVideos for the global Videos page.
+func (a *App) allVideos(forceRefresh bool) ([]Video, time.Time, bool, error) {
 	fetch := func() ([]Video, error) {
 		type job struct {
 			name string
@@ -139,15 +141,52 @@ func (a *App) GetVideos(forceRefresh bool) VideoList {
 		return all, nil
 	}
 
-	// v2: cache entries carry the videos' visibility status.
-	videos, at, cached, err := cachedJSON(a, a.connsCacheKey("videos_v2"), apiCacheTTL, forceRefresh, fetch)
+	// v6: Twitch VODs/highlights/uploads + clips; YouTube live-originated
+	// videos excluded (via liveBroadcastContent + scheduled/actual start).
+	return cachedJSON(a, a.connsCacheKey("videos_v6"), apiCacheTTL, forceRefresh, fetch)
+}
+
+// GetChannelVideos returns one platform's videos (VODs, highlights, uploads,
+// clips) newest-first, without the past-stream de-duplication — a channel's own
+// page shows its full catalogue. Never returns nil.
+func (a *App) GetChannelVideos(platform string) []Video {
+	videos, _, _, err := a.allVideos(false)
+	if err != nil {
+		return []Video{}
+	}
+	out := []Video{}
+	for _, v := range videos {
+		if v.Platform == platform {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// GetVideos returns every video on the connected channels, newest first, with
+// past-stream broadcasts removed (they have their own section). Results are
+// cached for apiCacheTTL; forceRefresh bypasses the cache. Never returns a nil
+// Videos slice.
+func (a *App) GetVideos(forceRefresh bool) VideoList {
+	videos, at, cached, err := a.allVideos(forceRefresh)
 	if err != nil {
 		log.Printf("jax: GetVideos: %v", err)
 		return VideoList{Videos: []Video{}}
 	}
-	if videos == nil {
-		videos = []Video{}
+
+	// Belt and suspenders: drop anything that also surfaces as a past stream
+	// (its own section). The per-platform fetches already exclude live VODs,
+	// but this guarantees no overlap even if a broadcast slips the heuristic.
+	pastURLs := a.pastBroadcastURLs()
+	filtered := make([]Video, 0, len(videos))
+	for _, v := range videos {
+		if pastURLs[v.URL] {
+			continue
+		}
+		filtered = append(filtered, v)
 	}
+	videos = filtered
+
 	return VideoList{
 		Videos:    videos,
 		FetchedAt: at.Format(time.RFC3339),
@@ -166,11 +205,18 @@ func (a *App) GetVideoDetails(platform, id string, forceRefresh bool) (VideoDeta
 		return VideoDetails{}, fmt.Errorf("%s is not connected", platformLabel(platform))
 	}
 
+	// Optional Google API key enables reading public YouTube comments (the
+	// device-flow OAuth token lacks the youtube.force-ssl scope those need).
+	apiKey := ""
+	if a.store != nil {
+		apiKey, _ = a.store.getSetting("youtube_api_key")
+	}
+
 	fetch := func() (VideoDetails, error) {
 		if platform == "twitch" {
 			return fetchTwitchVideoDetails(conn, id)
 		}
-		return fetchYouTubeVideoDetails(conn, id)
+		return fetchYouTubeVideoDetails(conn, id, apiKey)
 	}
 
 	key := "video|" + platform + "|" + id
@@ -187,6 +233,21 @@ func (a *App) GetVideoDetails(platform, id string, forceRefresh bool) (VideoDeta
 	details.FetchedAt = at.Format(time.RFC3339)
 	details.FromCache = cached
 	return details, nil
+}
+
+// pastBroadcastURLs returns the set of broadcast URLs currently represented
+// on the Streams page, so Videos can exclude them. Uses the cached past
+// streams; never returns nil.
+func (a *App) pastBroadcastURLs() map[string]bool {
+	set := map[string]bool{}
+	for _, s := range a.GetPastStreams(false) {
+		for _, b := range s.Broadcasts {
+			if b.URL != "" {
+				set[b.URL] = true
+			}
+		}
+	}
+	return set
 }
 
 func sortVideosNewestFirst(videos []Video) {
@@ -264,29 +325,29 @@ func (v twitchVideoItem) toVideo() Video {
 	}
 }
 
-// fetchTwitchVideos pages through the channel's videos (archives, highlights,
-// and uploads) up to maxVideosPerPlatform.
+// fetchTwitchVideos pages through the channel's videos — archive VODs,
+// highlights, and uploads — up to maxVideosPerPlatform, then appends the
+// channel's clips. Broadcast VODs that also surface on the Streams page are
+// de-duplicated later by GetVideos (see pastBroadcastURLs).
 func fetchTwitchVideos(conn serviceConn) ([]Video, error) {
 	if conn.userID == "" {
 		return nil, fmt.Errorf("missing broadcaster id")
 	}
 	headers := twitchHeaders(conn)
 
-	// While a stream is running, its in-progress archive VOD has no usable
-	// thumbnail (Twitch serves a broken processing placeholder). Grab the live
-	// stream's id and preview image so that VOD can borrow them.
-	liveStreamID, liveThumb := "", ""
+	// Twitch creates the archive VOD while the stream is still running, with
+	// no usable thumbnail yet (a broken processing placeholder) — same case
+	// past.go excludes from the Streams page since it belongs on the live
+	// card instead. Find the current live stream id (if any) so its
+	// in-progress VOD can be excluded here too.
+	liveStreamID := ""
 	var liveResp struct {
 		Data []struct {
-			ID           string `json:"id"`
-			ThumbnailURL string `json:"thumbnail_url"`
+			ID string `json:"id"`
 		} `json:"data"`
 	}
 	if _, err := getJSON(twitchStreamsURL+"?user_id="+conn.userID, headers, &liveResp); err == nil && len(liveResp.Data) > 0 {
 		liveStreamID = liveResp.Data[0].ID
-		liveThumb = strings.NewReplacer(
-			"{width}", "640", "{height}", "360",
-		).Replace(liveResp.Data[0].ThumbnailURL)
 	}
 
 	var out []Video
@@ -313,16 +374,87 @@ func fetchTwitchVideos(conn serviceConn) ([]Video, error) {
 			break
 		}
 		for _, v := range resp.Data {
-			video := v.toVideo()
-			// The in-progress VOD of the current live stream: borrow the live
-			// preview image and flag it.
 			if liveStreamID != "" && v.StreamID == liveStreamID {
-				if liveThumb != "" {
-					video.ThumbnailURL = liveThumb
-				}
-				video.Kind = "Live now"
+				continue // the broadcast is still live; it belongs on the live card
 			}
-			out = append(out, video)
+			out = append(out, v.toVideo())
+		}
+		cursor = resp.Pagination.Cursor
+		if cursor == "" {
+			break
+		}
+	}
+	// Clips live on a separate endpoint; tolerate their failure so the VODs
+	// and highlights still surface.
+	if clips, err := fetchTwitchClips(conn); err == nil {
+		out = append(out, clips...)
+	} else {
+		log.Printf("jax: twitch clips: %v", err)
+	}
+	return out, nil
+}
+
+// twitchClipItem is one entry from the Helix clips endpoint.
+type twitchClipItem struct {
+	ID              string  `json:"id"`
+	URL             string  `json:"url"`
+	Title           string  `json:"title"`
+	ThumbnailURL    string  `json:"thumbnail_url"`
+	CreatedAt       string  `json:"created_at"`
+	Duration        float64 `json:"duration"` // seconds
+	ViewCount       int64   `json:"view_count"`
+	BroadcasterName string  `json:"broadcaster_name"`
+}
+
+func (c twitchClipItem) toVideo() Video {
+	secs := int(c.Duration + 0.5)
+	return Video{
+		Platform:     "twitch",
+		ID:           c.ID,
+		Title:        c.Title,
+		URL:          c.URL,
+		ThumbnailURL: c.ThumbnailURL,
+		PublishedAt:  c.CreatedAt,
+		Duration:     compactDurationFromSecs(secs),
+		DurationSecs: secs,
+		ViewCount:    c.ViewCount,
+		Kind:         "Clip",
+		Status:       "public",
+		ChannelName:  c.BroadcasterName,
+	}
+}
+
+// fetchTwitchClips pages through the channel's clips up to maxVideosPerPlatform.
+func fetchTwitchClips(conn serviceConn) ([]Video, error) {
+	if conn.userID == "" {
+		return nil, fmt.Errorf("missing broadcaster id")
+	}
+	headers := twitchHeaders(conn)
+
+	var out []Video
+	cursor := ""
+	for len(out) < maxVideosPerPlatform {
+		endpoint := twitchClipsURL + "?broadcaster_id=" + conn.userID + "&first=100"
+		if cursor != "" {
+			endpoint += "&after=" + url.QueryEscape(cursor)
+		}
+		var resp struct {
+			Data       []twitchClipItem `json:"data"`
+			Pagination struct {
+				Cursor string `json:"cursor"`
+			} `json:"pagination"`
+		}
+		if _, err := getJSON(endpoint, headers, &resp); err != nil {
+			if len(out) > 0 {
+				break
+			}
+			return nil, err
+		}
+		if len(resp.Data) == 0 {
+			break
+		}
+		for _, c := range resp.Data {
+			out = append(out, c.toVideo())
 		}
 		cursor = resp.Pagination.Cursor
 		if cursor == "" {
@@ -330,6 +462,23 @@ func fetchTwitchVideos(conn serviceConn) ([]Video, error) {
 		}
 	}
 	return out, nil
+}
+
+// compactDurationFromSecs formats seconds as e.g. "3h8m33s" to match the
+// Twitch VOD duration style.
+func compactDurationFromSecs(secs int) string {
+	if secs <= 0 {
+		return ""
+	}
+	h, m, s := secs/3600, (secs%3600)/60, secs%60
+	switch {
+	case h > 0:
+		return fmt.Sprintf("%dh%dm%ds", h, m, s)
+	case m > 0:
+		return fmt.Sprintf("%dm%ds", m, s)
+	default:
+		return fmt.Sprintf("%ds", s)
+	}
 }
 
 func fetchTwitchVideoDetails(conn serviceConn, id string) (VideoDetails, error) {
@@ -382,7 +531,9 @@ type youtubeVideoItem struct {
 		Description  string `json:"description"`
 		PublishedAt  string `json:"publishedAt"`
 		ChannelTitle string `json:"channelTitle"`
-		Thumbnails   struct {
+		// "live" | "upcoming" | "none" — the definitive live-broadcast flag.
+		LiveBroadcastContent string `json:"liveBroadcastContent"`
+		Thumbnails           struct {
 			Medium struct {
 				URL string `json:"url"`
 			} `json:"medium"`
@@ -406,15 +557,26 @@ type youtubeVideoItem struct {
 		PrivacyStatus string `json:"privacyStatus"`
 	} `json:"status"`
 	LiveStreamingDetails struct {
-		ActualStartTime string `json:"actualStartTime"`
+		ScheduledStartTime string `json:"scheduledStartTime"`
+		ActualStartTime    string `json:"actualStartTime"`
+		ActualEndTime      string `json:"actualEndTime"`
 	} `json:"liveStreamingDetails"`
 }
 
-func (v youtubeVideoItem) toVideo() Video {
-	kind := "Upload"
-	if v.LiveStreamingDetails.ActualStartTime != "" {
-		kind = "Live VOD"
+// wasEverLive reports whether the video is, was, or will be a live broadcast
+// (live, upcoming/premiere, scheduled, or a finished live VOD). Such videos
+// belong to the Streams page, not Videos. Checking liveBroadcastContent and
+// scheduledStartTime — not just actualStartTime — catches broadcasts that are
+// currently live (actualStartTime can lag) or not yet started.
+func (v youtubeVideoItem) wasEverLive() bool {
+	if lbc := v.Snippet.LiveBroadcastContent; lbc == "live" || lbc == "upcoming" {
+		return true
 	}
+	return v.LiveStreamingDetails.ActualStartTime != "" ||
+		v.LiveStreamingDetails.ScheduledStartTime != ""
+}
+
+func (v youtubeVideoItem) toVideo() Video {
 	compact := formatISODuration(v.ContentDetails.Duration)
 	return Video{
 		Platform:    "youtube",
@@ -430,14 +592,15 @@ func (v youtubeVideoItem) toVideo() Video {
 		Duration:     compact,
 		DurationSecs: parseCompactDuration(compact),
 		ViewCount:    atoi64(v.Statistics.ViewCount),
-		Kind:         kind,
+		Kind:         "Upload",
 		Status:       normalizeVideoStatus(v.Status.PrivacyStatus),
 		ChannelName:  v.Snippet.ChannelTitle,
 	}
 }
 
-// fetchYouTubeVideos walks the channel's uploads playlist (which includes
-// completed live streams) and enriches each page with stats and durations.
+// fetchYouTubeVideos walks the channel's uploads playlist and enriches each
+// page with stats and durations. Videos that originated as live broadcasts
+// are dropped — they belong to the Streams page.
 func fetchYouTubeVideos(conn serviceConn) ([]Video, error) {
 	headers := map[string]string{"Authorization": "Bearer " + conn.token}
 
@@ -511,6 +674,9 @@ func fetchYouTubeVideos(conn serviceConn) ([]Video, error) {
 			return nil, err
 		}
 		for _, v := range videos.Items {
+			if v.wasEverLive() {
+				continue // live broadcasts (and their VODs) belong to Streams
+			}
 			video := v.toVideo()
 			if video.ChannelName == "" {
 				video.ChannelName = conn.account
@@ -521,7 +687,7 @@ func fetchYouTubeVideos(conn serviceConn) ([]Video, error) {
 	return out, nil
 }
 
-func fetchYouTubeVideoDetails(conn serviceConn, id string) (VideoDetails, error) {
+func fetchYouTubeVideoDetails(conn serviceConn, id, apiKey string) (VideoDetails, error) {
 	headers := map[string]string{"Authorization": "Bearer " + conn.token}
 
 	var videos struct {
@@ -572,9 +738,25 @@ func fetchYouTubeVideoDetails(conn serviceConn, id string) (VideoDetails, error)
 			} `json:"snippet"`
 		} `json:"items"`
 	}
-	if _, err := getJSON(youtubeCommentThreadsURL+url.QueryEscape(id), headers, &threads); err != nil {
-		log.Printf("jax: youtube comments for %s: %v", id, err)
-		d.CommentsNote = "Comments could not be loaded — they may be disabled for this video."
+	// With a Google API key we can read public comments directly (no OAuth
+	// token — it lacks the youtube.force-ssl scope those need). Otherwise the
+	// OAuth call 403s and we explain how to enable them.
+	commentsURL := youtubeCommentThreadsURL + url.QueryEscape(id)
+	commentHeaders := headers
+	if apiKey != "" {
+		commentsURL += "&key=" + url.QueryEscape(apiKey)
+		commentHeaders = nil
+	}
+	if status, err := getJSON(commentsURL, commentHeaders, &threads); err != nil {
+		if apiKey == "" && status == http.StatusForbidden {
+			// commentThreads.list needs the youtube.force-ssl scope, which the
+			// device-authorization flow this app uses cannot request, so a 403
+			// here is expected — not a failure worth logging loudly.
+			d.CommentsNote = "YouTube comments need a Google API key — add one in Settings → Services to load them."
+		} else {
+			log.Printf("jax: youtube comments for %s: %v", id, err)
+			d.CommentsNote = "Comments could not be loaded — they may be disabled for this video."
+		}
 	} else {
 		for _, t := range threads.Items {
 			c := t.Snippet.TopLevelComment.Snippet

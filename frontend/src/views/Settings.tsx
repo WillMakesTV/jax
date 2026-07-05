@@ -18,10 +18,7 @@ export function Settings() {
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader
-        title="Settings"
-        description="Configure how Jax looks and connects."
-      />
+      <PageHeader description="Configure how Jax looks and connects." />
 
       <div
         role="tablist"

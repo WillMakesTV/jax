@@ -43,6 +43,8 @@ type LiveStream struct {
 	ViewerCount  int          `json:"viewerCount"`
 	StartedAt    string       `json:"startedAt"` // RFC3339; empty when offline
 	ThumbnailURL string       `json:"thumbnailUrl"`
+	AvatarURL    string       `json:"avatarUrl"` // channel profile image
+	BannerURL    string       `json:"bannerUrl"` // channel banner / offline image
 	Details      []DetailItem `json:"details"`
 }
 
@@ -199,6 +201,42 @@ func twitchHeaders(conn serviceConn) map[string]string {
 	}
 }
 
+// keyTwitchChannelInfo persistently caches slow-moving Twitch channel data
+// (title/category, followers, subscribers, language, delay, labels, …) so the
+// live poll only spends its per-tick calls on the actual live check. The _v2
+// suffix invalidates caches written before the analytics fields were added.
+const keyTwitchChannelInfo = "twitch_channel_info_v3"
+
+// twitchChannelInfo is the cached channel-level metadata and analytics.
+type twitchChannelInfo struct {
+	Title       string `json:"title"`
+	Category    string `json:"category"`
+	Language    string `json:"language"` // broadcaster language
+	Delay       int    `json:"delay"`    // stream delay, seconds
+	Tags        string `json:"tags"`
+	Labels      string `json:"labels"` // content classification labels
+	Branded     bool   `json:"branded"`
+	Followers   string `json:"followers"`   // formatted count; "" when unavailable
+	Subscribers string `json:"subscribers"` // formatted; needs channel:read:subscriptions
+	SubPoints   string `json:"subPoints"`
+	Avatar      string `json:"avatar"` // profile_image_url
+	Banner      string `json:"banner"` // offline_image_url
+}
+
+// RefreshChannelInfo drops the cached channel-level analytics for both
+// platforms (and the YouTube live memo) so the next poll refetches fresh
+// numbers from the APIs. Wired to the Dashboard's analytics refresh CTA.
+func (a *App) RefreshChannelInfo() {
+	if a.store != nil {
+		_ = a.store.deleteCacheEntry(keyYTChannelInfo)
+		_ = a.store.deleteCacheEntry(keyTwitchChannelInfo)
+	}
+	a.mu.Lock()
+	a.ytLiveResult = nil
+	a.ytLiveResultAt = time.Time{}
+	a.mu.Unlock()
+}
+
 // fetchTwitchLive gathers the broadcaster's current stream (if live), channel
 // metadata, and follower count from the Helix API.
 func (a *App) fetchTwitchLive(conn serviceConn) LiveStream {
@@ -262,27 +300,91 @@ func (a *App) fetchTwitchLive(conn serviceConn) LiveStream {
 		if s.IsMature {
 			ls.Details = append(ls.Details, DetailItem{"Mature content", "Yes"})
 		}
-	} else {
-		// Offline: the channel endpoint still gives the configured title/category.
-		var channels struct {
-			Data []struct {
-				Title    string `json:"title"`
-				GameName string `json:"game_name"`
-			} `json:"data"`
-		}
-		if _, err := getJSON(twitchChannelsURL+"?broadcaster_id="+conn.userID, headers, &channels); err == nil && len(channels.Data) > 0 {
-			ls.Title = channels.Data[0].Title
-			ls.Category = channels.Data[0].GameName
-		}
 	}
 
-	// Follower count. Needs the moderator:read:followers scope for full data,
-	// but `total` is returned for the broadcaster's own token; tolerate failure.
-	var followers struct {
-		Total int64 `json:"total"`
-	}
-	if _, err := getJSON(twitchFollowersURL+"?broadcaster_id="+conn.userID+"&first=1", headers, &followers); err == nil {
-		ls.Details = append(ls.Details, DetailItem{"Followers", fmtCount(followers.Total)})
+	// Channel-level metadata (configured title/category, follower count) is
+	// slow-moving, so it is served from the 1-hour cache instead of being
+	// refetched on every poll tick.
+	info, _, _, err := cachedJSON(a, keyTwitchChannelInfo, apiCacheTTL, false, func() (twitchChannelInfo, error) {
+		out := twitchChannelInfo{}
+		var channels struct {
+			Data []struct {
+				Title                       string   `json:"title"`
+				GameName                    string   `json:"game_name"`
+				BroadcasterLanguage         string   `json:"broadcaster_language"`
+				Delay                       int      `json:"delay"`
+				Tags                        []string `json:"tags"`
+				ContentClassificationLabels []string `json:"content_classification_labels"`
+				IsBrandedContent            bool     `json:"is_branded_content"`
+			} `json:"data"`
+		}
+		if _, err := getJSON(twitchChannelsURL+"?broadcaster_id="+conn.userID, headers, &channels); err != nil {
+			return out, err
+		}
+		if len(channels.Data) > 0 {
+			c := channels.Data[0]
+			out.Title = c.Title
+			out.Category = c.GameName
+			out.Language = c.BroadcasterLanguage
+			out.Delay = c.Delay
+			out.Tags = strings.Join(c.Tags, ", ")
+			out.Labels = strings.Join(c.ContentClassificationLabels, ", ")
+			out.Branded = c.IsBrandedContent
+		}
+		// Follower count needs moderator:read:followers for full data, but
+		// `total` is returned for the broadcaster's own token; tolerate failure.
+		var followers struct {
+			Total int64 `json:"total"`
+		}
+		if _, err := getJSON(twitchFollowersURL+"?broadcaster_id="+conn.userID+"&first=1", headers, &followers); err == nil {
+			out.Followers = fmtCount(followers.Total)
+		}
+		// Subscriber count + points (needs channel:read:subscriptions).
+		var subs struct {
+			Total  int64 `json:"total"`
+			Points int64 `json:"points"`
+		}
+		if _, err := getJSON(twitchSubCheckURL+"?broadcaster_id="+conn.userID+"&first=1", headers, &subs); err == nil {
+			out.Subscribers = fmtCount(subs.Total)
+			out.SubPoints = fmtCount(subs.Points)
+		}
+		// Channel branding (profile image + offline/banner image).
+		var users struct {
+			Data []struct {
+				ProfileImageURL string `json:"profile_image_url"`
+				OfflineImageURL string `json:"offline_image_url"`
+			} `json:"data"`
+		}
+		if _, err := getJSON(twitchUsersURL+"?id="+conn.userID, headers, &users); err == nil && len(users.Data) > 0 {
+			out.Avatar = users.Data[0].ProfileImageURL
+			out.Banner = users.Data[0].OfflineImageURL
+		}
+		return out, nil
+	})
+	if err == nil {
+		if !ls.Live {
+			// Offline: the configured (next-stream) title and category.
+			ls.Title = info.Title
+			ls.Category = info.Category
+		}
+		ls.AvatarURL = info.Avatar
+		ls.BannerURL = info.Banner
+		add := func(label, value string) {
+			if value != "" {
+				ls.Details = append(ls.Details, DetailItem{label, value})
+			}
+		}
+		add("Followers", info.Followers)
+		add("Subscribers", info.Subscribers)
+		add("Sub points", info.SubPoints)
+		add("Broadcaster language", info.Language)
+		if info.Delay > 0 {
+			add("Stream delay", fmt.Sprintf("%ds", info.Delay))
+		}
+		add("Content labels", info.Labels)
+		if info.Branded {
+			add("Branded content", "Yes")
+		}
 	}
 
 	return ls
@@ -293,7 +395,7 @@ func (a *App) fetchTwitchLive(conn serviceConn) LiveStream {
 // ---------------------------------------------------------------------------
 
 const (
-	youtubeChannelsURL = "https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true"
+	youtubeChannelsURL = "https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,brandingSettings&mine=true"
 	// liveBroadcasts.list: broadcastStatus is a filter and must NOT be combined
 	// with mine= (the API rejects two filters with incompatibleParameters); it
 	// already scopes to the authenticated user. broadcastType=all is required to
@@ -313,13 +415,15 @@ const (
 	ytLiveMetricsMin  = 15 * time.Second
 	// keyYTChannelInfo persistently caches channel-level stats (subscriber /
 	// view counts), which change too slowly to justify a call per poll.
-	keyYTChannelInfo = "yt_channel_info"
+	keyYTChannelInfo = "yt_channel_info_v2"
 )
 
 // ytChannelInfo is the slow-moving channel metadata cached for apiCacheTTL.
 type ytChannelInfo struct {
 	Name    string       `json:"name"`
 	URL     string       `json:"url"`
+	Avatar  string       `json:"avatar"` // channel profile image
+	Banner  string       `json:"banner"` // channel banner (brandingSettings)
 	Details []DetailItem `json:"details"`
 }
 
@@ -387,14 +491,24 @@ func (a *App) fetchYouTubeLive(conn serviceConn) LiveStream {
 			Items []struct {
 				ID      string `json:"id"`
 				Snippet struct {
-					Title     string `json:"title"`
-					CustomURL string `json:"customUrl"`
+					Title      string `json:"title"`
+					CustomURL  string `json:"customUrl"`
+					Thumbnails struct {
+						High   struct{ URL string } `json:"high"`
+						Medium struct{ URL string } `json:"medium"`
+						Default struct{ URL string } `json:"default"`
+					} `json:"thumbnails"`
 				} `json:"snippet"`
 				Statistics struct {
 					SubscriberCount string `json:"subscriberCount"`
 					ViewCount       string `json:"viewCount"`
 					VideoCount      string `json:"videoCount"`
 				} `json:"statistics"`
+				BrandingSettings struct {
+					Image struct {
+						BannerExternalURL string `json:"bannerExternalUrl"`
+					} `json:"image"`
+				} `json:"brandingSettings"`
 			} `json:"items"`
 		}
 		status, err := getJSON(youtubeChannelsURL, headers, &channels)
@@ -406,6 +520,12 @@ func (a *App) fetchYouTubeLive(conn serviceConn) LiveStream {
 		if len(channels.Items) > 0 {
 			ch := channels.Items[0]
 			out.Name = ch.Snippet.Title
+			out.Avatar = firstNonEmpty(
+				ch.Snippet.Thumbnails.High.URL,
+				ch.Snippet.Thumbnails.Medium.URL,
+				ch.Snippet.Thumbnails.Default.URL,
+			)
+			out.Banner = ch.BrandingSettings.Image.BannerExternalURL
 			if ch.Snippet.CustomURL != "" {
 				out.URL = "https://youtube.com/" + ch.Snippet.CustomURL
 			} else if ch.ID != "" {
@@ -430,6 +550,8 @@ func (a *App) fetchYouTubeLive(conn serviceConn) LiveStream {
 	}
 	ls.ChannelName = firstNonEmpty(info.Name, ls.ChannelName)
 	ls.ChannelURL = firstNonEmpty(info.URL, ls.ChannelURL)
+	ls.AvatarURL = info.Avatar
+	ls.BannerURL = info.Banner
 	ls.Details = append(ls.Details, info.Details...)
 
 	// Live status. Only probe the broadcast list while we believe we are

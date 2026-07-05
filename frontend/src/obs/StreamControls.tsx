@@ -4,9 +4,8 @@ import {useLiveData} from '../live/LiveDataProvider'
 import {useServices} from '../services/ServicesProvider'
 
 /**
- * Stream controls: start/stop the OBS broadcast with a confirm step. Lives in
- * the OBS tab's Controls tab; the status pill in the card header reflects the
- * outcome when the next stats poll lands.
+ * Inline stream controls: start/stop the OBS broadcast with a confirm step.
+ * Rendered beneath the program preview, so it stays compact and horizontal.
  */
 export function StreamControls() {
   const {statuses, obsRequest} = useServices()
@@ -38,58 +37,57 @@ export function StreamControls() {
     }
   }
 
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <p className="text-sm text-fg-muted">
-        {connected
-          ? streaming
-            ? 'You are live. Stopping ends the broadcast on every connected channel fed by OBS.'
-            : 'Start the broadcast right from the dashboard when you are ready to go live.'
-          : 'Connect OBS in Settings → Services to control the stream.'}
+  if (!connected) {
+    return (
+      <p className="text-xs text-fg-muted">
+        Connect OBS in Settings → Services to control the stream.
       </p>
+    )
+  }
 
-      {connected && (
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          {confirming ? (
-            <>
-              <button
-                type="button"
-                onClick={() => void toggleStream()}
-                disabled={busy}
-                className={clsx(
-                  'rounded-lg px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-50',
-                  streaming ? 'bg-red-600 text-white' : 'bg-accent text-accent-fg',
-                )}
-              >
-                {busy ? 'Working…' : streaming ? 'Confirm stop' : 'Confirm go live'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirming(false)}
-                disabled={busy}
-                className="rounded-lg border border-edge bg-bg px-4 py-2 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirming(true)}
-              className={clsx(
-                'rounded-lg px-4 py-2 text-sm font-semibold transition-colors',
-                streaming
-                  ? 'border border-red-600/50 text-red-600 hover:bg-red-600/10 dark:text-red-400'
-                  : 'bg-accent text-accent-fg transition-opacity hover:opacity-90',
-              )}
-            >
-              {streaming ? 'Stop streaming' : 'Start streaming'}
-            </button>
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {confirming ? (
+        <>
+          <span className="text-xs text-fg-muted">
+            {streaming ? 'End the broadcast?' : 'Go live now?'}
+          </span>
+          <button
+            type="button"
+            onClick={() => void toggleStream()}
+            disabled={busy}
+            className={clsx(
+              'rounded-lg px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-90 disabled:opacity-50',
+              streaming ? 'bg-red-600 text-white' : 'bg-accent text-accent-fg',
+            )}
+          >
+            {busy ? 'Working…' : streaming ? 'Confirm stop' : 'Confirm go live'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirming(false)}
+            disabled={busy}
+            className="rounded-lg border border-edge bg-bg px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          className={clsx(
+            'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+            streaming
+              ? 'border border-red-600/50 text-red-600 hover:bg-red-600/10 dark:text-red-400'
+              : 'bg-accent text-accent-fg transition-opacity hover:opacity-90',
           )}
-        </div>
+        >
+          {streaming ? 'Stop streaming' : 'Start streaming'}
+        </button>
       )}
       {error && (
-        <p className="mt-3 text-xs text-red-600 dark:text-red-400">{error}</p>
+        <span className="text-xs text-red-600 dark:text-red-400">{error}</span>
       )}
     </div>
   )

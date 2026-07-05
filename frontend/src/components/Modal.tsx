@@ -8,6 +8,8 @@ interface ModalProps {
   title: ReactNode
   /** Optional element rendered to the left of the title (e.g. a logo). */
   icon?: ReactNode
+  /** Tailwind max-width class for the dialog; defaults to a compact size. */
+  maxWidthClass?: string
   children: ReactNode
 }
 
@@ -16,7 +18,14 @@ interface ModalProps {
  * backdrop click, traps initial focus on the dialog, and restores focus to the
  * previously focused element on close.
  */
-export function Modal({open, onClose, title, icon, children}: ModalProps) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  icon,
+  maxWidthClass = 'max-w-md',
+  children,
+}: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
   const previouslyFocused = useRef<HTMLElement | null>(null)
 
@@ -61,7 +70,7 @@ export function Modal({open, onClose, title, icon, children}: ModalProps) {
         aria-modal="true"
         aria-label={typeof title === 'string' ? title : undefined}
         tabIndex={-1}
-        className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl border border-edge bg-surface shadow-2xl outline-none"
+        className={`relative z-10 w-full ${maxWidthClass} overflow-hidden rounded-2xl border border-edge bg-surface shadow-2xl outline-none`}
       >
         <div className="flex items-center gap-3 border-b border-edge px-5 py-4">
           {icon}

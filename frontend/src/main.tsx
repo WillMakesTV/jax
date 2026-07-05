@@ -9,6 +9,7 @@ import {LiveDataProvider} from './live/LiveDataProvider'
 import {EventsProvider} from './events/EventsProvider'
 import {ChatProvider} from './chat/ChatProvider'
 import {TranscriptProvider} from './transcript/TranscriptProvider'
+import {DownloadProvider} from './downloads/DownloadProvider'
 
 const container = document.getElementById('root')
 
@@ -23,7 +24,9 @@ root.render(
                         <EventsProvider>
                             <ChatProvider>
                                 <TranscriptProvider>
-                                    <App/>
+                                    <DownloadProvider>
+                                        <App/>
+                                    </DownloadProvider>
                                 </TranscriptProvider>
                             </ChatProvider>
                         </EventsProvider>

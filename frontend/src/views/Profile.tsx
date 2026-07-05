@@ -1,4 +1,4 @@
-import {Check} from 'lucide-react'
+import {Check, Eye, EyeOff} from 'lucide-react'
 import {useState, type FormEvent} from 'react'
 import {Avatar} from '../components/Avatar'
 import {PageHeader} from '../components/PageHeader'
@@ -9,6 +9,8 @@ export function Profile() {
   const [name, setName] = useState(profile.name)
   const [email, setEmail] = useState(profile.email)
   const [saved, setSaved] = useState(false)
+  // The email is treated like a password: hidden by default, revealable.
+  const [showEmail, setShowEmail] = useState(false)
 
   const dirty = name !== profile.name || email !== profile.email
 
@@ -24,10 +26,7 @@ export function Profile() {
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader
-        title="Profile"
-        description="Set your name and the email used for your avatar."
-      />
+      <PageHeader description="Set your name and the email used for your avatar." />
 
       <form
         onSubmit={onSubmit}
@@ -77,18 +76,33 @@ export function Profile() {
             >
               Email
             </label>
-            <input
-              id="profile-email"
-              type="email"
-              value={email}
-              autoComplete="email"
-              placeholder="you@example.com"
-              onChange={(e) => {
-                setEmail(e.target.value)
-                markEdited()
-              }}
-              className="w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg placeholder:text-fg-muted"
-            />
+            <div className="relative">
+              <input
+                id="profile-email"
+                type={showEmail ? 'email' : 'password'}
+                value={email}
+                autoComplete="off"
+                placeholder="you@example.com"
+                onChange={(e) => {
+                  setEmail(e.target.value)
+                  markEdited()
+                }}
+                className="w-full rounded-lg border border-edge bg-bg px-3 py-2 pr-10 text-sm text-fg placeholder:text-fg-muted"
+              />
+              <button
+                type="button"
+                onClick={() => setShowEmail((s) => !s)}
+                aria-label={showEmail ? 'Hide email' : 'Show email'}
+                title={showEmail ? 'Hide email' : 'Show email'}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+              >
+                {showEmail ? (
+                  <EyeOff size={15} aria-hidden />
+                ) : (
+                  <Eye size={15} aria-hidden />
+                )}
+              </button>
+            </div>
             <p className="mt-1.5 text-xs text-fg-muted">
               Used only to look up your{' '}
               <a

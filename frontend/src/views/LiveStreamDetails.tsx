@@ -40,7 +40,6 @@ export function LiveStreamDetails({onBack}: LiveStreamDetailsProps) {
 
   const live = platforms.filter((p) => p.live)
   const {totalViewers, uptimeMs} = aggregateLive(platforms, obs)
-  const title = live.find((p) => p.title)?.title ?? 'Live stream'
 
   return (
     <div className="flex h-full flex-col">
@@ -50,7 +49,7 @@ export function LiveStreamDetails({onBack}: LiveStreamDetailsProps) {
         className="mb-4 inline-flex w-fit items-center gap-1.5 text-sm text-fg-muted transition-colors hover:text-fg"
       >
         <ArrowLeft size={16} aria-hidden />
-        Back to Streams
+        Back to Past Streams
       </button>
 
       {live.length === 0 ? (
@@ -71,7 +70,6 @@ export function LiveStreamDetails({onBack}: LiveStreamDetailsProps) {
       ) : (
         <>
           <PageHeader
-            title={title}
             description={`Live on ${live
               .map((p) => platformName(p.platform))
               .join(' + ')}.`}
