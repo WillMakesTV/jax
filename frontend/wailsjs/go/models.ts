@@ -1,5 +1,27 @@
 export namespace main {
 	
+	export class ActiveStreamSession {
+	    active: boolean;
+	    planId: string;
+	    title: string;
+	    seriesId: string;
+	    episode: number;
+	    startedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ActiveStreamSession(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.active = source["active"];
+	        this.planId = source["planId"];
+	        this.title = source["title"];
+	        this.seriesId = source["seriesId"];
+	        this.episode = source["episode"];
+	        this.startedAt = source["startedAt"];
+	    }
+	}
 	export class AuthPollResult {
 	    status: string;
 	    account: string;
@@ -165,6 +187,9 @@ export namespace main {
 	    createdAt: string;
 	    isDefault: boolean;
 	    typeId: string;
+	    smartEpisodeInfo: boolean;
+	    episodeTitleSource: string;
+	    episodeNumberSource: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ContentSeries(source);
@@ -182,6 +207,9 @@ export namespace main {
 	        this.createdAt = source["createdAt"];
 	        this.isDefault = source["isDefault"];
 	        this.typeId = source["typeId"];
+	        this.smartEpisodeInfo = source["smartEpisodeInfo"];
+	        this.episodeTitleSource = source["episodeTitleSource"];
+	        this.episodeNumberSource = source["episodeNumberSource"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -520,6 +548,90 @@ export namespace main {
 	        this.email = source["email"];
 	    }
 	}
+	export class ProjectDoc {
+	    id: string;
+	    parentId: string;
+	    title: string;
+	    content: string;
+	    createdAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProjectDoc(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.parentId = source["parentId"];
+	        this.title = source["title"];
+	        this.content = source["content"];
+	        this.createdAt = source["createdAt"];
+	    }
+	}
+	export class ProjectAsset {
+	    id: string;
+	    name: string;
+	    description: string;
+	    sizeBytes: number;
+	    addedAt: string;
+	    mediaUrl: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProjectAsset(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.sizeBytes = source["sizeBytes"];
+	        this.addedAt = source["addedAt"];
+	        this.mediaUrl = source["mediaUrl"];
+	    }
+	}
+	export class Project {
+	    id: string;
+	    title: string;
+	    description: string;
+	    createdAt: string;
+	    assets: ProjectAsset[];
+	    docs: ProjectDoc[];
+	
+	    static createFrom(source: any = {}) {
+	        return new Project(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.description = source["description"];
+	        this.createdAt = source["createdAt"];
+	        this.assets = this.convertValues(source["assets"], ProjectAsset);
+	        this.docs = this.convertValues(source["docs"], ProjectDoc);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	
 	export class RoutineStep {
 	    kind: string;
 	    scene?: string;

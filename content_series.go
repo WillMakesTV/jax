@@ -35,6 +35,13 @@ type ContentSeries struct {
 	IsDefault bool `json:"isDefault"`
 	// TypeID references a SeriesType ("" = untyped); see series_types.go.
 	TypeID string `json:"typeId"`
+	// Smart-source mapping for episodic series: while an episode of this
+	// series is on the air, the mapped OBS text sources are kept updated with
+	// the episode's title and number (see SmartSourcesUpdater). Either source
+	// may be empty to map just one.
+	SmartEpisodeInfo    bool   `json:"smartEpisodeInfo"`
+	EpisodeTitleSource  string `json:"episodeTitleSource"`
+	EpisodeNumberSource string `json:"episodeNumberSource"`
 }
 
 // GetContentSeries returns the saved content series, newest first. Never nil.

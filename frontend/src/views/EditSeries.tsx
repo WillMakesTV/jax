@@ -7,6 +7,7 @@ import {
   SearchTwitchCategories,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
+import {TEXT_GDIPLUS_KINDS} from '../lib/smartSources'
 import {SERVICES} from '../services/services'
 import {useServices} from '../services/ServicesProvider'
 
@@ -31,9 +32,10 @@ export function EditSeries({
   /** Called after the series is saved. */
   onSaved: () => void
 }) {
-  const {statuses} = useServices()
+  const {statuses, obsRequest} = useServices()
   const twitchConnected = statuses['twitch']?.connected ?? false
   const youtubeConnected = statuses['youtube']?.connected ?? false
+  const obsConnected = statuses['obs']?.connected ?? false
 
   const [title, setTitle] = useState(series?.title ?? '')
   const [description, setDescription] = useState(series?.description ?? '')
@@ -50,6 +52,20 @@ export function EditSeries({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  // Episode-info smart sources: map the on-air episode's title and number
+  // onto OBS text sources (episodic series only).
+  const [smartEpisodeInfo, setSmartEpisodeInfo] = useState(
+    series?.smartEpisodeInfo ?? false,
+  )
+  const [episodeTitleSource, setEpisodeTitleSource] = useState(
+    series?.episodeTitleSource ?? '',
+  )
+  const [episodeNumberSource, setEpisodeNumberSource] = useState(
+    series?.episodeNumberSource ?? '',
+  )
+  const [textSources, setTextSources] = useState<string[]>([])
+  const episodic = Boolean(types.find((t) => t.id === typeId)?.episodic)
+
   useEffect(() => {
     GetSeriesTypes()
       .then((t) => {
@@ -63,6 +79,22 @@ export function EditSeries({
       })
       .catch(() => {})
   }, [series])
+
+  // OBS Text (GDI+) sources for the episode-info mapping dropdowns.
+  useEffect(() => {
+    if (!obsConnected) return
+    obsRequest<{inputs: {inputName: string; inputKind: string}[]}>(
+      'GetInputList',
+    )
+      .then((r) =>
+        setTextSources(
+          (r.inputs ?? [])
+            .filter((i) => TEXT_GDIPLUS_KINDS.has(i.inputKind))
+            .map((i) => i.inputName),
+        ),
+      )
+      .catch(() => {})
+  }, [obsConnected, obsRequest])
 
   const save = async () => {
     if (!title.trim()) {
@@ -95,6 +127,9 @@ export function EditSeries({
           createdAt: series?.createdAt ?? '',
           isDefault: series?.isDefault ?? false,
           typeId,
+          smartEpisodeInfo: episodic ? smartEpisodeInfo : false,
+          episodeTitleSource: episodic ? episodeTitleSource : '',
+          episodeNumberSource: episodic ? episodeNumberSource : '',
         }),
       )
       onSaved()
@@ -190,6 +225,57 @@ export function EditSeries({
             </div>
           )}
 
+          {episodic && (
+            <fieldset className="flex flex-col gap-3 rounded-xl border border-edge bg-surface p-4">
+              <legend className="px-1 text-sm font-semibold text-fg">
+                Episode information
+              </legend>
+              <label className="flex items-start gap-2.5">
+                <input
+                  type="checkbox"
+                  checked={smartEpisodeInfo}
+                  onChange={(e) => setSmartEpisodeInfo(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-accent"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-fg">
+                    Use Smart Sources for Episode Information
+                  </span>
+                  <span className="mt-0.5 block text-xs text-fg-muted">
+                    While an episode of this series is on the air, the mapped
+                    OBS text sources are kept updated with the episode&apos;s
+                    title and number.
+                  </span>
+                </span>
+              </label>
+
+              {smartEpisodeInfo && (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <EpisodeSourcePicker
+                    id="series-episode-title-source"
+                    label="Episode title"
+                    value={episodeTitleSource}
+                    options={textSources}
+                    onChange={setEpisodeTitleSource}
+                  />
+                  <EpisodeSourcePicker
+                    id="series-episode-number-source"
+                    label="Episode number"
+                    value={episodeNumberSource}
+                    options={textSources}
+                    onChange={setEpisodeNumberSource}
+                  />
+                  {!obsConnected && (
+                    <p className="text-xs text-fg-muted sm:col-span-2">
+                      Connect OBS in Settings → Services to pick sources from a
+                      list; names typed here are matched when it connects.
+                    </p>
+                  )}
+                </div>
+              )}
+            </fieldset>
+          )}
+
           <div>
             <label htmlFor="series-description" className={labelCls}>
               Description{' '}
@@ -257,6 +343,62 @@ export function EditSeries({
           </div>
         </form>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Maps one piece of episode information onto an OBS Text (GDI+) source: a
+ * dropdown over the discovered text sources, or a free-text input while OBS
+ * is disconnected. "" = not mapped.
+ */
+function EpisodeSourcePicker({
+  id,
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  id: string
+  label: string
+  value: string
+  options: string[]
+  onChange: (v: string) => void
+}) {
+  const field =
+    'w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent'
+  return (
+    <div>
+      <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-fg">
+        {label}
+      </label>
+      {options.length === 0 ? (
+        <input
+          id={id}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="OBS text source name…"
+          className={field}
+        />
+      ) : (
+        <select
+          id={id}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={field}
+        >
+          <option value="">Not mapped</option>
+          {/* A saved name may reference a source OBS no longer has. */}
+          {value && !options.includes(value) && (
+            <option value={value}>{value} (not found)</option>
+          )}
+          {options.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
+      )}
     </div>
   )
 }

@@ -73,6 +73,40 @@ func (a *App) EndStreamSession() {
 	}
 }
 
+// ActiveStreamSession is the stream session currently on the air (Active
+// false when none is open).
+type ActiveStreamSession struct {
+	Active    bool   `json:"active"`
+	PlanID    string `json:"planId"`
+	Title     string `json:"title"`
+	SeriesID  string `json:"seriesId"`
+	Episode   int    `json:"episode"`
+	StartedAt string `json:"startedAt"`
+}
+
+// GetActiveStreamSession returns the open stream session, if any. Sessions
+// older than sessionMaxLength count as abandoned (e.g. the stream was stopped
+// from OBS itself) and report inactive.
+func (a *App) GetActiveStreamSession() ActiveStreamSession {
+	var s ActiveStreamSession
+	if a.store == nil {
+		return s
+	}
+	err := a.store.db.QueryRow(
+		`SELECT plan_id, title, series_id, episode, started_at
+		 FROM stream_sessions WHERE ended_at = '' ORDER BY id DESC LIMIT 1`,
+	).Scan(&s.PlanID, &s.Title, &s.SeriesID, &s.Episode, &s.StartedAt)
+	if err != nil {
+		return ActiveStreamSession{}
+	}
+	start, err := time.Parse(time.RFC3339, s.StartedAt)
+	if err != nil || time.Since(start) > sessionMaxLength {
+		return ActiveStreamSession{}
+	}
+	s.Active = true
+	return s
+}
+
 // sessionChatWindows returns each session's chat-retention window in unix
 // millis, padded by the stream-matching margin so the retained range covers
 // what GetChatForStream will ask for. Open sessions are capped at
