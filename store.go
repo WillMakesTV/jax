@@ -13,8 +13,10 @@ import (
 
 // Setting keys used in the key/value `settings` table.
 const (
-	keyProfile       = "profile"
-	keyServiceConfig = "service_config"
+	keyProfile        = "profile"
+	keyServiceConfig  = "service_config"
+	keyPlannedStreams = "planned_streams"
+	keyContentSeries  = "content_series"
 )
 
 // Store wraps the SQLite database that persists all app data. The database
@@ -209,6 +211,12 @@ func (s *Store) getCacheEntry(key string) (raw string, fetchedAt time.Time, ok b
 		return "", time.Time{}, false, err
 	}
 	return raw, time.Unix(at, 0), true, nil
+}
+
+// deleteCacheEntry drops a cached payload so the next read refetches.
+func (s *Store) deleteCacheEntry(key string) error {
+	_, err := s.db.Exec(`DELETE FROM api_cache WHERE key = ?`, key)
+	return err
 }
 
 // setCacheEntry upserts a cached payload for key, stamped now.
