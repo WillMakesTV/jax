@@ -13,6 +13,7 @@ import clsx from 'clsx'
 import {useCallback, useEffect, useState, type ReactNode} from 'react'
 import {
   DeletePlannedStream,
+  GetContentSeries,
   GetPastStreams,
   GetPlannedStreams,
   GroupPastStreams,
@@ -499,10 +500,19 @@ export function PlanningSection({
   onOpenPlan: (plan: main.PlannedStream) => void
 }) {
   const [plans, setPlans] = useState<main.PlannedStream[]>([])
+  // Series titles for the plan cards' series tags, keyed by series id.
+  const [seriesTitles, setSeriesTitles] = useState<Record<string, string>>({})
 
   useEffect(() => {
     GetPlannedStreams()
       .then((p) => setPlans(p ?? []))
+      .catch(() => {})
+    GetContentSeries()
+      .then((s) =>
+        setSeriesTitles(
+          Object.fromEntries((s ?? []).map((x) => [x.id, x.title])),
+        ),
+      )
       .catch(() => {})
   }, [])
 
@@ -559,6 +569,7 @@ export function PlanningSection({
             <PlanCard
               key={plan.id}
               plan={plan}
+              seriesTitle={seriesTitles[plan.seriesId] ?? ''}
               onOpen={() => onOpenPlan(plan)}
               onDelete={() => remove(plan.id)}
             />
@@ -571,10 +582,13 @@ export function PlanningSection({
 
 function PlanCard({
   plan,
+  seriesTitle,
   onOpen,
   onDelete,
 }: {
   plan: main.PlannedStream
+  /** Title of the plan's linked content series ('' when none). */
+  seriesTitle: string
   onOpen: () => void
   onDelete: () => void
 }) {
@@ -606,8 +620,18 @@ function PlanCard({
           <span className="line-clamp-3">{plan.description}</span>
         </button>
       )}
-      {plan.channels.length > 0 && (
+      {(seriesTitle || plan.episodeNumber > 0 || plan.channels.length > 0) && (
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          {seriesTitle && (
+            <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent">
+              {seriesTitle}
+            </span>
+          )}
+          {plan.episodeNumber > 0 && (
+            <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent">
+              Episode {plan.episodeNumber}
+            </span>
+          )}
           {plan.channels.map((c) => (
             <span
               key={c}
