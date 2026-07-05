@@ -394,6 +394,22 @@ export namespace main {
 	        this.episodeDescription = source["episodeDescription"];
 	    }
 	}
+	export class OutlineItem {
+	    at: string;
+	    title: string;
+	    note: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new OutlineItem(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.at = source["at"];
+	        this.title = source["title"];
+	        this.note = source["note"];
+	    }
+	}
 	export class PastBroadcast {
 	    platform: string;
 	    title: string;
@@ -694,6 +710,44 @@ export namespace main {
 	        this.description = source["description"];
 	        this.channelSource = this.convertValues(source["channelSource"], ChannelSource);
 	        this.plan = source["plan"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class StreamOutline {
+	    startedAt: string;
+	    generatedAt: string;
+	    model: string;
+	    summary: string;
+	    items: OutlineItem[];
+	
+	    static createFrom(source: any = {}) {
+	        return new StreamOutline(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.startedAt = source["startedAt"];
+	        this.generatedAt = source["generatedAt"];
+	        this.model = source["model"];
+	        this.summary = source["summary"];
+	        this.items = this.convertValues(source["items"], OutlineItem);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

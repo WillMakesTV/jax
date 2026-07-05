@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -85,6 +86,108 @@ func (a *App) SavePlannedStream(plan PlannedStream) (PlannedStream, error) {
 		return plan, err
 	}
 	return plan, nil
+}
+
+// ApplyPlannedStream pushes a plan's stream information to the channels it
+// targets — the plan's title plus the linked series' category and tags —
+// returning human-readable warnings for anything that could not be applied.
+// Wired to "Go Live with Planned Stream" on the Broadcast page: the info is
+// applied first, then the frontend runs the start-stream routine. Never nil
+// on success so the binding marshals an empty array rather than null.
+func (a *App) ApplyPlannedStream(id string) ([]string, error) {
+	var plan *PlannedStream
+	for _, p := range a.GetPlannedStreams() {
+		if p.ID == id {
+			p := p
+			plan = &p
+			break
+		}
+	}
+	if plan == nil {
+		return nil, fmt.Errorf("that plan no longer exists")
+	}
+
+	// The linked series carries the per-platform categories and tags.
+	var series *ContentSeries
+	if plan.SeriesID != "" {
+		for _, s := range a.GetContentSeries() {
+			if s.ID == plan.SeriesID {
+				s := s
+				series = &s
+				break
+			}
+		}
+	}
+
+	warnings := []string{}
+	for _, channel := range plan.Channels {
+		switch channel {
+		case "twitch":
+			if w := a.applyPlanToTwitch(*plan, series); w != "" {
+				warnings = append(warnings, w)
+			}
+		case "youtube":
+			// YouTube's broadcast metadata is bound to the (auto-created)
+			// broadcast, which does not exist until the stream is live.
+			warnings = append(warnings, "YouTube: automatic stream-info updates aren't supported yet — set the title in YouTube Studio.")
+		}
+	}
+	return warnings, nil
+}
+
+// twitchTagRe strips characters Twitch rejects in tags (max 25 chars, no
+// spaces or special characters).
+var twitchTagRe = regexp.MustCompile(`[^\p{L}\p{N}]`)
+
+// applyPlanToTwitch updates the Twitch channel's title, category, and tags
+// from a plan ahead of going live. Returns "" on success, else a warning.
+func (a *App) applyPlanToTwitch(plan PlannedStream, series *ContentSeries) string {
+	conn, ok := a.freshConn("twitch")
+	if !ok {
+		return "Twitch is not connected — its stream info was not updated."
+	}
+	payload := map[string]any{"title": plan.Title}
+	if series != nil {
+		if series.TwitchCategory.ID != "" {
+			payload["game_id"] = series.TwitchCategory.ID
+		}
+		tags := []string{}
+		for _, t := range series.Tags {
+			t = twitchTagRe.ReplaceAllString(t, "")
+			if t == "" {
+				continue
+			}
+			if len(t) > 25 {
+				t = t[:25]
+			}
+			tags = append(tags, t)
+			if len(tags) == 10 { // Twitch allows at most 10 tags.
+				break
+			}
+		}
+		if len(tags) > 0 {
+			payload["tags"] = tags
+		}
+	}
+
+	status, err := patchJSON(
+		twitchChannelsURL+"?broadcaster_id="+conn.userID,
+		twitchHeaders(conn), payload,
+	)
+	if err != nil {
+		log.Printf("jax: apply plan to twitch: %v", err)
+		if status == 401 || status == 403 {
+			// Updating channel info needs channel:manage:broadcast, which
+			// connections made before this feature will not carry.
+			return "Twitch: reconnect in Settings → Services to grant the stream-info permission."
+		}
+		return "Twitch: the stream info could not be updated."
+	}
+	// The dashboard's cached channel info now shows stale title/category.
+	if a.store != nil {
+		_ = a.store.deleteCacheEntry(keyTwitchChannelInfo)
+	}
+	return ""
 }
 
 // DeletePlannedStream removes a plan by ID.

@@ -125,11 +125,23 @@ func getJSON(endpoint string, headers map[string]string, out any) (int, error) {
 // postJSON performs an authenticated POST with a JSON body and decodes the
 // JSON response into out (which may be nil). Any 2xx status counts as success.
 func postJSON(endpoint string, headers map[string]string, payload any, out any) (int, error) {
+	return sendJSON(http.MethodPost, endpoint, headers, payload, out)
+}
+
+// patchJSON performs an authenticated PATCH with a JSON body. Any 2xx status
+// counts as success (Twitch's channel update returns 204 No Content).
+func patchJSON(endpoint string, headers map[string]string, payload any) (int, error) {
+	return sendJSON(http.MethodPatch, endpoint, headers, payload, nil)
+}
+
+// sendJSON performs an authenticated request with a JSON body and decodes the
+// JSON response into out (which may be nil). Any 2xx status counts as success.
+func sendJSON(method, endpoint string, headers map[string]string, payload any, out any) (int, error) {
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return 0, err
 	}
-	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(raw))
+	req, err := http.NewRequest(method, endpoint, bytes.NewReader(raw))
 	if err != nil {
 		return 0, err
 	}

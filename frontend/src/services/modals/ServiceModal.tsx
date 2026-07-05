@@ -15,10 +15,11 @@ import {ObsConnectForm} from './ObsConnectForm'
 /**
  * Twitch scopes requested on connect: sending chat as the broadcaster
  * (broadcast messages), follower/subscriber lookups (chat user popup and
- * follow events), and bits:read for cheer events.
+ * follow events), bits:read for cheer events, and channel:manage:broadcast
+ * to push a planned stream's title/category before going live.
  */
 const TWITCH_SCOPES =
-  'user:write:chat moderator:read:followers channel:read:subscriptions bits:read'
+  'user:write:chat moderator:read:followers channel:read:subscriptions bits:read channel:manage:broadcast'
 
 const ExternalHint = ({href, children}: {href: string; children: string}) => (
   <>

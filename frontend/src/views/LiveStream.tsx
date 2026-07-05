@@ -4,6 +4,7 @@ import {useChat} from '../chat/ChatProvider'
 import {EventsPanel} from '../events/EventsPanel'
 import {useEvents} from '../events/EventsProvider'
 import {GoLiveButton} from '../components/GoLiveButton'
+import {PlannedGoLive} from '../live/PlannedGoLive'
 import {TranscriptPanel} from '../transcript/TranscriptPanel'
 import {LiveDashboard} from './LiveDashboard'
 
@@ -79,11 +80,14 @@ export function LiveStream({tab, onTabChange, onOpenObs}: LiveStreamProps) {
       </div>
 
       {tab === 'dashboard' && (
-        <LiveDashboard
-          onOpenObs={onOpenObs}
-          onOpenChat={() => onTabChange('chat')}
-          onOpenEvents={() => onTabChange('events')}
-        />
+        <>
+          <PlannedGoLive />
+          <LiveDashboard
+            onOpenObs={onOpenObs}
+            onOpenChat={() => onTabChange('chat')}
+            onOpenEvents={() => onTabChange('events')}
+          />
+        </>
       )}
       {tab === 'chat' && <ChatPanel />}
       {tab === 'events' && <EventsPanel />}

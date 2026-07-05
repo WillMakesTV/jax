@@ -6,6 +6,10 @@ export function AddTranscriptLine(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['AddTranscriptLine'](arg1, arg2, arg3, arg4);
 }
 
+export function ApplyPlannedStream(arg1) {
+  return window['go']['main']['App']['ApplyPlannedStream'](arg1);
+}
+
 export function BeginTranscriptSession(arg1, arg2) {
   return window['go']['main']['App']['BeginTranscriptSession'](arg1, arg2);
 }
@@ -48,6 +52,10 @@ export function DeleteSeriesType(arg1) {
 
 export function DisconnectService(arg1) {
   return window['go']['main']['App']['DisconnectService'](arg1);
+}
+
+export function GenerateStreamOutline(arg1, arg2) {
+  return window['go']['main']['App']['GenerateStreamOutline'](arg1, arg2);
 }
 
 export function GetChannelSources() {
@@ -118,6 +126,10 @@ export function GetSetting(arg1) {
   return window['go']['main']['App']['GetSetting'](arg1);
 }
 
+export function GetStreamOutline(arg1) {
+  return window['go']['main']['App']['GetStreamOutline'](arg1);
+}
+
 export function GetStreamdeckMultiActions() {
   return window['go']['main']['App']['GetStreamdeckMultiActions']();
 }
@@ -160,6 +172,10 @@ export function MarkAllChatRead() {
 
 export function NextEpisodeNumber(arg1) {
   return window['go']['main']['App']['NextEpisodeNumber'](arg1);
+}
+
+export function OutlineInProgress(arg1) {
+  return window['go']['main']['App']['OutlineInProgress'](arg1);
 }
 
 export function PollTwitchDeviceAuth(arg1, arg2, arg3) {

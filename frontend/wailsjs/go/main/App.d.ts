@@ -4,6 +4,8 @@ import {main} from '../models';
 
 export function AddTranscriptLine(arg1:number,arg2:number,arg3:number,arg4:string):Promise<void>;
 
+export function ApplyPlannedStream(arg1:string):Promise<Array<string>>;
+
 export function BeginTranscriptSession(arg1:string,arg2:string):Promise<number>;
 
 export function CancelDownload():Promise<void>;
@@ -25,6 +27,8 @@ export function DeleteRoutine(arg1:string):Promise<void>;
 export function DeleteSeriesType(arg1:string):Promise<void>;
 
 export function DisconnectService(arg1:string):Promise<void>;
+
+export function GenerateStreamOutline(arg1:string,arg2:number):Promise<main.StreamOutline>;
 
 export function GetChannelSources():Promise<Array<main.ChannelSource>>;
 
@@ -60,6 +64,8 @@ export function GetServiceStatuses():Promise<Array<main.ServiceStatus>>;
 
 export function GetSetting(arg1:string):Promise<string>;
 
+export function GetStreamOutline(arg1:string):Promise<main.StreamOutline>;
+
 export function GetStreamdeckMultiActions():Promise<Array<main.StreamdeckMultiAction>>;
 
 export function GetStreams():Promise<Array<main.Stream>>;
@@ -81,6 +87,8 @@ export function GroupPastStreams(arg1:Array<string>):Promise<void>;
 export function MarkAllChatRead():Promise<void>;
 
 export function NextEpisodeNumber(arg1:string):Promise<number>;
+
+export function OutlineInProgress(arg1:string):Promise<boolean>;
 
 export function PollTwitchDeviceAuth(arg1:string,arg2:string,arg3:string):Promise<main.AuthPollResult>;
 
