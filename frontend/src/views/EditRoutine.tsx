@@ -198,8 +198,20 @@ export function EditRoutine({
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Start Stream"
               autoFocus={!routine}
-              className={field}
+              disabled={routine?.builtIn}
+              title={
+                routine?.builtIn
+                  ? 'The built-in routines keep their names — only their steps can be edited.'
+                  : undefined
+              }
+              className={`${field} disabled:cursor-not-allowed disabled:opacity-60`}
             />
+            {routine?.builtIn && (
+              <p className="mt-1.5 text-xs text-fg-muted">
+                Built-in routine — the name is fixed, but every step is yours
+                to change.
+              </p>
+            )}
           </div>
 
           <StepsEditor

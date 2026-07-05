@@ -121,10 +121,12 @@ func normalizeRoutines(stored []Routine) []Routine {
 		r = migrateRoutine(r)
 		switch r.ID {
 		case routineStartStream:
-			r.BuiltIn, r.Trigger = true, routineStartStream
+			// The built-ins' identity is static: trigger and title are pinned
+			// (only their steps are editable).
+			r.BuiltIn, r.Trigger, r.Name = true, routineStartStream, "Start Stream"
 			out[0] = r
 		case routineEndStream:
-			r.BuiltIn, r.Trigger = true, routineEndStream
+			r.BuiltIn, r.Trigger, r.Name = true, routineEndStream, "End Stream"
 			out[1] = r
 		default:
 			r.BuiltIn = false
@@ -209,8 +211,12 @@ func (a *App) SaveRoutine(routine Routine) (Routine, error) {
 	replaced := false
 	for i, r := range all {
 		if r.ID == routine.ID {
-			// The pinned identity of a built-in survives whatever the form sent.
+			// The pinned identity of a built-in survives whatever the form
+			// sent — including its title; only the steps are editable.
 			routine.BuiltIn, routine.Trigger = r.BuiltIn, r.Trigger
+			if r.BuiltIn {
+				routine.Name = r.Name
+			}
 			all[i] = routine
 			replaced = true
 			break
