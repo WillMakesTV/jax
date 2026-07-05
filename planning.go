@@ -119,6 +119,11 @@ func (a *App) ApplyPlannedStream(id string) ([]string, error) {
 		}
 	}
 
+	// Going live with a plan opens its stream session: the durable record the
+	// stream's chat, transcript, and series/episode hang off (see
+	// stream_session.go).
+	a.beginPlannedSession(*plan)
+
 	warnings := []string{}
 	for _, channel := range plan.Channels {
 		switch channel {

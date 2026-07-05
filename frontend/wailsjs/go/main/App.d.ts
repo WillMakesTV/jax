@@ -28,6 +28,8 @@ export function DeleteSeriesType(arg1:string):Promise<void>;
 
 export function DisconnectService(arg1:string):Promise<void>;
 
+export function EndStreamSession():Promise<void>;
+
 export function GenerateStreamOutline(arg1:string,arg2:number):Promise<main.StreamOutline>;
 
 export function GetChannelSources():Promise<Array<main.ChannelSource>>;

@@ -31,12 +31,14 @@ type StoredChatMessage struct {
 
 // SaveChatMessages appends new messages to the local chat log. Messages
 // already stored (same platform+id) keep their original row and read state.
-// Failures are logged here — the frontend treats persistence as best-effort.
+// Messages inside a stream session's window survive the rolling cap (see
+// stream_session.go), so a past stream's chat stays available. Failures are
+// logged here — the frontend treats persistence as best-effort.
 func (a *App) SaveChatMessages(items []StoredChatMessage) error {
 	if a.store == nil {
 		return nil
 	}
-	if err := a.store.saveChatMessages(items); err != nil {
+	if err := a.store.saveChatMessages(items, a.sessionChatWindows()); err != nil {
 		log.Printf("jax: SaveChatMessages (%d items): %v", len(items), err)
 		return err
 	}
@@ -62,8 +64,8 @@ func (a *App) GetChatHistory(limit int) []StoredChatMessage {
 
 // GetChatForStream returns stored chat messages that fall within a broadcast's
 // window — [startedAt - margin, startedAt + duration + margin] — in
-// chronological order. Approximates "the chat from this video" from the global
-// chat log. Never returns nil.
+// chronological order. Session-protected messages are found no matter how old,
+// so streams started from a plan keep their chat. Never returns nil.
 func (a *App) GetChatForStream(startedAt string, durationSecs int) []StoredChatMessage {
 	if a.store == nil {
 		return []StoredChatMessage{}
@@ -72,19 +74,13 @@ func (a *App) GetChatForStream(startedAt string, durationSecs int) []StoredChatM
 	if err != nil {
 		return []StoredChatMessage{}
 	}
-	all, err := a.store.getChatHistory(20000)
-	if err != nil {
-		log.Printf("jax: GetChatForStream: %v", err)
-		return []StoredChatMessage{}
-	}
 	margin := a.pastMatchMargin()
 	lo := start.Add(-margin).UnixMilli()
 	hi := start.Add(time.Duration(durationSecs)*time.Second + margin).UnixMilli()
-	out := []StoredChatMessage{}
-	for _, m := range all {
-		if m.At >= lo && m.At <= hi {
-			out = append(out, m)
-		}
+	out, err := a.store.getChatBetween(lo, hi)
+	if err != nil {
+		log.Printf("jax: GetChatForStream: %v", err)
+		return []StoredChatMessage{}
 	}
 	return out
 }

@@ -1,4 +1,8 @@
-import {GetRoutines, GetStreamdeckMultiActions} from '../../wailsjs/go/main/App'
+import {
+  EndStreamSession,
+  GetRoutines,
+  GetStreamdeckMultiActions,
+} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 
 /**
@@ -254,6 +258,11 @@ export async function runRoutine(
     ...(await impliedStreamTransition(routine.trigger, phases.before, obsRequest)),
   )
   warnings.push(...(await runSteps(phases.after, obsRequest)))
+  // Ending the broadcast closes the open stream session (the record a
+  // planned stream's chat and transcript are attached to).
+  if (routine.trigger === END_ROUTINE) {
+    await EndStreamSession().catch(() => {})
+  }
   return warnings
 }
 

@@ -54,6 +54,10 @@ export function DisconnectService(arg1) {
   return window['go']['main']['App']['DisconnectService'](arg1);
 }
 
+export function EndStreamSession() {
+  return window['go']['main']['App']['EndStreamSession']();
+}
+
 export function GenerateStreamOutline(arg1, arg2) {
   return window['go']['main']['App']['GenerateStreamOutline'](arg1, arg2);
 }

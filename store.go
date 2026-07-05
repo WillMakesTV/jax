@@ -140,6 +140,15 @@ CREATE TABLE IF NOT EXISTS transcribe_staged_lines (
 );
 CREATE INDEX IF NOT EXISTS idx_transcribe_staged_subfolder
 	ON transcribe_staged_lines(subfolder, at);
+CREATE TABLE IF NOT EXISTS stream_sessions (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	plan_id    TEXT NOT NULL DEFAULT '',
+	title      TEXT NOT NULL DEFAULT '',
+	series_id  TEXT NOT NULL DEFAULT '',
+	episode    INTEGER NOT NULL DEFAULT 0,
+	started_at TEXT NOT NULL,
+	ended_at   TEXT NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS chat_messages (
 	platform     TEXT NOT NULL,
 	id           TEXT NOT NULL,
@@ -734,12 +743,15 @@ func (s *Store) deleteTranscribeStagedFrom(subfolder string, at int64) error {
 // instantly on launch (and offline) without replaying the platform APIs.
 // ---------------------------------------------------------------------------
 
-// chatLogKeep bounds the chat log; the oldest rows beyond it are pruned.
+// chatLogKeep bounds the rolling chat log; the oldest rows beyond it are
+// pruned unless they fall inside a stream session's window (see protect).
 const chatLogKeep = 5000
 
 // saveChatMessages inserts new messages (existing platform+id rows are left
-// untouched, preserving their read state) and prunes the log.
-func (s *Store) saveChatMessages(items []StoredChatMessage) error {
+// untouched, preserving their read state) and prunes the log. protect lists
+// [lo, hi] unix-milli windows — chat captured during a stream session — whose
+// messages are kept forever so a past stream's chat survives the rolling cap.
+func (s *Store) saveChatMessages(items []StoredChatMessage, protect [][2]int64) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -765,14 +777,104 @@ func (s *Store) saveChatMessages(items []StoredChatMessage) error {
 			return err
 		}
 	}
-	if _, err := tx.Exec(
-		`DELETE FROM chat_messages WHERE rowid NOT IN (
-			SELECT rowid FROM chat_messages ORDER BY at DESC LIMIT ?
-		)`, chatLogKeep,
-	); err != nil {
+
+	prune := `DELETE FROM chat_messages WHERE rowid NOT IN (
+		SELECT rowid FROM chat_messages ORDER BY at DESC LIMIT ?
+	)`
+	args := []any{chatLogKeep}
+	for _, w := range protect {
+		prune += ` AND NOT (at BETWEEN ? AND ?)`
+		args = append(args, w[0], w[1])
+	}
+	if _, err := tx.Exec(prune, args...); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// getChatBetween returns the stored messages inside [lo, hi] (unix millis) in
+// chronological order — including session-protected messages far older than
+// the rolling log's cap.
+func (s *Store) getChatBetween(lo, hi int64) ([]StoredChatMessage, error) {
+	rows, err := s.db.Query(
+		`SELECT platform, id, author, author_id, author_login, avatar_url, badges, color, text, at, read
+		 FROM chat_messages WHERE at BETWEEN ? AND ? ORDER BY at ASC`, lo, hi,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	messages := []StoredChatMessage{}
+	for rows.Next() {
+		var m StoredChatMessage
+		var badges string
+		var read int
+		if err := rows.Scan(
+			&m.Platform, &m.ID, &m.Author, &m.AuthorID, &m.AuthorLogin,
+			&m.AvatarURL, &badges, &m.Color, &m.Text, &m.At, &read,
+		); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(badges), &m.Badges); err != nil || m.Badges == nil {
+			m.Badges = []string{}
+		}
+		m.Read = read != 0
+		messages = append(messages, m)
+	}
+	return messages, rows.Err()
+}
+
+// ---------------------------------------------------------------------------
+// Stream sessions
+//
+// One row per broadcast started from Jax with a planned stream: the stream's
+// identity (plan, series, episode) plus its live window. Chat inside the
+// window is exempt from the rolling log's prune, and the plan's series and
+// episode ride the live-assignment mechanism onto the finished past stream
+// (see stream_session.go).
+// ---------------------------------------------------------------------------
+
+// beginStreamSession records a new session, closing any still-open ones first
+// (a crash or an OBS-side stop can leave one behind).
+func (s *Store) beginStreamSession(planID, title, seriesID string, episode int, startedAt string) error {
+	if err := s.endOpenStreamSessions(startedAt); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(
+		`INSERT INTO stream_sessions (plan_id, title, series_id, episode, started_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+		planID, title, seriesID, episode, startedAt,
+	)
+	return err
+}
+
+// endOpenStreamSessions stamps every open session as ended at endedAt.
+func (s *Store) endOpenStreamSessions(endedAt string) error {
+	_, err := s.db.Exec(
+		`UPDATE stream_sessions SET ended_at = ? WHERE ended_at = ''`, endedAt,
+	)
+	return err
+}
+
+// streamSessionWindows returns every session's [started_at, ended_at] pair
+// (ended_at is "" while the session is open).
+func (s *Store) streamSessionWindows() ([][2]string, error) {
+	rows, err := s.db.Query(`SELECT started_at, ended_at FROM stream_sessions`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	windows := [][2]string{}
+	for rows.Next() {
+		var w [2]string
+		if err := rows.Scan(&w[0], &w[1]); err != nil {
+			return nil, err
+		}
+		windows = append(windows, w)
+	}
+	return windows, rows.Err()
 }
 
 // getChatHistory returns the newest limit messages in chronological order.
