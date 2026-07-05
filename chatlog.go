@@ -1,6 +1,9 @@
 package main
 
-import "log"
+import (
+	"log"
+	"time"
+)
 
 // ---------------------------------------------------------------------------
 // Chat log persistence
@@ -55,6 +58,35 @@ func (a *App) GetChatHistory(limit int) []StoredChatMessage {
 		return []StoredChatMessage{}
 	}
 	return messages
+}
+
+// GetChatForStream returns stored chat messages that fall within a broadcast's
+// window — [startedAt - margin, startedAt + duration + margin] — in
+// chronological order. Approximates "the chat from this video" from the global
+// chat log. Never returns nil.
+func (a *App) GetChatForStream(startedAt string, durationSecs int) []StoredChatMessage {
+	if a.store == nil {
+		return []StoredChatMessage{}
+	}
+	start, err := time.Parse(time.RFC3339, startedAt)
+	if err != nil {
+		return []StoredChatMessage{}
+	}
+	all, err := a.store.getChatHistory(20000)
+	if err != nil {
+		log.Printf("jax: GetChatForStream: %v", err)
+		return []StoredChatMessage{}
+	}
+	margin := a.pastMatchMargin()
+	lo := start.Add(-margin).UnixMilli()
+	hi := start.Add(time.Duration(durationSecs)*time.Second + margin).UnixMilli()
+	out := []StoredChatMessage{}
+	for _, m := range all {
+		if m.At >= lo && m.At <= hi {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // MarkAllChatRead persists that every stored message has been seen.
