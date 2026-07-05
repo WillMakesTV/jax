@@ -22,11 +22,8 @@ import (
 // JSON blob in the settings table.
 // ---------------------------------------------------------------------------
 
-// Routine managers.
-const (
-	routineManagerJax        = "jax"
-	routineManagerStreamdeck = "streamdeck"
-)
+// The retired "manage with Streamdeck" mode, recognised by migrateRoutine.
+const routineManagerStreamdeck = "streamdeck"
 
 // Reserved IDs (and triggers) of the two built-in routines.
 const (
@@ -39,7 +36,7 @@ const (
 // and steps parsed out of a Stream Deck Multi Action.
 type RoutineStep struct {
 	// Kind: "obs-scene" | "obs-source" | "obs-mute" | "obs-stream" |
-	// "obs-record" | "delay" | "unsupported".
+	// "obs-record" | "delay" | "streamdeck" | "unsupported".
 	Kind string `json:"kind"`
 	// Scene name (obs-scene: the scene to switch to; obs-source: the scene
 	// holding the item).
@@ -55,9 +52,13 @@ type RoutineStep struct {
 	Mode string `json:"mode,omitempty"`
 	// DelayMs of a delay step.
 	DelayMs int `json:"delayMs,omitempty"`
-	// Description of an unsupported step (e.g. "Philips Hue: Color"). These
+	// StreamdeckActionID references a Stream Deck Multi Action whose steps
+	// are replayed in place of this step at run time (kind "streamdeck");
+	// Description carries its title for display when the deck is unavailable.
+	StreamdeckActionID string `json:"streamdeckActionId,omitempty"`
+	// Description of an unsupported step (e.g. "Philips Hue: Color") — these
 	// steps still run on the Stream Deck itself but are skipped when Jax
-	// replays the routine.
+	// replays the routine — or a streamdeck step's Multi Action title.
 	Description string `json:"description,omitempty"`
 }
 
@@ -70,20 +71,18 @@ type Routine struct {
 	Trigger string `json:"trigger"`
 	// BuiltIn routines are pinned: they always exist and cannot be deleted.
 	BuiltIn bool `json:"builtIn"`
-	// Manager: "jax" (Steps are authored in the app) or "streamdeck" (steps
-	// come from the referenced Stream Deck Multi Action at run time).
-	Manager string `json:"manager"`
-	// The referenced Multi Actions (manager == "streamdeck"): stable ActionIDs
-	// plus the titles shown when the Stream Deck is unavailable. The built-in
-	// routines run in two phases around their stream transition — the "after"
-	// pair is the phase that runs once the stream has started/stopped. Custom
-	// routines have no transition, so they only use the first pair.
-	StreamdeckActionID      string `json:"streamdeckActionId"`
-	StreamdeckTitle         string `json:"streamdeckTitle"`
-	StreamdeckAfterActionID string `json:"streamdeckAfterActionId"`
-	StreamdeckAfterTitle    string `json:"streamdeckAfterTitle"`
-	// Steps authored in Jax (manager == "jax"), split the same way: Steps runs
-	// before the stream transition, AfterSteps once it has happened.
+	// Deprecated: routines used to be managed either "with Jax" (authored
+	// steps) or "with Streamdeck" (bound to Multi Actions). A Multi Action is
+	// now just a step kind; these fields only remain so previously stored
+	// routines decode, and normalizeRoutines migrates them into Steps.
+	Manager                 string `json:"manager,omitempty"`
+	StreamdeckActionID      string `json:"streamdeckActionId,omitempty"`
+	StreamdeckTitle         string `json:"streamdeckTitle,omitempty"`
+	StreamdeckAfterActionID string `json:"streamdeckAfterActionId,omitempty"`
+	StreamdeckAfterTitle    string `json:"streamdeckAfterTitle,omitempty"`
+	// The built-in routines run in two phases around their stream transition:
+	// Steps runs before it, AfterSteps once it has happened. Custom routines
+	// have no transition and only use Steps.
 	Steps      []RoutineStep `json:"steps"`
 	AfterSteps []RoutineStep `json:"afterSteps"`
 	CreatedAt  string        `json:"createdAt"`
@@ -97,7 +96,6 @@ func builtinRoutines() []Routine {
 			Name:       "Start Stream",
 			Trigger:    routineStartStream,
 			BuiltIn:    true,
-			Manager:    routineManagerJax,
 			Steps:      []RoutineStep{},
 			AfterSteps: []RoutineStep{},
 		},
@@ -106,7 +104,6 @@ func builtinRoutines() []Routine {
 			Name:       "End Stream",
 			Trigger:    routineEndStream,
 			BuiltIn:    true,
-			Manager:    routineManagerJax,
 			Steps:      []RoutineStep{},
 			AfterSteps: []RoutineStep{},
 		},
@@ -115,11 +112,13 @@ func builtinRoutines() []Routine {
 
 // normalizeRoutines overlays the stored routines on the built-in set, so the
 // two pinned routines always exist (keeping any stored configuration) and
-// custom routines follow in their stored order.
+// custom routines follow in their stored order. Routines stored in the
+// retired two-manager shape are migrated on the way out.
 func normalizeRoutines(stored []Routine) []Routine {
 	out := builtinRoutines()
 	custom := []Routine{}
 	for _, r := range stored {
+		r = migrateRoutine(r)
 		switch r.ID {
 		case routineStartStream:
 			r.BuiltIn, r.Trigger = true, routineStartStream
@@ -133,6 +132,36 @@ func normalizeRoutines(stored []Routine) []Routine {
 		}
 	}
 	return append(out, custom...)
+}
+
+// migrateRoutine converts the retired two-manager shape into the unified step
+// list: a routine that was "managed with Streamdeck" becomes one whose phases
+// each hold a single streamdeck step referencing its Multi Action. Authored
+// steps stored while that manager was active never ran, so they are dropped
+// to preserve behaviour.
+func migrateRoutine(r Routine) Routine {
+	if r.Manager == routineManagerStreamdeck {
+		r.Steps = []RoutineStep{}
+		r.AfterSteps = []RoutineStep{}
+		if r.StreamdeckActionID != "" {
+			r.Steps = append(r.Steps, RoutineStep{
+				Kind:               "streamdeck",
+				StreamdeckActionID: r.StreamdeckActionID,
+				Description:        r.StreamdeckTitle,
+			})
+		}
+		if r.StreamdeckAfterActionID != "" {
+			r.AfterSteps = append(r.AfterSteps, RoutineStep{
+				Kind:               "streamdeck",
+				StreamdeckActionID: r.StreamdeckAfterActionID,
+				Description:        r.StreamdeckAfterTitle,
+			})
+		}
+	}
+	r.Manager = ""
+	r.StreamdeckActionID, r.StreamdeckTitle = "", ""
+	r.StreamdeckAfterActionID, r.StreamdeckAfterTitle = "", ""
+	return r
 }
 
 // GetRoutines returns every routine, the two built-ins first. Never nil.
@@ -156,18 +185,17 @@ func (a *App) SaveRoutine(routine Routine) (Routine, error) {
 	if strings.TrimSpace(routine.Name) == "" {
 		return routine, fmt.Errorf("give the routine a name")
 	}
-	if routine.Manager != routineManagerJax && routine.Manager != routineManagerStreamdeck {
-		return routine, fmt.Errorf("unknown routine manager %q", routine.Manager)
-	}
-	if routine.Manager == routineManagerStreamdeck &&
-		routine.StreamdeckActionID == "" && routine.StreamdeckAfterActionID == "" {
-		return routine, fmt.Errorf("choose a Stream Deck Multi Action for this routine")
-	}
+	routine = migrateRoutine(routine)
 	if routine.Steps == nil {
 		routine.Steps = []RoutineStep{}
 	}
 	if routine.AfterSteps == nil {
 		routine.AfterSteps = []RoutineStep{}
+	}
+	for _, s := range append(append([]RoutineStep{}, routine.Steps...), routine.AfterSteps...) {
+		if s.Kind == "streamdeck" && s.StreamdeckActionID == "" {
+			return routine, fmt.Errorf("choose a Multi Action for each Stream Deck step")
+		}
 	}
 
 	all := a.GetRoutines()

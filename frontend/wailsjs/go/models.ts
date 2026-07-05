@@ -528,6 +528,7 @@ export namespace main {
 	    sceneItemId?: number;
 	    mode?: string;
 	    delayMs?: number;
+	    streamdeckActionId?: string;
 	    description?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -543,6 +544,7 @@ export namespace main {
 	        this.sceneItemId = source["sceneItemId"];
 	        this.mode = source["mode"];
 	        this.delayMs = source["delayMs"];
+	        this.streamdeckActionId = source["streamdeckActionId"];
 	        this.description = source["description"];
 	    }
 	}
@@ -551,11 +553,11 @@ export namespace main {
 	    name: string;
 	    trigger: string;
 	    builtIn: boolean;
-	    manager: string;
-	    streamdeckActionId: string;
-	    streamdeckTitle: string;
-	    streamdeckAfterActionId: string;
-	    streamdeckAfterTitle: string;
+	    manager?: string;
+	    streamdeckActionId?: string;
+	    streamdeckTitle?: string;
+	    streamdeckAfterActionId?: string;
+	    streamdeckAfterTitle?: string;
 	    steps: RoutineStep[];
 	    afterSteps: RoutineStep[];
 	    createdAt: string;

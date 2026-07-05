@@ -12,17 +12,13 @@ import {END_ROUTINE, START_ROUTINE, runRoutine} from './routines'
  * Action (steps replayed from the deck's profile — see routines.ts).
  */
 
-/** The manager chip's text: what runs, and from where. */
-function managerLabel(routine: main.Routine): string {
-  if (routine.manager === 'streamdeck') {
-    const titles = [routine.streamdeckTitle, routine.streamdeckAfterTitle]
-      .filter(Boolean)
-      .join(' + ')
-    return `Stream Deck · ${titles || 'Multi Action'}`
-  }
-  const count =
-    (routine.steps ?? []).length + (routine.afterSteps ?? []).length
-  return `Jax · ${count} step${count === 1 ? '' : 's'}`
+/** The steps chip's text: how many steps, noting Stream Deck involvement. */
+function stepsLabel(routine: main.Routine): string {
+  const steps = [...(routine.steps ?? []), ...(routine.afterSteps ?? [])]
+  const label = `${steps.length} step${steps.length === 1 ? '' : 's'}`
+  return steps.some((s) => s.kind === 'streamdeck')
+    ? `${label} · Stream Deck`
+    : label
 }
 export function RoutinesPanel({
   onEditRoutine,
@@ -116,7 +112,7 @@ export function RoutinesPanel({
                     </span>
                   )}
                   <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold text-accent">
-                    {managerLabel(routine)}
+                    {stepsLabel(routine)}
                   </span>
                 </div>
                 <p className="mt-0.5 text-xs text-fg-muted">

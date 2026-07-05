@@ -50,51 +50,69 @@ export function describeStep(step: main.RoutineStep): string {
           : 'Toggle recording'
     case 'delay':
       return `Wait ${((step.delayMs ?? 0) / 1000).toLocaleString()}s`
+    case 'streamdeck':
+      return `Stream Deck: “${step.description || 'Multi Action'}”`
     default:
       return step.description || 'Unsupported step'
   }
 }
 
 /**
- * A routine's two phases: `before` runs ahead of the built-in routines'
- * stream transition, `after` once the stream has started/stopped. Custom
- * routines have no transition and only use `before`.
+ * A routine's two phases, ready to run: `before` runs ahead of the built-in
+ * routines' stream transition, `after` once the stream has started/stopped.
+ * Custom routines have no transition and only use `before`. Warnings collect
+ * anything that could not be resolved (e.g. a deleted Multi Action).
  */
 export interface RoutinePhases {
   before: main.RoutineStep[]
   after: main.RoutineStep[]
+  warnings: string[]
 }
 
 /**
- * Resolve the steps a routine will run right now. Stream Deck-managed
- * routines are re-read from the deck's profile files on every run, so edits
- * made in the Stream Deck app are always picked up.
+ * Resolve the steps a routine will run right now. Stream Deck Multi Action
+ * steps are expanded into the Multi Action's own steps, re-read from the
+ * deck's profile files on every run so edits made in the Stream Deck app are
+ * always picked up; a missing Multi Action skips that step with a warning.
  */
 export async function resolveRoutinePhases(
   routine: main.Routine,
 ): Promise<RoutinePhases> {
-  if (routine.manager !== 'streamdeck') {
-    return {before: routine.steps ?? [], after: routine.afterSteps ?? []}
-  }
-  const actions = await GetStreamdeckMultiActions()
-  const resolve = (id: string, title: string): main.RoutineStep[] => {
-    if (!id) return []
-    const match = (actions ?? []).find((a) => a.id === id)
-    if (!match) {
-      throw new Error(
-        `The Stream Deck Multi Action “${
-          title || routine.name
-        }” was not found. Pick it again in the routine's settings.`,
+  const warnings: string[] = []
+  const all = [...(routine.steps ?? []), ...(routine.afterSteps ?? [])]
+
+  let actions: main.StreamdeckMultiAction[] = []
+  if (all.some((s) => s.kind === 'streamdeck')) {
+    try {
+      actions = (await GetStreamdeckMultiActions()) ?? []
+    } catch (err) {
+      warnings.push(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not read the Stream Deck profiles.',
       )
     }
-    return match.steps ?? []
   }
+
+  const expand = (steps: main.RoutineStep[]): main.RoutineStep[] =>
+    (steps ?? []).flatMap((s) => {
+      if (s.kind !== 'streamdeck') return [s]
+      const match = actions.find((a) => a.id === s.streamdeckActionId)
+      if (!match) {
+        warnings.push(
+          `The Stream Deck Multi Action “${
+            s.description || 'Multi Action'
+          }” was not found — its steps were skipped.`,
+        )
+        return []
+      }
+      return match.steps ?? []
+    })
+
   return {
-    before: resolve(routine.streamdeckActionId, routine.streamdeckTitle),
-    after: resolve(
-      routine.streamdeckAfterActionId,
-      routine.streamdeckAfterTitle,
-    ),
+    before: expand(routine.steps ?? []),
+    after: expand(routine.afterSteps ?? []),
+    warnings,
   }
 }
 
@@ -220,9 +238,10 @@ export async function runRoutine(
   obsRequest: ObsRequest,
 ): Promise<string[]> {
   const warnings: string[] = []
-  let phases: RoutinePhases = {before: [], after: []}
+  let phases: RoutinePhases = {before: [], after: [], warnings: []}
   try {
     phases = await resolveRoutinePhases(routine)
+    warnings.push(...phases.warnings)
   } catch (err) {
     warnings.push(
       err instanceof Error && err.message
