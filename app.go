@@ -40,6 +40,13 @@ type App struct {
 	// Transcriber sidecar process (guarded by mu; see transcriber.go).
 	transcribeCmd   *exec.Cmd
 	transcribeStdin io.WriteCloser
+
+	// Video-download sidecar process (guarded by mu; see download.go).
+	downloadCmd *exec.Cmd
+
+	// mediaBaseURL is the loopback URL of the local media server that streams
+	// downloaded videos (guarded by mu; see media.go). Empty until startup.
+	mediaBaseURL string
 }
 
 // NewApp creates a new App application struct
@@ -79,17 +86,24 @@ func NewApp() *App {
 // background so its Whisper model is already loaded when a stream starts.
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	// Serve downloaded videos over a loopback HTTP server so large files stream
+	// (with range/seek support) instead of buffering through the webview.
+	a.startMediaServer()
 	go func() {
 		if err := a.ensureTranscriber(); err != nil {
 			log.Printf("jax: warm transcriber: %v", err)
 		}
 	}()
+	// Keep the cached app icon in sync with the profile's Gravatar; the
+	// build step embeds it (see icon.go).
+	go a.refreshAppIcon()
 }
 
-// shutdown is called when the app closes. It ends the transcriber sidecar
-// and releases the database handle.
+// shutdown is called when the app closes. It ends the sidecar processes and
+// releases the database handle.
 func (a *App) shutdown(ctx context.Context) {
 	a.killTranscriber()
+	a.CancelDownload()
 	if a.store != nil {
 		_ = a.store.Close()
 	}
@@ -157,12 +171,17 @@ func (a *App) GetProfile() Profile {
 	return p
 }
 
-// SaveProfile persists the user profile.
+// SaveProfile persists the user profile and refreshes the cached Gravatar
+// app icon for the (possibly new) email.
 func (a *App) SaveProfile(p Profile) error {
 	if a.store == nil {
 		return nil
 	}
-	return a.store.setJSON(keyProfile, p)
+	if err := a.store.setJSON(keyProfile, p); err != nil {
+		return err
+	}
+	go a.refreshAppIcon()
+	return nil
 }
 
 // ---------------------------------------------------------------------------
