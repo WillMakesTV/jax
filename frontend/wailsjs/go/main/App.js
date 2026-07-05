@@ -54,8 +54,16 @@ export function DisconnectService(arg1) {
   return window['go']['main']['App']['DisconnectService'](arg1);
 }
 
+export function EditPlanDescription(arg1, arg2, arg3) {
+  return window['go']['main']['App']['EditPlanDescription'](arg1, arg2, arg3);
+}
+
 export function EndStreamSession() {
   return window['go']['main']['App']['EndStreamSession']();
+}
+
+export function GeneratePlanDescription(arg1, arg2, arg3) {
+  return window['go']['main']['App']['GeneratePlanDescription'](arg1, arg2, arg3);
 }
 
 export function GenerateStreamOutline(arg1, arg2) {

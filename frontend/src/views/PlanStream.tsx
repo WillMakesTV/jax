@@ -1,13 +1,16 @@
-import {ArrowLeft, Check} from 'lucide-react'
+import {ArrowLeft, Check, Sparkles, WandSparkles} from 'lucide-react'
 import clsx from 'clsx'
 import {useEffect, useState} from 'react'
 import {
+  EditPlanDescription,
+  GeneratePlanDescription,
   GetContentSeries,
   GetSeriesTypes,
   SavePlannedStream,
   UsedEpisodeNumbers,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
+import {MarkdownField} from '../components/markdown/MarkdownField'
 import {SERVICES} from '../services/services'
 import {useServices} from '../services/ServicesProvider'
 
@@ -52,6 +55,8 @@ export function PlanStream({
   const [types, setTypes] = useState<main.SeriesType[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // The description textarea's selection range, for scoped AI edits.
+  const [descSelection, setDescSelection] = useState<[number, number]>([0, 0])
 
   useEffect(() => {
     GetContentSeries()
@@ -341,13 +346,23 @@ export function PlanStream({
               Description{' '}
               <span className="font-normal text-fg-muted">(optional)</span>
             </label>
-            <textarea
+            <MarkdownField
               id="plan-description"
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={4}
+              onChange={setDescription}
               placeholder="What's the plan for this stream?"
-              className="w-full resize-y rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+              onSelectionChange={(start, end) => setDescSelection([start, end])}
+            />
+            <DescriptionAiActions
+              description={description}
+              title={title}
+              seriesId={seriesId}
+              episodeNumber={episodicPlan && episodeValid ? episodeNum : 0}
+              selection={descSelection}
+              onDescription={(next) => {
+                setDescription(next)
+                setDescSelection([0, 0])
+              }}
             />
           </div>
 
@@ -430,6 +445,226 @@ export function PlanStream({
           </div>
         </form>
       </div>
+    </div>
+  )
+}
+
+/**
+ * AI helpers under the description field: generate a suggested description
+ * from the series' previous episodes (their stored outlines), and request
+ * edits — scoped to the highlighted section of the description when one is
+ * selected, otherwise applied to the whole text.
+ */
+function DescriptionAiActions({
+  description,
+  title,
+  seriesId,
+  episodeNumber,
+  selection,
+  onDescription,
+}: {
+  description: string
+  title: string
+  seriesId: string
+  episodeNumber: number
+  /** [start, end] selection in the description textarea. */
+  selection: [number, number]
+  onDescription: (next: string) => void
+}) {
+  const {statuses} = useServices()
+  const aiConnected = statuses['anthropic']?.connected ?? false
+
+  const [editOpen, setEditOpen] = useState(false)
+  const [instruction, setInstruction] = useState('')
+  const [busy, setBusy] = useState<'' | 'generate' | 'edit'>('')
+  const [confirmReplace, setConfirmReplace] = useState(false)
+  const [aiError, setAiError] = useState('')
+
+  const [selStart, selEnd] = selection
+  const snippet =
+    selEnd > selStart ? description.slice(selStart, selEnd) : ''
+
+  const generate = async () => {
+    setConfirmReplace(false)
+    setBusy('generate')
+    setAiError('')
+    try {
+      const suggested = await GeneratePlanDescription(
+        title.trim(),
+        seriesId,
+        episodeNumber,
+      )
+      onDescription(suggested)
+    } catch (err) {
+      setAiError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not generate a description.',
+      )
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const applyEdit = async () => {
+    if (!instruction.trim()) {
+      setAiError('Describe the edit you want.')
+      return
+    }
+    setBusy('edit')
+    setAiError('')
+    try {
+      const result = await EditPlanDescription(
+        description,
+        snippet,
+        instruction.trim(),
+      )
+      // With a highlighted section the model returns only its replacement;
+      // splice it in. Otherwise it returns the full revised description.
+      onDescription(
+        snippet
+          ? description.slice(0, selStart) + result + description.slice(selEnd)
+          : result,
+      )
+      setInstruction('')
+      setEditOpen(false)
+    } catch (err) {
+      setAiError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not apply the edit.',
+      )
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const aiTitle = aiConnected
+    ? undefined
+    : 'Connect Anthropic in Settings → AI to use AI suggestions.'
+
+  return (
+    <div className="mt-1.5 flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {confirmReplace ? (
+          <>
+            <span className="text-xs text-fg-muted">
+              Replace the current description with a fresh suggestion?
+            </span>
+            <button
+              type="button"
+              onClick={() => void generate()}
+              className="rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90"
+            >
+              Replace
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmReplace(false)}
+              className="rounded-lg border border-edge bg-bg px-2.5 py-1 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+            >
+              Keep mine
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() =>
+              description.trim() ? setConfirmReplace(true) : void generate()
+            }
+            disabled={!aiConnected || busy !== ''}
+            title={aiTitle}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1 text-xs font-semibold text-fg transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Sparkles size={12} aria-hidden />
+            {busy === 'generate'
+              ? 'Generating…'
+              : 'Generate suggested description'}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            setEditOpen((open) => !open)
+            setAiError('')
+          }}
+          disabled={!aiConnected || busy !== '' || !description.trim()}
+          title={
+            aiTitle ??
+            (description.trim()
+              ? undefined
+              : 'Write or generate a description first.')
+          }
+          className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1 text-xs font-semibold text-fg transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <WandSparkles size={12} aria-hidden />
+          Request edits
+        </button>
+        {!editOpen && description.trim() && (
+          <span className="text-[11px] text-fg-muted">
+            Tip: highlight part of the description to scope an edit.
+          </span>
+        )}
+      </div>
+
+      {editOpen && (
+        <div className="flex flex-col gap-2 rounded-lg border border-edge bg-surface p-3">
+          <p className="text-xs text-fg-muted">
+            {snippet ? (
+              <>
+                Editing the highlighted section:{' '}
+                <span className="font-medium text-fg">
+                  “{snippet.length > 80 ? snippet.slice(0, 80) + '…' : snippet}”
+                </span>
+              </>
+            ) : (
+              'Editing the whole description — highlight text in the field above to scope the edit to a section.'
+            )}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={instruction}
+              onChange={(e) => setInstruction(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  void applyEdit()
+                }
+              }}
+              placeholder={
+                snippet
+                  ? 'e.g. make this punchier / mention the new overlay'
+                  : 'e.g. shorten to two sentences and add a call to action'
+              }
+              className="min-w-48 flex-1 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm text-fg outline-none focus:border-accent"
+            />
+            <button
+              type="button"
+              onClick={() => void applyEdit()}
+              disabled={busy !== ''}
+              className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {busy === 'edit' ? 'Applying…' : 'Apply edit'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEditOpen(false)
+                setInstruction('')
+                setAiError('')
+              }}
+              disabled={busy !== ''}
+              className="rounded-lg border border-edge bg-bg px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {aiError && (
+        <p className="text-xs text-red-600 dark:text-red-400">{aiError}</p>
+      )}
     </div>
   )
 }

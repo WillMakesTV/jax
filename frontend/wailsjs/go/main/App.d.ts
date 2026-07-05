@@ -28,7 +28,11 @@ export function DeleteSeriesType(arg1:string):Promise<void>;
 
 export function DisconnectService(arg1:string):Promise<void>;
 
+export function EditPlanDescription(arg1:string,arg2:string,arg3:string):Promise<string>;
+
 export function EndStreamSession():Promise<void>;
+
+export function GeneratePlanDescription(arg1:string,arg2:string,arg3:number):Promise<string>;
 
 export function GenerateStreamOutline(arg1:string,arg2:number):Promise<main.StreamOutline>;
 
