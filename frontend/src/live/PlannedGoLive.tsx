@@ -14,11 +14,12 @@ import {useServices} from '../services/ServicesProvider'
 import {useLiveData} from './LiveDataProvider'
 
 /**
- * "Go Live with Planned Stream" — the Broadcast dashboard's top section while
- * off the air. Each planned stream can go live directly: its title, category,
- * and tags are pushed to the targeted channels (Twitch today; YouTube warns),
- * then the built-in Start Stream routine runs, exactly like the Go live
- * button. Hidden while streaming or when nothing is planned.
+ * "Go Live with Planned Stream" — the Broadcast dashboard's top section.
+ * Each planned stream can go live directly: its title, category, and tags
+ * are pushed to the targeted channels, then the built-in Start Stream routine
+ * runs, exactly like the Go live button. The list stays visible while on the
+ * air (the next stream is often planned mid-broadcast) with Go Live disabled;
+ * the section hides only when nothing is planned.
  */
 export function PlannedGoLive() {
   const {statuses, obsRequest} = useServices()
@@ -35,9 +36,9 @@ export function PlannedGoLive() {
   const [busyId, setBusyId] = useState('')
   const [notes, setNotes] = useState<Record<string, string>>({})
 
-  // Refresh whenever the section (re)appears — including after a stream ends.
+  // Refresh whenever the section (re)mounts — returning from planning the
+  // next stream remounts the dashboard — and when the live state flips.
   useEffect(() => {
-    if (streaming) return
     GetPlannedStreams()
       .then((p) => setPlans(p ?? []))
       .catch(() => {})
@@ -50,9 +51,16 @@ export function PlannedGoLive() {
       .catch(() => {})
   }, [streaming])
 
-  if (streaming || plans.length === 0) return null
+  // Going live (from a card or anywhere else) invalidates a pending confirm.
+  useEffect(() => {
+    if (streaming) setConfirmingId('')
+  }, [streaming])
 
-  const canGoLive = obsConnected && channelConnected
+  if (plans.length === 0) return null
+
+  // Plans stay listed while on the air — the next stream can be planned
+  // mid-broadcast — but going live is only possible while off the air.
+  const canGoLive = obsConnected && channelConnected && !streaming
 
   const goLive = async (plan: main.PlannedStream) => {
     setBusyId(plan.id)
@@ -136,7 +144,9 @@ export function PlannedGoLive() {
                     title={
                       canGoLive
                         ? undefined
-                        : 'Connect OBS and a channel in Settings → Services to go live.'
+                        : streaming
+                          ? 'Already live — end the current broadcast first.'
+                          : 'Connect OBS and a channel in Settings → Services to go live.'
                     }
                     className={clsx(
                       'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-opacity',
