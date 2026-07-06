@@ -85,52 +85,29 @@ export function PlannedGoLive() {
   }
 
   return (
-    <section
-      aria-label="Go live with a planned stream"
-      className="rounded-2xl border border-edge bg-surface p-4"
-    >
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
-        Go Live with Planned Stream
-      </h2>
-      <p className="mt-1 text-xs text-fg-muted">
-        Starts the broadcast with the plan&apos;s title, category, and tags
-        applied to its channels.
-      </p>
+    <section aria-label="Go live with a planned stream">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+          Go Live with Planned Stream
+        </h2>
+        <span className="text-xs text-fg-muted">
+          Applies the plan&apos;s title, category, and tags, then starts the
+          broadcast.
+        </span>
+      </div>
 
-      <ul className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+      {/* Cards mirror the Planning page's plan cards, with the Go Live CTA
+          in the corner the Planning cards keep their delete button. */}
+      <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {plans.map((plan) => (
           <li
             key={plan.id}
-            className="flex flex-col rounded-xl border border-edge bg-bg p-3"
+            className="flex flex-col rounded-xl border border-edge bg-surface p-4"
           >
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-fg">
-                  {plan.title}
-                </p>
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  {seriesTitles[plan.seriesId] && (
-                    <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent">
-                      {seriesTitles[plan.seriesId]}
-                    </span>
-                  )}
-                  {plan.episodeNumber > 0 && (
-                    <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent">
-                      Episode {plan.episodeNumber}
-                    </span>
-                  )}
-                  {plan.channels.map((c) => (
-                    <span
-                      key={c}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-edge bg-surface px-2 py-0.5 text-xs font-medium text-fg-muted"
-                    >
-                      <BrandTile platform={c} size={14} />
-                      {platformName(c)}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
+            <div className="flex items-start justify-between gap-3">
+              <p className="min-w-0 flex-1 text-sm font-semibold text-fg">
+                {plan.title}
+              </p>
               <div className="flex shrink-0 items-center gap-1.5">
                 {confirmingId === plan.id ? (
                   <>
@@ -172,6 +149,36 @@ export function PlannedGoLive() {
                 )}
               </div>
             </div>
+            {plan.description && (
+              <p className="mt-1 line-clamp-3 text-sm text-fg-muted">
+                {plan.description}
+              </p>
+            )}
+            {(seriesTitles[plan.seriesId] ||
+              plan.episodeNumber > 0 ||
+              plan.channels.length > 0) && (
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                {seriesTitles[plan.seriesId] && (
+                  <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent">
+                    {seriesTitles[plan.seriesId]}
+                  </span>
+                )}
+                {plan.episodeNumber > 0 && (
+                  <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent">
+                    Episode {plan.episodeNumber}
+                  </span>
+                )}
+                {plan.channels.map((c) => (
+                  <span
+                    key={c}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-edge bg-bg px-2 py-0.5 text-xs font-medium text-fg-muted"
+                  >
+                    <BrandTile platform={c} size={14} />
+                    {platformName(c)}
+                  </span>
+                ))}
+              </div>
+            )}
             {notes[plan.id] && (
               <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
                 {notes[plan.id]}
