@@ -5,6 +5,8 @@ import {useEvents} from '../events/EventsProvider'
 import {useLiveData} from '../live/LiveDataProvider'
 import {
   computeTokenValues,
+  EPISODE_NUMBER_TOKEN,
+  EPISODE_TITLE_TOKEN,
   loadCustomTokens,
   loadSmartSources,
   renderTemplate,
@@ -78,7 +80,10 @@ export function SmartSourcesPanel() {
   }
 
   const values = computeTokenValues(platforms, obs, events, new Date(), custom)
-  const customTokens = Object.keys(custom).map((n) => `{${n}}`)
+  // The auto-managed episode tokens already appear among the built-in chips.
+  const customTokens = Object.keys(custom)
+    .filter((n) => n !== EPISODE_TITLE_TOKEN && n !== EPISODE_NUMBER_TOKEN)
+    .map((n) => `{${n}}`)
   const names = Object.keys(sources)
 
   return (

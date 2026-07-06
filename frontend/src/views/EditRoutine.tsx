@@ -530,9 +530,11 @@ function StepRow({
 
         {step.kind === 'update-smart-sources' && (
           <span className="min-w-32 flex-1 text-xs text-fg-muted">
-            Pushes the planned stream&apos;s episode title and number to the
-            series&apos; mapped text sources; skipped when the stream on the
-            air isn&apos;t a planned one using smart sources.
+            Writes the planned stream&apos;s episode title and number into the{' '}
+            <span className="font-mono">{'{episode_title}'}</span> /{' '}
+            <span className="font-mono">{'{episode_number}'}</span> tokens and
+            re-renders every smart source; skipped when the stream on the air
+            isn&apos;t a planned one.
           </span>
         )}
 

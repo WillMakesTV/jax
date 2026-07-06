@@ -29,19 +29,22 @@ type ContentSeries struct {
 	YouTubeCategory ServiceCategory `json:"youtubeCategory"`
 	Tags            []string        `json:"tags"`
 	Notes           string          `json:"notes"` // freeform planning context
-	CreatedAt       string          `json:"createdAt"`
+	// TwitchLabels are the Twitch Content Classification Label IDs streams in
+	// this series carry (see twitchContentLabelIDs in planning.go and the
+	// catalogue in frontend lib/contentLabels.ts).
+	TwitchLabels []string `json:"twitchLabels"`
+	// YouTubeMadeForKids self-declares the series' streams as made for kids
+	// (COPPA) on YouTube — the only content classification its API accepts.
+	YouTubeMadeForKids bool   `json:"youtubeMadeForKids"`
+	CreatedAt          string `json:"createdAt"`
 	// IsDefault marks the series preselected when planning; at most one
 	// series holds it (see SetDefaultContentSeries).
 	IsDefault bool `json:"isDefault"`
 	// TypeID references a SeriesType ("" = untyped); see series_types.go.
+	// (The on-air episode's title/number no longer map to OBS sources here —
+	// they flow through the auto-managed {episode_title}/{episode_number}
+	// smart-source tokens; see frontend lib/smartSources.ts.)
 	TypeID string `json:"typeId"`
-	// Smart-source mapping for episodic series: while an episode of this
-	// series is on the air, the mapped OBS text sources are kept updated with
-	// the episode's title and number (see SmartSourcesUpdater). Either source
-	// may be empty to map just one.
-	SmartEpisodeInfo    bool   `json:"smartEpisodeInfo"`
-	EpisodeTitleSource  string `json:"episodeTitleSource"`
-	EpisodeNumberSource string `json:"episodeNumberSource"`
 }
 
 // GetContentSeries returns the saved content series, newest first. Never nil.
@@ -80,6 +83,9 @@ func (a *App) SaveContentSeries(series ContentSeries) (ContentSeries, error) {
 	}
 	if series.Tags == nil {
 		series.Tags = []string{}
+	}
+	if series.TwitchLabels == nil {
+		series.TwitchLabels = []string{}
 	}
 
 	all := a.GetContentSeries()

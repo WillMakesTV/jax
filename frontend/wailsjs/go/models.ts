@@ -184,12 +184,11 @@ export namespace main {
 	    youtubeCategory: ServiceCategory;
 	    tags: string[];
 	    notes: string;
+	    twitchLabels: string[];
+	    youtubeMadeForKids: boolean;
 	    createdAt: string;
 	    isDefault: boolean;
 	    typeId: string;
-	    smartEpisodeInfo: boolean;
-	    episodeTitleSource: string;
-	    episodeNumberSource: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ContentSeries(source);
@@ -204,12 +203,11 @@ export namespace main {
 	        this.youtubeCategory = this.convertValues(source["youtubeCategory"], ServiceCategory);
 	        this.tags = source["tags"];
 	        this.notes = source["notes"];
+	        this.twitchLabels = source["twitchLabels"];
+	        this.youtubeMadeForKids = source["youtubeMadeForKids"];
 	        this.createdAt = source["createdAt"];
 	        this.isDefault = source["isDefault"];
 	        this.typeId = source["typeId"];
-	        this.smartEpisodeInfo = source["smartEpisodeInfo"];
-	        this.episodeTitleSource = source["episodeTitleSource"];
-	        this.episodeNumberSource = source["episodeNumberSource"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

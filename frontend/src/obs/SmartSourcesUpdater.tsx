@@ -1,7 +1,6 @@
 import {useEffect, useRef} from 'react'
 import {
   GetActiveStreamSession,
-  GetContentSeries,
   GetLiveStreamMeta,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
@@ -12,6 +11,8 @@ import {
   loadCustomTokens,
   loadSmartSources,
   renderTemplate,
+  SMART_SOURCES_REFRESH_EVENT,
+  updateEpisodeTokens,
   type SmartSource,
 } from '../lib/smartSources'
 import {useServices} from '../services/ServicesProvider'
@@ -31,11 +32,11 @@ interface EpisodeContext {
  * smart source's template with live token values and pushes changed text into
  * its OBS Text (GDI+) source over the WebSocket.
  *
- * Episodic series can additionally map the on-air episode's title and number
- * onto OBS text sources ("Use Smart Sources for Episode Information" on the
- * series). The episode context comes from the active stream session (going
- * live with a plan), falling back to the live broadcast's series/episode
- * assignment.
+ * The on-air episode's identity flows through the auto-managed episode tokens
+ * ({episode_title}/{episode_number}): each tick resolves the episode context —
+ * the active stream session (going live with a plan), falling back to the
+ * live broadcast's series/episode assignment — and keeps the tokens' stored
+ * values current, so every template referencing them stays consistent.
  */
 export function SmartSourcesUpdater() {
   const {platforms, obs, obsConnected, sourcesRev} = useLiveData()
@@ -44,7 +45,6 @@ export function SmartSourcesUpdater() {
 
   const configRef = useRef<Record<string, SmartSource>>({})
   const customRef = useRef<Record<string, string>>({})
-  const seriesRef = useRef<main.ContentSeries[]>([])
   const liveMetaRef = useRef<{startedAt: string; meta: main.LiveStreamMeta} | null>(
     null,
   )
@@ -52,8 +52,7 @@ export function SmartSourcesUpdater() {
   const dataRef = useRef({platforms, obs, events})
   dataRef.current = {platforms, obs, events}
 
-  // Reload the smart-source config, custom tokens, and the series' episode
-  // mappings on mount and on change.
+  // Reload the smart-source config and custom tokens on mount and on change.
   useEffect(() => {
     let cancelled = false
     loadSmartSources().then((c) => {
@@ -66,25 +65,6 @@ export function SmartSourcesUpdater() {
       cancelled = true
     }
   }, [sourcesRev])
-
-  // The series' episode mappings are edited on their own page (no sourcesRev
-  // bump), so refresh them on a slow interval as well as on mount.
-  useEffect(() => {
-    const load = () => {
-      GetContentSeries()
-        .then((s) => {
-          seriesRef.current = (s ?? []).filter(
-            (x) =>
-              x.smartEpisodeInfo &&
-              (x.episodeTitleSource || x.episodeNumberSource),
-          )
-        })
-        .catch(() => {})
-    }
-    load()
-    const id = window.setInterval(load, 30_000)
-    return () => window.clearInterval(id)
-  }, [])
 
   useEffect(() => {
     if (!obsConnected) {
@@ -148,38 +128,41 @@ export function SmartSourcesUpdater() {
       const cfg = configRef.current
       const {platforms, obs, events} = dataRef.current
       const names = Object.keys(cfg)
-      if (names.length > 0) {
-        const values = computeTokenValues(
-          platforms,
-          obs,
-          events,
-          new Date(),
-          customRef.current,
-        )
-        for (const name of names) {
-          await push(name, renderTemplate(cfg[name].template, values))
-        }
+      if (names.length === 0) return
+
+      // Keep the auto-managed episode tokens current with the on-air episode
+      // before rendering, so templates referencing them are never stale.
+      const ctx = await episodeContext()
+      if (ctx && (await updateEpisodeTokens(ctx.title, ctx.episode))) {
+        customRef.current = await loadCustomTokens()
       }
 
-      // Episode-info mappings for the series currently on the air.
-      if (seriesRef.current.length > 0) {
-        const ctx = await episodeContext()
-        const series = ctx
-          ? seriesRef.current.find((s) => s.id === ctx.seriesId)
-          : undefined
-        if (ctx && series) {
-          if (series.episodeTitleSource && ctx.title) {
-            await push(series.episodeTitleSource, ctx.title)
-          }
-          if (series.episodeNumberSource && ctx.episode > 0) {
-            await push(series.episodeNumberSource, String(ctx.episode))
-          }
-        }
+      const values = computeTokenValues(
+        platforms,
+        obs,
+        events,
+        new Date(),
+        customRef.current,
+      )
+      for (const name of names) {
+        await push(name, renderTemplate(cfg[name].template, values))
       }
     }
     void tick()
     const id = window.setInterval(() => void tick(), PUSH_MS)
-    return () => window.clearInterval(id)
+    // A routine step that rewrites the episode tokens asks for an immediate
+    // re-render instead of waiting out the interval.
+    const onRefresh = () => {
+      void loadCustomTokens().then((c) => {
+        customRef.current = c
+        void tick()
+      })
+    }
+    window.addEventListener(SMART_SOURCES_REFRESH_EVENT, onRefresh)
+    return () => {
+      window.clearInterval(id)
+      window.removeEventListener(SMART_SOURCES_REFRESH_EVENT, onRefresh)
+    }
   }, [obsConnected, obsRequest])
 
   return null

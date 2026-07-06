@@ -1,3 +1,4 @@
+import {SetSetting} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {type LiveEventItem} from '../events/EventsProvider'
 import {type ObsMetrics} from '../live/LiveDataProvider'
@@ -23,6 +24,18 @@ export interface SmartSource {
   template: string
 }
 
+// The on-air episode's identity flows through two auto-managed custom tokens:
+// going live with a planned stream (and the "Update episode info" routine
+// step) writes their values, and any smart-source template referencing them
+// renders through the same pipeline as every other token — one consistent
+// mechanism instead of per-series source mappings.
+export const EPISODE_TITLE_TOKEN = 'episode_title'
+export const EPISODE_NUMBER_TOKEN = 'episode_number'
+
+/** Window event that asks the app-wide updater to re-render immediately
+ *  (e.g. right after a routine step rewrote the episode tokens). */
+export const SMART_SOURCES_REFRESH_EVENT = 'jax:smart-sources-refresh'
+
 /** One insertable token and what it resolves to. */
 export const SMART_TOKENS: {token: string; label: string}[] = [
   {token: '{viewers}', label: 'Total live viewers'},
@@ -37,6 +50,8 @@ export const SMART_TOKENS: {token: string; label: string}[] = [
   {token: '{latest_sub}', label: 'Latest subscriber'},
   {token: '{time}', label: 'Current time'},
   {token: '{date}', label: 'Current date'},
+  {token: `{${EPISODE_TITLE_TOKEN}}`, label: "On-air episode's title (auto-updated from the stream plan)"},
+  {token: `{${EPISODE_NUMBER_TOKEN}}`, label: "On-air episode's number (auto-updated from the stream plan)"},
 ]
 
 const timeFmt = new Intl.DateTimeFormat('en', {hour: 'numeric', minute: '2-digit'})
@@ -71,6 +86,30 @@ export async function loadCustomTokens(): Promise<Record<string, string>> {
 /** Persist the custom-token map. */
 export function saveCustomTokens(map: Record<string, string>): void {
   saveSetting(SETTING_KEYS.obsSmartTokens, JSON.stringify(map))
+}
+
+/**
+ * Write the on-air episode's title/number into the auto-managed episode
+ * tokens, awaiting the persisted write so callers can render right after.
+ * Empty values leave the existing token alone. Returns true when a token
+ * value actually changed.
+ */
+export async function updateEpisodeTokens(
+  title: string,
+  episode: number,
+): Promise<boolean> {
+  const custom = await loadCustomTokens()
+  const next = {...custom}
+  if (title) next[EPISODE_TITLE_TOKEN] = title
+  if (episode > 0) next[EPISODE_NUMBER_TOKEN] = String(episode)
+  if (
+    next[EPISODE_TITLE_TOKEN] === custom[EPISODE_TITLE_TOKEN] &&
+    next[EPISODE_NUMBER_TOKEN] === custom[EPISODE_NUMBER_TOKEN]
+  ) {
+    return false
+  }
+  await SetSetting(SETTING_KEYS.obsSmartTokens, JSON.stringify(next))
+  return true
 }
 
 /** Resolve every token to its current value from the live app state. */

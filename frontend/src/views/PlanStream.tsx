@@ -17,6 +17,10 @@ import {
   loadYouTubeLivePrefix,
   platformBroadcastTitle,
 } from '../lib/broadcastTitles'
+import {
+  twitchLabelName,
+  YOUTUBE_MADE_FOR_KIDS_NAME,
+} from '../lib/contentLabels'
 import {SERVICES} from '../services/services'
 import {useServices} from '../services/ServicesProvider'
 
@@ -510,6 +514,16 @@ export function PlanStream({
                     ]
                       .filter(Boolean)
                       .join(' · ')
+                    // Content labels come from the linked series: Twitch's
+                    // classification labels, YouTube's made-for-kids flag.
+                    const contentLabels =
+                      svc.id === 'twitch'
+                        ? (activeSeries?.twitchLabels ?? []).map(
+                            twitchLabelName,
+                          )
+                        : activeSeries?.youtubeMadeForKids
+                          ? [YOUTUBE_MADE_FOR_KIDS_NAME]
+                          : []
                     const Logo = svc.Icon
                     return (
                       <li key={svc.id} className="flex items-start gap-2">
@@ -528,6 +542,18 @@ export function PlanStream({
                             <p className="mt-0.5 text-xs text-fg-muted">
                               {meta}
                             </p>
+                          )}
+                          {contentLabels.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {contentLabels.map((l) => (
+                                <span
+                                  key={l}
+                                  className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400"
+                                >
+                                  {l}
+                                </span>
+                              ))}
+                            </div>
                           )}
                           {svc.id === 'youtube' && (
                             <p className="mt-0.5 whitespace-pre-wrap text-xs text-fg-muted [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:4] overflow-hidden">

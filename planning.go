@@ -179,6 +179,20 @@ func broadcastBaseTitle(plan PlannedStream) string {
 	return plan.Title
 }
 
+// twitchContentLabelIDs are the user-settable Twitch Content Classification
+// Labels ("MatureGame" is auto-applied by Twitch from the category's rating
+// and cannot be set). Every ID is sent on update — enabled or not — so labels
+// removed from the series are also cleared on the channel. The display
+// catalogue lives in frontend lib/contentLabels.ts.
+var twitchContentLabelIDs = []string{
+	"DebatedSocialIssuesAndPolitics",
+	"DrugsIntoxication",
+	"Gambling",
+	"ProfanityVulgarity",
+	"SexualThemes",
+	"ViolentGraphic",
+}
+
 // twitchTagRe strips characters Twitch rejects in tags (max 25 chars, no
 // spaces or special characters).
 var twitchTagRe = regexp.MustCompile(`[^\p{L}\p{N}]`)
@@ -215,6 +229,19 @@ func (a *App) applyPlanToTwitch(plan PlannedStream, series *ContentSeries) strin
 	}
 	if len(tags) > 0 {
 		payload["tags"] = tags
+	}
+	if series != nil {
+		// Content classification labels: the full settable set is sent —
+		// enabled or not — so labels the series dropped are cleared too.
+		chosen := map[string]bool{}
+		for _, id := range series.TwitchLabels {
+			chosen[id] = true
+		}
+		labels := make([]map[string]any, 0, len(twitchContentLabelIDs))
+		for _, id := range twitchContentLabelIDs {
+			labels = append(labels, map[string]any{"id": id, "is_enabled": chosen[id]})
+		}
+		payload["content_classification_labels"] = labels
 	}
 
 	status, err := patchJSON(
@@ -280,7 +307,7 @@ func (a *App) ApplyStreamInfo() []string {
 				warnings = append(warnings, w)
 			}
 		case "youtube":
-			if w := a.applyPlanToYouTube(*plan); w != "" {
+			if w := a.applyPlanToYouTube(*plan, series); w != "" {
 				warnings = append(warnings, w)
 			}
 		}
@@ -288,13 +315,15 @@ func (a *App) ApplyStreamInfo() []string {
 	return warnings
 }
 
-// youtubeVideosUpdateURL is the videos.update endpoint; part=snippet scopes
-// the write to the video's title/description/category metadata.
-const youtubeVideosUpdateURL = "https://www.googleapis.com/youtube/v3/videos?part=snippet"
+// youtubeVideosUpdateURL is the videos.update endpoint; part=snippet,status
+// scopes the write to the video's metadata plus its made-for-kids
+// self-declaration.
+const youtubeVideosUpdateURL = "https://www.googleapis.com/youtube/v3/videos?part=snippet,status"
 
-// applyPlanToYouTube writes the plan's prefixed title and description onto
-// the active live broadcast's video. Returns "" on success, else a warning.
-func (a *App) applyPlanToYouTube(plan PlannedStream) string {
+// applyPlanToYouTube writes the plan's prefixed title and description — and
+// the series' made-for-kids self-declaration — onto the active live
+// broadcast's video. Returns "" on success, else a warning.
+func (a *App) applyPlanToYouTube(plan PlannedStream, series *ContentSeries) string {
 	conn, ok := a.freshConn("youtube")
 	if !ok {
 		return "YouTube is not connected — its stream info was not updated."
@@ -321,16 +350,17 @@ func (a *App) applyPlanToYouTube(plan PlannedStream) string {
 		a.setYTVideoID(videoID)
 	}
 
-	// videos.update replaces the whole snippet, so read the current one and
-	// change only the title and description — the category, tags, and
-	// language set in YouTube Studio survive.
+	// videos.update replaces the whole snippet/status, so read the current
+	// ones and change only what the plan owns — the category, tags, language,
+	// and privacy set in YouTube Studio survive.
 	var videos struct {
 		Items []struct {
 			Snippet map[string]any `json:"snippet"`
+			Status  map[string]any `json:"status"`
 		} `json:"items"`
 	}
 	if _, err := getJSON(
-		"https://www.googleapis.com/youtube/v3/videos?part=snippet&id="+videoID,
+		"https://www.googleapis.com/youtube/v3/videos?part=snippet,status&id="+videoID,
 		headers, &videos,
 	); err != nil || len(videos.Items) == 0 {
 		log.Printf("jax: apply plan to youtube: read snippet: %v", err)
@@ -341,9 +371,20 @@ func (a *App) applyPlanToYouTube(plan PlannedStream) string {
 	if strings.TrimSpace(plan.Description) != "" {
 		snippet["description"] = plan.Description
 	}
+	payload := map[string]any{"id": videoID, "snippet": snippet}
+	if series != nil {
+		// The made-for-kids declaration is the one content classification
+		// YouTube's API accepts; declaring "not made for kids" matters too.
+		vidStatus := videos.Items[0].Status
+		if vidStatus == nil {
+			vidStatus = map[string]any{}
+		}
+		vidStatus["selfDeclaredMadeForKids"] = series.YouTubeMadeForKids
+		payload["status"] = vidStatus
+	}
 
 	status, err := sendJSON(http.MethodPut, youtubeVideosUpdateURL, headers,
-		map[string]any{"id": videoID, "snippet": snippet}, nil)
+		payload, nil)
 	if err != nil {
 		log.Printf("jax: apply plan to youtube: update: %v", err)
 		if status == 401 || status == 403 {

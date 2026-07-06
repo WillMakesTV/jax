@@ -7,7 +7,16 @@ import {
   SearchTwitchCategories,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
-import {TEXT_GDIPLUS_KINDS} from '../lib/smartSources'
+import {TWITCH_CONTENT_LABELS} from '../lib/contentLabels'
+import {
+  EPISODE_NUMBER_TOKEN,
+  EPISODE_TITLE_TOKEN,
+  TEXT_GDIPLUS_KINDS,
+  loadSmartSources,
+  saveSmartSources,
+  type SmartSource,
+} from '../lib/smartSources'
+import {useLiveData} from '../live/LiveDataProvider'
 import {SERVICES} from '../services/services'
 import {useServices} from '../services/ServicesProvider'
 
@@ -33,6 +42,7 @@ export function EditSeries({
   onSaved: () => void
 }) {
   const {statuses, obsRequest} = useServices()
+  const {refreshObs} = useLiveData()
   const twitchConnected = statuses['twitch']?.connected ?? false
   const youtubeConnected = statuses['youtube']?.connected ?? false
   const obsConnected = statuses['obs']?.connected ?? false
@@ -48,39 +58,45 @@ export function EditSeries({
   const [types, setTypes] = useState<main.SeriesType[]>([])
   const [typeId, setTypeId] = useState(series?.typeId ?? '')
   const [tags, setTags] = useState((series?.tags ?? []).join(', '))
+  const [twitchLabels, setTwitchLabels] = useState<string[]>(
+    series?.twitchLabels ?? [],
+  )
+  const [ytMadeForKids, setYtMadeForKids] = useState(
+    series?.youtubeMadeForKids ?? false,
+  )
   const [notes, setNotes] = useState(series?.notes ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  // Episode-info smart sources: map the on-air episode's title and number
-  // onto OBS text sources (episodic series only).
-  const [smartEpisodeInfo, setSmartEpisodeInfo] = useState(
-    series?.smartEpisodeInfo ?? false,
-  )
-  const [episodeTitleSource, setEpisodeTitleSource] = useState(
-    series?.episodeTitleSource ?? '',
-  )
-  const [episodeNumberSource, setEpisodeNumberSource] = useState(
-    series?.episodeNumberSource ?? '',
-  )
-  const [textSources, setTextSources] = useState<string[]>([])
   const episodic = Boolean(types.find((t) => t.id === typeId)?.episodic)
 
-  useEffect(() => {
-    GetSeriesTypes()
-      .then((t) => {
-        const list = t ?? []
-        setTypes(list)
-        // A brand-new series starts on the default type, when one is set.
-        if (!series) {
-          const def = list.find((x) => x.isDefault)
-          if (def) setTypeId((cur) => (cur === '' ? def.id : cur))
-        }
-      })
-      .catch(() => {})
-  }, [series])
+  // Episode-info smart sources: a convenience mapping that writes the
+  // {episode_title}/{episode_number} token templates into the chosen OBS text
+  // sources. The mapping lives in the smart-source map itself (a source whose
+  // template is exactly the token), so it round-trips reliably — reopening the
+  // form re-derives the state from what is actually saved.
+  const [smartMap, setSmartMap] = useState<Record<string, SmartSource>>({})
+  const [smartEpisodeInfo, setSmartEpisodeInfo] = useState(false)
+  const [titleSource, setTitleSource] = useState('')
+  const [numberSource, setNumberSource] = useState('')
+  const [textSources, setTextSources] = useState<string[]>([])
 
-  // OBS Text (GDI+) sources for the episode-info mapping dropdowns.
+  useEffect(() => {
+    loadSmartSources().then((map) => {
+      setSmartMap(map)
+      const exact = (token: string) =>
+        Object.keys(map).find(
+          (n) => map[n].template.trim() === `{${token}}`,
+        ) ?? ''
+      const t = exact(EPISODE_TITLE_TOKEN)
+      const n = exact(EPISODE_NUMBER_TOKEN)
+      setTitleSource(t)
+      setNumberSource(n)
+      setSmartEpisodeInfo(Boolean(t || n))
+    })
+  }, [])
+
+  // OBS Text (GDI+) sources for the mapping dropdowns.
   useEffect(() => {
     if (!obsConnected) return
     obsRequest<{inputs: {inputName: string; inputKind: string}[]}>(
@@ -95,6 +111,20 @@ export function EditSeries({
       )
       .catch(() => {})
   }, [obsConnected, obsRequest])
+
+  useEffect(() => {
+    GetSeriesTypes()
+      .then((t) => {
+        const list = t ?? []
+        setTypes(list)
+        // A brand-new series starts on the default type, when one is set.
+        if (!series) {
+          const def = list.find((x) => x.isDefault)
+          if (def) setTypeId((cur) => (cur === '' ? def.id : cur))
+        }
+      })
+      .catch(() => {})
+  }, [series])
 
   const save = async () => {
     if (!title.trim()) {
@@ -127,11 +157,34 @@ export function EditSeries({
           createdAt: series?.createdAt ?? '',
           isDefault: series?.isDefault ?? false,
           typeId,
-          smartEpisodeInfo: episodic ? smartEpisodeInfo : false,
-          episodeTitleSource: episodic ? episodeTitleSource : '',
-          episodeNumberSource: episodic ? episodeNumberSource : '',
+          twitchLabels,
+          youtubeMadeForKids: ytMadeForKids,
         }),
       )
+      // Persist the episode-info mapping as smart-source templates. Only
+      // templates that are exactly the token are managed here; customized
+      // templates that merely reference the tokens are left alone. Managed
+      // only while the section is visible (episodic), so editing a
+      // non-episodic series never disturbs another series' mapping.
+      if (episodic) {
+        const map = {...smartMap}
+        const applyMapping = (token: string, chosen: string) => {
+          const tpl = `{${token}}`
+          for (const name of Object.keys(map)) {
+            if (name !== chosen && map[name].template.trim() === tpl) {
+              delete map[name]
+            }
+          }
+          if (chosen) map[chosen] = {template: tpl}
+        }
+        applyMapping(EPISODE_TITLE_TOKEN, smartEpisodeInfo ? titleSource : '')
+        applyMapping(
+          EPISODE_NUMBER_TOKEN,
+          smartEpisodeInfo ? numberSource : '',
+        )
+        saveSmartSources(map)
+        refreshObs()
+      }
       onSaved()
     } catch (err) {
       setError(
@@ -183,23 +236,88 @@ export function EditSeries({
           </div>
 
           <fieldset className="flex flex-col gap-4 rounded-xl border border-edge bg-surface p-4">
-            <legend className="px-1 text-sm font-semibold text-fg">
-              Categories
-            </legend>
+            <ServiceLegend id="twitch" />
             <p className="-mt-2 text-xs text-fg-muted">
-              Each connected channel needs its own category — it updates the
-              stream information on that platform.
+              Applied to the Twitch channel when a stream in this series goes
+              live. The category is required while Twitch is connected.
             </p>
             <TwitchCategoryPicker
               connected={twitchConnected}
               value={twitchCat}
               onChange={setTwitchCat}
             />
+
+            <div>
+              <p className="mb-2 text-sm font-medium text-fg">
+                Content classification
+              </p>
+              <div className="flex flex-col gap-2">
+                {TWITCH_CONTENT_LABELS.map((label) => (
+                  <label key={label.id} className="flex items-start gap-2.5">
+                    <input
+                      type="checkbox"
+                      checked={twitchLabels.includes(label.id)}
+                      onChange={(e) =>
+                        setTwitchLabels((prev) =>
+                          e.target.checked
+                            ? [...prev, label.id]
+                            : prev.filter((id) => id !== label.id),
+                        )
+                      }
+                      className="mt-0.5 h-4 w-4 accent-accent"
+                    />
+                    <span>
+                      <span className="block text-sm text-fg">
+                        {label.name}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-fg-muted">
+                        {label.description}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-fg-muted">
+                &ldquo;Mature-rated game&rdquo; is applied automatically by
+                Twitch from the chosen category and cannot be set here.
+              </p>
+            </div>
+          </fieldset>
+
+          <fieldset className="flex flex-col gap-4 rounded-xl border border-edge bg-surface p-4">
+            <ServiceLegend id="youtube" />
+            <p className="-mt-2 text-xs text-fg-muted">
+              Applied to the YouTube broadcast once the stream is live. The
+              category is required while YouTube is connected.
+            </p>
             <YouTubeCategoryPicker
               connected={youtubeConnected}
               value={youtubeCat}
               onChange={setYoutubeCat}
             />
+
+            <div>
+              <p className="mb-2 text-sm font-medium text-fg">
+                Content classification
+              </p>
+              <label className="flex items-start gap-2.5">
+                <input
+                  type="checkbox"
+                  checked={ytMadeForKids}
+                  onChange={(e) => setYtMadeForKids(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-accent"
+                />
+                <span>
+                  <span className="block text-sm text-fg">Made for kids</span>
+                  <span className="mt-0.5 block text-xs text-fg-muted">
+                    Self-declares the broadcast as made for kids (COPPA);
+                    YouTube then limits personalized ads, comments, and live
+                    chat. This is the only classification YouTube&apos;s API
+                    accepts — age restriction is set in YouTube Studio.
+                  </span>
+                </span>
+              </label>
+            </div>
           </fieldset>
 
           {types.length > 0 && (
@@ -242,33 +360,35 @@ export function EditSeries({
                     Use Smart Sources for Episode Information
                   </span>
                   <span className="mt-0.5 block text-xs text-fg-muted">
-                    While an episode of this series is on the air, the mapped
-                    OBS text sources are kept updated with the episode&apos;s
-                    title and number.
+                    Keeps the mapped OBS text sources updated with the on-air
+                    episode&apos;s title and number (via the{' '}
+                    <span className="font-mono">{'{episode_title}'}</span> and{' '}
+                    <span className="font-mono">{'{episode_number}'}</span>{' '}
+                    smart-source tokens — also usable in any template under
+                    OBS Studio → Smart Sources).
                   </span>
                 </span>
               </label>
-
               {smartEpisodeInfo && (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <EpisodeSourcePicker
                     id="series-episode-title-source"
                     label="Episode title"
-                    value={episodeTitleSource}
+                    value={titleSource}
                     options={textSources}
-                    onChange={setEpisodeTitleSource}
+                    onChange={setTitleSource}
                   />
                   <EpisodeSourcePicker
                     id="series-episode-number-source"
                     label="Episode number"
-                    value={episodeNumberSource}
+                    value={numberSource}
                     options={textSources}
-                    onChange={setEpisodeNumberSource}
+                    onChange={setNumberSource}
                   />
                   {!obsConnected && (
                     <p className="text-xs text-fg-muted sm:col-span-2">
-                      Connect OBS in Settings → Services to pick sources from a
-                      list; names typed here are matched when it connects.
+                      Connect OBS in Settings → Services to pick sources from
+                      a list; names typed here are matched when it connects.
                     </p>
                   )}
                 </div>
@@ -365,11 +485,9 @@ function EpisodeSourcePicker({
   options: string[]
   onChange: (v: string) => void
 }) {
-  const field =
-    'w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent'
   return (
     <div>
-      <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-fg">
+      <label htmlFor={id} className={labelCls}>
         {label}
       </label>
       {options.length === 0 ? (
@@ -403,12 +521,12 @@ function EpisodeSourcePicker({
   )
 }
 
-/** Header row shared by the two pickers: brand icon + service name. */
-function ServiceLabel({id, htmlFor}: {id: 'twitch' | 'youtube'; htmlFor: string}) {
+/** Fieldset legend for one service's section: brand tile + service name. */
+function ServiceLegend({id}: {id: 'twitch' | 'youtube'}) {
   const svc = SERVICES.find((s) => s.id === id)
   if (!svc) return null
   return (
-    <label htmlFor={htmlFor} className="mb-1.5 flex items-center gap-2">
+    <legend className="flex items-center gap-2 px-1 text-sm font-semibold text-fg">
       <span
         aria-hidden
         className="flex h-5 w-5 items-center justify-center rounded"
@@ -416,7 +534,16 @@ function ServiceLabel({id, htmlFor}: {id: 'twitch' | 'youtube'; htmlFor: string}
       >
         <svc.Icon size={12} className="text-white" />
       </span>
-      <span className="text-sm font-medium text-fg">{svc.name} category</span>
+      {svc.name}
+    </legend>
+  )
+}
+
+/** The pickers' field label — the service itself is named by the section. */
+function CategoryLabel({htmlFor}: {htmlFor: string}) {
+  return (
+    <label htmlFor={htmlFor} className={labelCls}>
+      Category
     </label>
   )
 }
@@ -476,7 +603,7 @@ function TwitchCategoryPicker({
   if (!connected) {
     return (
       <div>
-        <ServiceLabel id="twitch" htmlFor="series-twitch-category" />
+        <CategoryLabel htmlFor="series-twitch-category" />
         <DisconnectedNote name="Twitch" />
       </div>
     )
@@ -484,7 +611,7 @@ function TwitchCategoryPicker({
 
   return (
     <div className="relative">
-      <ServiceLabel id="twitch" htmlFor="series-twitch-category" />
+      <CategoryLabel htmlFor="series-twitch-category" />
       <div className="relative">
         <Search
           size={14}
@@ -576,7 +703,7 @@ function YouTubeCategoryPicker({
   if (!connected) {
     return (
       <div>
-        <ServiceLabel id="youtube" htmlFor="series-youtube-category" />
+        <CategoryLabel htmlFor="series-youtube-category" />
         <DisconnectedNote name="YouTube" />
       </div>
     )
@@ -590,7 +717,7 @@ function YouTubeCategoryPicker({
 
   return (
     <div>
-      <ServiceLabel id="youtube" htmlFor="series-youtube-category" />
+      <CategoryLabel htmlFor="series-youtube-category" />
       <select
         id="series-youtube-category"
         value={value?.id ?? ''}
