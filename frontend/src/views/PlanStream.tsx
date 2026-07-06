@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import {useEffect, useState} from 'react'
 import {
   EditPlanDescription,
-  GeneratePlanDescription,
+  GeneratePlanSuggestion,
   GetContentSeries,
   GetSeriesTypes,
   SavePlannedStream,
@@ -46,6 +46,7 @@ export function PlanStream({
 
   const [title, setTitle] = useState(plan?.title ?? '')
   const [description, setDescription] = useState(plan?.description ?? '')
+  const [tags, setTags] = useState((plan?.tags ?? []).join(', '))
   const [selected, setSelected] = useState<Set<string>>(() => {
     if (plan) return new Set(plan.channels ?? [])
     const s = new Set<string>()
@@ -173,6 +174,10 @@ export function PlanStream({
             episodicPlan && episode.trim() !== '' && episodeValid
               ? episodeNum
               : 0,
+          tags: tags
+            .split(',')
+            .map((t) => t.trim())
+            .filter(Boolean),
           createdAt: plan?.createdAt ?? '',
         }),
       )
@@ -200,11 +205,25 @@ export function PlanStream({
       </button>
 
       <div className="max-w-2xl">
-        <p className="mb-6 text-sm text-fg-muted">
-          {plan
-            ? 'Review and adjust this planned broadcast.'
-            : 'Outline your next broadcast and choose where it goes out.'}
-        </p>
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-fg-muted">
+            {plan
+              ? 'Review and adjust this planned broadcast.'
+              : 'Outline your next broadcast and choose where it goes out.'}
+          </p>
+          <GeneratePlanButton
+            title={title}
+            seriesId={seriesId}
+            episodeNumber={episodicPlan && episodeValid ? episodeNum : 0}
+            hasDraft={Boolean(description.trim() || tags.trim())}
+            onSuggestion={(s) => {
+              if (s.title) setTitle(s.title)
+              if (s.description) setDescription(s.description)
+              if ((s.tags ?? []).length > 0) setTags((s.tags ?? []).join(', '))
+              setDescSelection([0, 0])
+            }}
+          />
+        </div>
 
         <form
           onSubmit={(e) => {
@@ -366,14 +385,34 @@ export function PlanStream({
             />
             <DescriptionAiActions
               description={description}
-              title={title}
-              seriesId={seriesId}
-              episodeNumber={episodicPlan && episodeValid ? episodeNum : 0}
               selection={descSelection}
               onDescription={(next) => {
                 setDescription(next)
                 setDescSelection([0, 0])
               }}
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="plan-tags"
+              className="mb-1.5 block text-sm font-medium text-fg"
+            >
+              Tags{' '}
+              <span className="font-normal text-fg-muted">
+                (comma-separated — blank uses the series&apos; tags)
+              </span>
+            </label>
+            <input
+              id="plan-tags"
+              value={tags}
+              onChange={(e) => setTags(e.target.value)}
+              placeholder={
+                (activeSeries?.tags?.length ?? 0) > 0
+                  ? activeSeries!.tags.join(', ')
+                  : 'ai, coding, live'
+              }
+              className="w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
             />
           </div>
 
@@ -456,11 +495,18 @@ export function PlanStream({
                       svc.id === 'twitch'
                         ? activeSeries?.twitchCategory?.name ?? ''
                         : activeSeries?.youtubeCategory?.name ?? ''
+                    // The plan's own tags win; the series' are the fallback.
+                    const planTags = tags
+                      .split(',')
+                      .map((t) => t.trim())
+                      .filter(Boolean)
+                    const effectiveTags =
+                      planTags.length > 0 ? planTags : activeSeries?.tags ?? []
                     const meta = [
                       category && `Category: ${category}`,
                       svc.id === 'twitch' &&
-                        (activeSeries?.tags?.length ?? 0) > 0 &&
-                        `Tags: ${activeSeries!.tags.join(', ')}`,
+                        effectiveTags.length > 0 &&
+                        `Tags: ${effectiveTags.join(', ')}`,
                     ]
                       .filter(Boolean)
                       .join(' · ')
@@ -535,23 +581,17 @@ export function PlanStream({
 }
 
 /**
- * AI helpers under the description field: generate a suggested description
- * from the series' previous episodes (their stored outlines), and request
- * edits — scoped to the highlighted section of the description when one is
- * selected, otherwise applied to the whole text.
+ * The "Request edits" AI helper under the description field: applies an
+ * instruction to the description — scoped to the highlighted section when one
+ * is selected, otherwise the whole text. (Generation lives in
+ * GeneratePlanButton at the top of the form.)
  */
 function DescriptionAiActions({
   description,
-  title,
-  seriesId,
-  episodeNumber,
   selection,
   onDescription,
 }: {
   description: string
-  title: string
-  seriesId: string
-  episodeNumber: number
   /** [start, end] selection in the description textarea. */
   selection: [number, number]
   onDescription: (next: string) => void
@@ -561,35 +601,12 @@ function DescriptionAiActions({
 
   const [editOpen, setEditOpen] = useState(false)
   const [instruction, setInstruction] = useState('')
-  const [busy, setBusy] = useState<'' | 'generate' | 'edit'>('')
-  const [confirmReplace, setConfirmReplace] = useState(false)
+  const [busy, setBusy] = useState<'' | 'edit'>('')
   const [aiError, setAiError] = useState('')
 
   const [selStart, selEnd] = selection
   const snippet =
     selEnd > selStart ? description.slice(selStart, selEnd) : ''
-
-  const generate = async () => {
-    setConfirmReplace(false)
-    setBusy('generate')
-    setAiError('')
-    try {
-      const suggested = await GeneratePlanDescription(
-        title.trim(),
-        seriesId,
-        episodeNumber,
-      )
-      onDescription(suggested)
-    } catch (err) {
-      setAiError(
-        err instanceof Error && err.message
-          ? err.message
-          : 'Could not generate a description.',
-      )
-    } finally {
-      setBusy('')
-    }
-  }
 
   const applyEdit = async () => {
     if (!instruction.trim()) {
@@ -631,42 +648,6 @@ function DescriptionAiActions({
   return (
     <div className="mt-1.5 flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-1.5">
-        {confirmReplace ? (
-          <>
-            <span className="text-xs text-fg-muted">
-              Replace the current description with a fresh suggestion?
-            </span>
-            <button
-              type="button"
-              onClick={() => void generate()}
-              className="rounded-lg bg-accent px-2.5 py-1 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90"
-            >
-              Replace
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirmReplace(false)}
-              className="rounded-lg border border-edge bg-bg px-2.5 py-1 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
-            >
-              Keep mine
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            onClick={() =>
-              description.trim() ? setConfirmReplace(true) : void generate()
-            }
-            disabled={!aiConnected || busy !== ''}
-            title={aiTitle}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1 text-xs font-semibold text-fg transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Sparkles size={12} aria-hidden />
-            {busy === 'generate'
-              ? 'Generating…'
-              : 'Generate suggested description'}
-          </button>
-        )}
         <button
           type="button"
           onClick={() => {
@@ -749,6 +730,99 @@ function DescriptionAiActions({
 
       {aiError && (
         <p className="text-xs text-red-600 dark:text-red-400">{aiError}</p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The form's top-right AI CTA: drafts the whole plan — title, description,
+ * and tags — from the series context and the previous episodes' outlines.
+ * A typed title is treated as the topic to refine; replacing an existing
+ * description/tags draft asks first.
+ */
+function GeneratePlanButton({
+  title,
+  seriesId,
+  episodeNumber,
+  hasDraft,
+  onSuggestion,
+}: {
+  title: string
+  seriesId: string
+  episodeNumber: number
+  /** Whether generated fields would overwrite something the user wrote. */
+  hasDraft: boolean
+  onSuggestion: (s: main.PlanSuggestion) => void
+}) {
+  const {statuses} = useServices()
+  const aiConnected = statuses['anthropic']?.connected ?? false
+
+  const [busy, setBusy] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [aiError, setAiError] = useState('')
+
+  const generate = async () => {
+    setConfirming(false)
+    setBusy(true)
+    setAiError('')
+    try {
+      onSuggestion(
+        await GeneratePlanSuggestion(title.trim(), seriesId, episodeNumber),
+      )
+    } catch (err) {
+      setAiError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not generate a suggestion.',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      {confirming ? (
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-fg-muted">
+            Replace the current draft?
+          </span>
+          <button
+            type="button"
+            onClick={() => void generate()}
+            className="rounded-lg bg-accent px-2.5 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90"
+          >
+            Replace
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirming(false)}
+            className="rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+          >
+            Keep mine
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => (hasDraft ? setConfirming(true) : void generate())}
+          disabled={!aiConnected || busy}
+          title={
+            aiConnected
+              ? 'Draft a title, description, and tags from this series’ previous episodes.'
+              : 'Connect Anthropic in Settings → AI to use AI suggestions.'
+          }
+          className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Sparkles size={13} aria-hidden />
+          {busy ? 'Generating…' : 'Generate with AI'}
+        </button>
+      )}
+      {aiError && (
+        <p className="max-w-64 text-right text-xs text-red-600 dark:text-red-400">
+          {aiError}
+        </p>
       )}
     </div>
   )

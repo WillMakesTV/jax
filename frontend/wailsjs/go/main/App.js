@@ -82,8 +82,8 @@ export function EndStreamSession() {
   return window['go']['main']['App']['EndStreamSession']();
 }
 
-export function GeneratePlanDescription(arg1, arg2, arg3) {
-  return window['go']['main']['App']['GeneratePlanDescription'](arg1, arg2, arg3);
+export function GeneratePlanSuggestion(arg1, arg2, arg3) {
+  return window['go']['main']['App']['GeneratePlanSuggestion'](arg1, arg2, arg3);
 }
 
 export function GenerateStreamOutline(arg1, arg2) {

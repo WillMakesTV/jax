@@ -510,6 +510,22 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class PlanSuggestion {
+	    title: string;
+	    description: string;
+	    tags: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new PlanSuggestion(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.title = source["title"];
+	        this.description = source["description"];
+	        this.tags = source["tags"];
+	    }
+	}
 	export class PlannedStream {
 	    id: string;
 	    title: string;
@@ -517,6 +533,7 @@ export namespace main {
 	    channels: string[];
 	    seriesId: string;
 	    episodeNumber: number;
+	    tags: string[];
 	    createdAt: string;
 	
 	    static createFrom(source: any = {}) {
@@ -531,6 +548,7 @@ export namespace main {
 	        this.channels = source["channels"];
 	        this.seriesId = source["seriesId"];
 	        this.episodeNumber = source["episodeNumber"];
+	        this.tags = source["tags"];
 	        this.createdAt = source["createdAt"];
 	    }
 	}

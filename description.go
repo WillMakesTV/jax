@@ -37,15 +37,17 @@ const (
 
 var descriptionHTTP = &http.Client{Timeout: 3 * time.Minute}
 
-const generateDescriptionInstructions = `You write stream descriptions for a broadcaster planning their next live stream.
+const generateSuggestionInstructions = `You help a broadcaster plan their next live stream.
 
-The input contains the series' context and the previous episodes — their titles, descriptions, and outlines of what actually happened. Draft the description for the NEXT stream.
+The input contains the series' context and the previous episodes — their titles, descriptions, and outlines of what actually happened. Propose the NEXT stream.
+
+Respond with ONLY a JSON object — no markdown fences, no commentary — in exactly this shape:
+{"title": "...", "description": "...", "tags": ["...", "..."]}
 
 Rules:
-- Respond with ONLY the description text in plain markdown — no headings, no code fences, no commentary, no title line.
-- 2-4 short paragraphs or a brief intro plus a bulleted list of the items planned for this stream.
-- Continue naturally from where the previous episodes left off: pick up loose threads, unfinished work, and questions the outlines surface, and propose the concrete next items to cover.
-- Write in the streamer's voice to their audience; don't mention "episodes", "outlines", or this prompt.`
+- "title": a concise stream title. No episode number — the app composes that in. When the input carries a working title, refine that topic rather than replacing it.
+- "description": plain markdown — 2-4 short paragraphs or a brief intro plus a bulleted list of the items planned for this stream. Continue naturally from where the previous episodes left off: pick up loose threads, unfinished work, and questions the outlines surface, and propose the concrete next items to cover. Written in the streamer's voice to their audience; don't mention "episodes", "outlines", or this prompt.
+- "tags": 5-10 short lowercase tags for this stream (single words or short phrases).`
 
 const editSelectionInstructions = `You edit stream descriptions. The input contains a full description, one highlighted section from it, and an instruction.
 
@@ -70,11 +72,40 @@ type planOutline struct {
 	} `json:"items"`
 }
 
-// GeneratePlanDescription drafts a description for the stream being planned,
-// from the series context and the previous episodes' outlines.
-func (a *App) GeneratePlanDescription(title, seriesID string, episodeNumber int) (string, error) {
+// PlanSuggestion is a generated draft for the stream being planned.
+type PlanSuggestion struct {
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Tags        []string `json:"tags"`
+}
+
+// GeneratePlanSuggestion drafts a title, description, and tags for the stream
+// being planned, from the series context and the previous episodes' outlines.
+func (a *App) GeneratePlanSuggestion(title, seriesID string, episodeNumber int) (PlanSuggestion, error) {
+	var s PlanSuggestion
 	input := a.descriptionContext(title, seriesID, episodeNumber)
-	return a.askClaude(generateDescriptionInstructions, input)
+	text, err := a.askClaude(generateSuggestionInstructions, input)
+	if err != nil {
+		return s, err
+	}
+	// Tolerate stray prose or fences around the JSON object.
+	lo := strings.Index(text, "{")
+	hi := strings.LastIndex(text, "}")
+	if lo < 0 || hi <= lo {
+		return s, fmt.Errorf("the model returned an unexpected format — try again")
+	}
+	if err := json.Unmarshal([]byte(text[lo:hi+1]), &s); err != nil {
+		return s, fmt.Errorf("the model returned an unexpected format — try again")
+	}
+	s.Title = strings.TrimSpace(s.Title)
+	s.Description = strings.TrimSpace(s.Description)
+	if s.Tags == nil {
+		s.Tags = []string{}
+	}
+	if s.Title == "" && s.Description == "" {
+		return s, fmt.Errorf("the model returned an empty suggestion — try again")
+	}
+	return s, nil
 }
 
 // EditPlanDescription applies a requested edit to a plan description. With a

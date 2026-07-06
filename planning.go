@@ -30,8 +30,10 @@ type PlannedStream struct {
 	SeriesID string `json:"seriesId"`
 	// EpisodeNumber slots the plan into an episodic series' sequence; plans
 	// for such a series prefill the next number (see episodes.go). 0 = none.
-	EpisodeNumber int    `json:"episodeNumber"`
-	CreatedAt     string `json:"createdAt"` // RFC3339
+	EpisodeNumber int `json:"episodeNumber"`
+	// Tags for this stream; when empty the linked series' tags apply instead.
+	Tags      []string `json:"tags"`
+	CreatedAt string   `json:"createdAt"` // RFC3339
 }
 
 // GetPlannedStreams returns the saved stream plans, newest first. Never nil.
@@ -60,6 +62,9 @@ func (a *App) SavePlannedStream(plan PlannedStream) (PlannedStream, error) {
 	}
 	if plan.Channels == nil {
 		plan.Channels = []string{}
+	}
+	if plan.Tags == nil {
+		plan.Tags = []string{}
 	}
 
 	plans := a.GetPlannedStreams()
@@ -186,27 +191,30 @@ func (a *App) applyPlanToTwitch(plan PlannedStream, series *ContentSeries) strin
 		return "Twitch is not connected — its stream info was not updated."
 	}
 	payload := map[string]any{"title": broadcastBaseTitle(plan)}
-	if series != nil {
-		if series.TwitchCategory.ID != "" {
-			payload["game_id"] = series.TwitchCategory.ID
+	if series != nil && series.TwitchCategory.ID != "" {
+		payload["game_id"] = series.TwitchCategory.ID
+	}
+	// The plan's own tags win; the series' tags are the fallback.
+	rawTags := plan.Tags
+	if len(rawTags) == 0 && series != nil {
+		rawTags = series.Tags
+	}
+	tags := []string{}
+	for _, t := range rawTags {
+		t = twitchTagRe.ReplaceAllString(t, "")
+		if t == "" {
+			continue
 		}
-		tags := []string{}
-		for _, t := range series.Tags {
-			t = twitchTagRe.ReplaceAllString(t, "")
-			if t == "" {
-				continue
-			}
-			if len(t) > 25 {
-				t = t[:25]
-			}
-			tags = append(tags, t)
-			if len(tags) == 10 { // Twitch allows at most 10 tags.
-				break
-			}
+		if len(t) > 25 {
+			t = t[:25]
 		}
-		if len(tags) > 0 {
-			payload["tags"] = tags
+		tags = append(tags, t)
+		if len(tags) == 10 { // Twitch allows at most 10 tags.
+			break
 		}
+	}
+	if len(tags) > 0 {
+		payload["tags"] = tags
 	}
 
 	status, err := patchJSON(

@@ -42,7 +42,7 @@ export function EditPlanDescription(arg1:string,arg2:string,arg3:string):Promise
 
 export function EndStreamSession():Promise<void>;
 
-export function GeneratePlanDescription(arg1:string,arg2:string,arg3:number):Promise<string>;
+export function GeneratePlanSuggestion(arg1:string,arg2:string,arg3:number):Promise<main.PlanSuggestion>;
 
 export function GenerateStreamOutline(arg1:string,arg2:number):Promise<main.StreamOutline>;
 
