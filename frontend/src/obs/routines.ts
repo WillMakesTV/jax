@@ -1,5 +1,8 @@
 import {
+  ApplyStreamInfo,
   EndStreamSession,
+  GetActiveStreamSession,
+  GetContentSeries,
   GetRoutines,
   GetStreamdeckMultiActions,
 } from '../../wailsjs/go/main/App'
@@ -54,6 +57,10 @@ export function describeStep(step: main.RoutineStep): string {
           : 'Toggle recording'
     case 'delay':
       return `Wait ${((step.delayMs ?? 0) / 1000).toLocaleString()}s`
+    case 'update-smart-sources':
+      return 'Update episode info (title/number sources)'
+    case 'apply-stream-info':
+      return 'Apply stream info (title & description)'
     case 'streamdeck':
       return `Stream Deck: “${step.description || 'Multi Action'}”`
     default:
@@ -203,9 +210,57 @@ async function runStep(
       )
       return null
 
+    case 'update-smart-sources':
+      return updateEpisodeSmartSources(obsRequest)
+
+    case 'apply-stream-info': {
+      // Push the on-air planned stream's title/description to its channels
+      // (Twitch immediately; YouTube needs the live broadcast to exist, so
+      // this step belongs after the stream starts). The backend no-ops when
+      // no planned stream is on the air.
+      const warnings = (await ApplyStreamInfo()) ?? []
+      return warnings.length > 0 ? warnings.join(' · ') : null
+    }
+
     default:
       return `Skipped (Stream Deck only): ${step.description || step.kind}`
   }
+}
+
+/**
+ * The "Update smart sources" step: push the on-air planned stream's episode
+ * title and number into the series' mapped OBS text sources, right now.
+ *
+ * The background SmartSourcesUpdater refreshes the same sources on a slow
+ * loop; this step exists so a Start/End routine can guarantee the sources are
+ * current at a specific point in its sequence (e.g. before the stream starts).
+ * Going live with a plan opens its stream session before the Start routine
+ * runs, so the step sees the new episode. When no planned stream is on the
+ * air, or its series does not map episode info to sources, the step is a
+ * silent no-op.
+ */
+async function updateEpisodeSmartSources(
+  obsRequest: ObsRequest,
+): Promise<string | null> {
+  const session = await GetActiveStreamSession()
+  if (!session.active || !session.seriesId) return null
+  const series = ((await GetContentSeries()) ?? []).find(
+    (s) => s.id === session.seriesId,
+  )
+  if (!series?.smartEpisodeInfo) return null
+  if (series.episodeTitleSource && session.title) {
+    await obsRequest('SetInputSettings', {
+      inputName: series.episodeTitleSource,
+      inputSettings: {text: session.title},
+    })
+  }
+  if (series.episodeNumberSource && session.episode > 0) {
+    await obsRequest('SetInputSettings', {
+      inputName: series.episodeNumberSource,
+      inputSettings: {text: String(session.episode)},
+    })
+  }
+  return null
 }
 
 /**

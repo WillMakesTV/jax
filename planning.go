@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"regexp"
 	"strings"
 	"time"
@@ -133,11 +134,44 @@ func (a *App) ApplyPlannedStream(id string) ([]string, error) {
 			}
 		case "youtube":
 			// YouTube's broadcast metadata is bound to the (auto-created)
-			// broadcast, which does not exist until the stream is live.
-			warnings = append(warnings, "YouTube: automatic stream-info updates aren't supported yet — set the title in YouTube Studio.")
+			// broadcast, which does not exist until the stream is live — the
+			// "Apply stream info" routine step handles it once on the air.
+			warnings = append(warnings, fmt.Sprintf(
+				"YouTube: its info is applied once the stream is live — add the “Apply stream info” step after the stream starts in your Start Stream routine, or set the title in YouTube Studio (suggested: “%s”).",
+				a.youtubeLivePrefix()+broadcastBaseTitle(*plan),
+			))
 		}
 	}
 	return warnings, nil
+}
+
+// defaultYouTubeLivePrefix marks YouTube broadcasts as live in their title —
+// the convention past streams follow ("🔴 LIVE: Episode 6 | ..."). YouTube
+// keeps the VOD's title as-is, so the marker distinguishes the live airing;
+// Twitch resets titles per stream and needs no marker. Configurable via the
+// youtube_live_prefix setting (see Settings → Streams).
+const defaultYouTubeLivePrefix = "🔴 LIVE: "
+
+// youtubeLivePrefix returns the configured YouTube title prefix, falling back
+// to the default when unset. Mirrors loadYouTubeLivePrefix in the frontend.
+func (a *App) youtubeLivePrefix() string {
+	if a.store != nil {
+		if v, err := a.store.getSetting(keyYouTubeLivePrefix); err == nil && strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return defaultYouTubeLivePrefix
+}
+
+// broadcastBaseTitle is the title a plan's broadcasts go out under: episodic
+// plans are prefixed with their episode number, matching the convention of
+// past streams ("Episode 6 | Building the planner"). Mirrors
+// broadcastBaseTitle in the frontend.
+func broadcastBaseTitle(plan PlannedStream) string {
+	if plan.EpisodeNumber > 0 {
+		return fmt.Sprintf("Episode %d | %s", plan.EpisodeNumber, plan.Title)
+	}
+	return plan.Title
 }
 
 // twitchTagRe strips characters Twitch rejects in tags (max 25 chars, no
@@ -151,7 +185,7 @@ func (a *App) applyPlanToTwitch(plan PlannedStream, series *ContentSeries) strin
 	if !ok {
 		return "Twitch is not connected — its stream info was not updated."
 	}
-	payload := map[string]any{"title": plan.Title}
+	payload := map[string]any{"title": broadcastBaseTitle(plan)}
 	if series != nil {
 		if series.TwitchCategory.ID != "" {
 			payload["game_id"] = series.TwitchCategory.ID
@@ -191,6 +225,123 @@ func (a *App) applyPlanToTwitch(plan PlannedStream, series *ContentSeries) strin
 	// The dashboard's cached channel info now shows stale title/category.
 	if a.store != nil {
 		_ = a.store.deleteCacheEntry(keyTwitchChannelInfo)
+	}
+	return ""
+}
+
+// ApplyStreamInfo pushes the on-air planned stream's info to its channels —
+// the "apply-stream-info" routine step. Twitch gets the episode-composed
+// title plus the series' category and tags; YouTube gets the prefixed title
+// and the plan's description written onto the live broadcast's video (which
+// only exists once the stream is on the air, so the step belongs after the
+// stream starts). A silent no-op when no planned stream is on the air.
+// Returns human-readable warnings; never nil.
+func (a *App) ApplyStreamInfo() []string {
+	session := a.GetActiveStreamSession()
+	if !session.Active || session.PlanID == "" {
+		return []string{}
+	}
+	var plan *PlannedStream
+	for _, p := range a.GetPlannedStreams() {
+		if p.ID == session.PlanID {
+			p := p
+			plan = &p
+			break
+		}
+	}
+	if plan == nil {
+		return []string{"Apply stream info: the plan behind this stream no longer exists."}
+	}
+
+	var series *ContentSeries
+	if plan.SeriesID != "" {
+		for _, s := range a.GetContentSeries() {
+			if s.ID == plan.SeriesID {
+				s := s
+				series = &s
+				break
+			}
+		}
+	}
+
+	warnings := []string{}
+	for _, channel := range plan.Channels {
+		switch channel {
+		case "twitch":
+			if w := a.applyPlanToTwitch(*plan, series); w != "" {
+				warnings = append(warnings, w)
+			}
+		case "youtube":
+			if w := a.applyPlanToYouTube(*plan); w != "" {
+				warnings = append(warnings, w)
+			}
+		}
+	}
+	return warnings
+}
+
+// youtubeVideosUpdateURL is the videos.update endpoint; part=snippet scopes
+// the write to the video's title/description/category metadata.
+const youtubeVideosUpdateURL = "https://www.googleapis.com/youtube/v3/videos?part=snippet"
+
+// applyPlanToYouTube writes the plan's prefixed title and description onto
+// the active live broadcast's video. Returns "" on success, else a warning.
+func (a *App) applyPlanToYouTube(plan PlannedStream) string {
+	conn, ok := a.freshConn("youtube")
+	if !ok {
+		return "YouTube is not connected — its stream info was not updated."
+	}
+	headers := map[string]string{"Authorization": "Bearer " + conn.token}
+
+	// The live broadcast's video id: the live poll's memo when we have it,
+	// otherwise probe the broadcast list the same way fetchYouTubeLive does.
+	videoID := a.cachedYTVideoID()
+	if videoID == "" {
+		var broadcasts struct {
+			Items []struct {
+				ID string `json:"id"`
+			} `json:"items"`
+		}
+		if _, err := getJSON(youtubeBroadcastsURL, headers, &broadcasts); err != nil {
+			log.Printf("jax: apply plan to youtube: broadcasts: %v", err)
+			return "YouTube: could not check for an active broadcast."
+		}
+		if len(broadcasts.Items) == 0 {
+			return "YouTube: no live broadcast yet — run “Apply stream info” after the stream starts."
+		}
+		videoID = broadcasts.Items[0].ID
+		a.setYTVideoID(videoID)
+	}
+
+	// videos.update replaces the whole snippet, so read the current one and
+	// change only the title and description — the category, tags, and
+	// language set in YouTube Studio survive.
+	var videos struct {
+		Items []struct {
+			Snippet map[string]any `json:"snippet"`
+		} `json:"items"`
+	}
+	if _, err := getJSON(
+		"https://www.googleapis.com/youtube/v3/videos?part=snippet&id="+videoID,
+		headers, &videos,
+	); err != nil || len(videos.Items) == 0 {
+		log.Printf("jax: apply plan to youtube: read snippet: %v", err)
+		return "YouTube: the live video's details could not be read."
+	}
+	snippet := videos.Items[0].Snippet
+	snippet["title"] = a.youtubeLivePrefix() + broadcastBaseTitle(plan)
+	if strings.TrimSpace(plan.Description) != "" {
+		snippet["description"] = plan.Description
+	}
+
+	status, err := sendJSON(http.MethodPut, youtubeVideosUpdateURL, headers,
+		map[string]any{"id": videoID, "snippet": snippet}, nil)
+	if err != nil {
+		log.Printf("jax: apply plan to youtube: update: %v", err)
+		if status == 401 || status == 403 {
+			return "YouTube: reconnect in Settings → Services to grant the update permission."
+		}
+		return "YouTube: the stream info could not be updated."
 	}
 	return ""
 }

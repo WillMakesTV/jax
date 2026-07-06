@@ -39,6 +39,11 @@ export const SETTING_KEYS = {
   obsSmartTokens: 'obs_smart_tokens',
   /** Optional Google API key for reading public YouTube comments. */
   youtubeApiKey: 'youtube_api_key',
+  /**
+   * Prefix prepended to YouTube broadcast titles (e.g. "🔴 LIVE: "); blank
+   * falls back to the default. Mirrors youtubeLivePrefix in planning.go.
+   */
+  youtubeLivePrefix: 'youtube_live_prefix',
 } as const
 
 /**

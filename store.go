@@ -19,6 +19,10 @@ const (
 	keyContentSeries  = "content_series"
 	keySeriesTypes    = "series_types"
 	keyRoutines       = "routines"
+	keyProjects       = "projects"
+	// keyYouTubeLivePrefix holds the "🔴 LIVE: "-style prefix for YouTube
+	// broadcast titles; shared with the frontend's SETTING_KEYS.
+	keyYouTubeLivePrefix = "youtube_live_prefix"
 )
 
 // Store wraps the SQLite database that persists all app data. The database

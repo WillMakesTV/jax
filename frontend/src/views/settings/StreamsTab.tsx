@@ -5,6 +5,7 @@ import {
   DefaultDownloadDir,
   SelectDirectory,
 } from '../../../wailsjs/go/main/App'
+import {DEFAULT_YOUTUBE_LIVE_PREFIX} from '../../lib/broadcastTitles'
 import {SETTING_KEYS, loadSetting, saveSetting} from '../../lib/settings'
 
 /** Default matching margin in minutes; mirrors defaultMatchMargin in past.go. */
@@ -50,6 +51,7 @@ export function StreamsTab() {
 
   return (
     <div className="flex max-w-2xl flex-col gap-6">
+    <StreamTitlesSection />
     <DownloadsSection />
     <TranscriptionSection />
     <section
@@ -114,6 +116,93 @@ export function StreamsTab() {
       </form>
     </section>
     </div>
+  )
+}
+
+/**
+ * The "🔴 LIVE: " marker prepended to YouTube broadcast titles. YouTube keeps
+ * a stream's title on the VOD afterwards, so the marker distinguishes the
+ * live airing; Twitch titles are per-stream and carry no marker.
+ */
+function StreamTitlesSection() {
+  const [prefix, setPrefix] = useState('')
+  const [stored, setStored] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    loadSetting(SETTING_KEYS.youtubeLivePrefix).then((value) => {
+      if (cancelled || value === null) return
+      setPrefix(value)
+      setStored(value)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const dirty = prefix !== stored
+  const effective = prefix.trim() ? prefix : DEFAULT_YOUTUBE_LIVE_PREFIX
+
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    saveSetting(SETTING_KEYS.youtubeLivePrefix, prefix)
+    setStored(prefix)
+    setSaved(true)
+  }
+
+  return (
+    <section
+      aria-labelledby="stream-titles-heading"
+      className="rounded-xl border border-edge bg-surface p-6"
+    >
+      <h2 id="stream-titles-heading" className="text-base font-semibold text-fg">
+        Stream titles
+      </h2>
+      <p className="mt-1 text-sm text-fg-muted">
+        YouTube broadcasts go out with a live marker prepended to the
+        plan&apos;s title, so the live airing stands apart from the VOD it
+        becomes. Twitch uses the plan&apos;s title as-is.
+      </p>
+
+      <form onSubmit={onSubmit} className="mt-4">
+        <label
+          htmlFor="youtube-live-prefix"
+          className="mb-1.5 block text-sm font-medium text-fg"
+        >
+          YouTube live prefix
+        </label>
+        <div className="flex items-center gap-3">
+          <input
+            id="youtube-live-prefix"
+            value={prefix}
+            onChange={(e) => {
+              setPrefix(e.target.value)
+              setSaved(false)
+            }}
+            placeholder={DEFAULT_YOUTUBE_LIVE_PREFIX}
+            className="w-full max-w-xs rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+          />
+          <button
+            type="submit"
+            disabled={!dirty}
+            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity disabled:opacity-50"
+          >
+            Save
+          </button>
+          {saved && !dirty && (
+            <span className="inline-flex items-center gap-1.5 text-sm text-fg-muted">
+              <Check size={16} aria-hidden />
+              Saved
+            </span>
+          )}
+        </div>
+        <p className="mt-1.5 text-xs text-fg-muted">
+          e.g. &ldquo;{effective}Episode 7 | Building the planner&rdquo; — leave
+          blank to use the default.
+        </p>
+      </form>
+    </section>
   )
 }
 

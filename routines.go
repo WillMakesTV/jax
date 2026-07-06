@@ -36,7 +36,11 @@ const (
 // and steps parsed out of a Stream Deck Multi Action.
 type RoutineStep struct {
 	// Kind: "obs-scene" | "obs-source" | "obs-mute" | "obs-stream" |
-	// "obs-record" | "delay" | "streamdeck" | "unsupported".
+	// "obs-record" | "delay" | "update-smart-sources" | "apply-stream-info" |
+	// "streamdeck" | "unsupported". ("update-smart-sources" pushes the on-air
+	// planned stream's episode info to its series' mapped OBS text sources;
+	// "apply-stream-info" pushes its title/description to Twitch and YouTube
+	// via ApplyStreamInfo — see frontend obs/routines.ts.)
 	Kind string `json:"kind"`
 	// Scene name (obs-scene: the scene to switch to; obs-source: the scene
 	// holding the item).

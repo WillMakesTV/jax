@@ -40,6 +40,8 @@ const STEP_KINDS: {kind: string; label: string}[] = [
   {kind: 'obs-mute', label: 'Mute / unmute input'},
   {kind: 'obs-stream', label: 'Stream'},
   {kind: 'obs-record', label: 'Recording'},
+  {kind: 'update-smart-sources', label: 'Update episode info (title/number)'},
+  {kind: 'apply-stream-info', label: 'Apply stream info'},
   {kind: 'streamdeck', label: 'Stream Deck Multi Action'},
 ]
 
@@ -524,6 +526,23 @@ function StepRow({
               <option value="unmute">Unmute</option>
             </select>
           </>
+        )}
+
+        {step.kind === 'update-smart-sources' && (
+          <span className="min-w-32 flex-1 text-xs text-fg-muted">
+            Pushes the planned stream&apos;s episode title and number to the
+            series&apos; mapped text sources; skipped when the stream on the
+            air isn&apos;t a planned one using smart sources.
+          </span>
+        )}
+
+        {step.kind === 'apply-stream-info' && (
+          <span className="min-w-32 flex-1 text-xs text-fg-muted">
+            Pushes the planned stream&apos;s title and description to its
+            channels — Twitch right away; YouTube needs the broadcast live, so
+            place this after the stream starts. Skipped when the stream
+            isn&apos;t a planned one.
+          </span>
         )}
 
         {(step.kind === 'obs-stream' || step.kind === 'obs-record') && (

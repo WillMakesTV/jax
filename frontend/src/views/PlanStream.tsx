@@ -11,6 +11,12 @@ import {
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {MarkdownField} from '../components/markdown/MarkdownField'
+import {
+  DEFAULT_YOUTUBE_LIVE_PREFIX,
+  broadcastBaseTitle,
+  loadYouTubeLivePrefix,
+  platformBroadcastTitle,
+} from '../lib/broadcastTitles'
 import {SERVICES} from '../services/services'
 import {useServices} from '../services/ServicesProvider'
 
@@ -57,6 +63,11 @@ export function PlanStream({
   const [error, setError] = useState('')
   // The description textarea's selection range, for scoped AI edits.
   const [descSelection, setDescSelection] = useState<[number, number]>([0, 0])
+  // The configured "🔴 LIVE: " marker YouTube titles carry.
+  const [ytPrefix, setYtPrefix] = useState(DEFAULT_YOUTUBE_LIVE_PREFIX)
+  useEffect(() => {
+    loadYouTubeLivePrefix().then(setYtPrefix)
+  }, [])
 
   useEffect(() => {
     GetContentSeries()
@@ -421,6 +432,80 @@ export function PlanStream({
                 )
               })}
             </div>
+            {/* Exactly what each selected channel's broadcast will carry when
+                this plan goes live — title, category/tags, and description —
+                shown in full for review. */}
+            {selected.size > 0 && (
+              <div className="mt-3 rounded-lg border border-edge bg-surface p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+                  Broadcast preview
+                </p>
+                <ul className="mt-2 flex flex-col gap-3">
+                  {BROADCAST_SERVICES.filter((svc) =>
+                    selected.has(svc.id),
+                  ).map((svc) => {
+                    const streamTitle = platformBroadcastTitle(
+                      svc.id,
+                      broadcastBaseTitle(
+                        title.trim() || 'Untitled stream',
+                        episodicPlan && episodeValid ? episodeNum : 0,
+                      ),
+                      ytPrefix,
+                    )
+                    const category =
+                      svc.id === 'twitch'
+                        ? activeSeries?.twitchCategory?.name ?? ''
+                        : activeSeries?.youtubeCategory?.name ?? ''
+                    const meta = [
+                      category && `Category: ${category}`,
+                      svc.id === 'twitch' &&
+                        (activeSeries?.tags?.length ?? 0) > 0 &&
+                        `Tags: ${activeSeries!.tags.join(', ')}`,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
+                    const Logo = svc.Icon
+                    return (
+                      <li key={svc.id} className="flex items-start gap-2">
+                        <span
+                          aria-hidden
+                          className="mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded text-white"
+                          style={{backgroundColor: svc.brand}}
+                        >
+                          <Logo size={11} />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="break-words text-sm font-medium text-fg">
+                            {streamTitle}
+                          </p>
+                          {meta && (
+                            <p className="mt-0.5 text-xs text-fg-muted">
+                              {meta}
+                            </p>
+                          )}
+                          {svc.id === 'youtube' && (
+                            <p className="mt-0.5 whitespace-pre-wrap text-xs text-fg-muted [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:4] overflow-hidden">
+                              {description.trim() ||
+                                'No description yet — it is written onto the YouTube broadcast when the stream info is applied.'}
+                            </p>
+                          )}
+                          {svc.id === 'twitch' && (
+                            <p className="mt-0.5 text-xs text-fg-muted/70">
+                              Twitch streams carry no description — title,
+                              category, and tags only.
+                            </p>
+                          )}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+                <p className="mt-2 text-xs text-fg-muted">
+                  Applied when you go live with this plan. The YouTube live
+                  marker is configured in Settings → Streams.
+                </p>
+              </div>
+            )}
           </div>
 
           {error && (

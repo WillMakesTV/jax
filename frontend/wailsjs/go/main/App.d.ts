@@ -8,6 +8,8 @@ export function AddTranscriptLine(arg1:number,arg2:number,arg3:number,arg4:strin
 
 export function ApplyPlannedStream(arg1:string):Promise<Array<string>>;
 
+export function ApplyStreamInfo():Promise<Array<string>>;
+
 export function BeginTranscriptSession(arg1:string,arg2:string):Promise<number>;
 
 export function CancelDownload():Promise<void>;

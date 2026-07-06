@@ -14,6 +14,10 @@ export function ApplyPlannedStream(arg1) {
   return window['go']['main']['App']['ApplyPlannedStream'](arg1);
 }
 
+export function ApplyStreamInfo() {
+  return window['go']['main']['App']['ApplyStreamInfo']();
+}
+
 export function BeginTranscriptSession(arg1, arg2) {
   return window['go']['main']['App']['BeginTranscriptSession'](arg1, arg2);
 }
