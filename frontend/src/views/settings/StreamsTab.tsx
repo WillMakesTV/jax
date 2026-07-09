@@ -1,11 +1,14 @@
-import {Check, Folder, FolderOpen} from 'lucide-react'
+import {Check, Folder, FolderInput, FolderOpen, MoveRight} from 'lucide-react'
 import clsx from 'clsx'
 import {useEffect, useState, type FormEvent} from 'react'
 import {
   DefaultDownloadDir,
+  MoveDownloadFolder,
   SelectDirectory,
 } from '../../../wailsjs/go/main/App'
+import {Modal} from '../../components/Modal'
 import {DEFAULT_YOUTUBE_LIVE_PREFIX} from '../../lib/broadcastTitles'
+import {useCaptureHidden} from '../../lib/captureHidden'
 import {SETTING_KEYS, loadSetting, saveSetting} from '../../lib/settings'
 
 /** Default matching margin in minutes; mirrors defaultMatchMargin in past.go. */
@@ -52,6 +55,7 @@ export function StreamsTab() {
   return (
     <div className="flex max-w-2xl flex-col gap-6">
     <StreamTitlesSection />
+    <ScreenCaptureSection />
     <DownloadsSection />
     <TranscriptionSection />
     <section
@@ -116,6 +120,81 @@ export function StreamsTab() {
       </form>
     </section>
     </div>
+  )
+}
+
+/**
+ * Keeps the app window out of screen captures, screen shares and display
+ * captures — the same SetWindowDisplayAffinity trick as OBS's own
+ * "hide from capture" option. The Go binding applies it to the live window
+ * and persists the preference so it's re-applied on launch.
+ */
+function ScreenCaptureSection() {
+  const [hidden, setHidden] = useCaptureHidden()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const toggle = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      await setHidden(!hidden)
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : String(err) || 'The screen-capture setting could not be changed.',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section
+      aria-labelledby="screen-capture-heading"
+      className="rounded-xl border border-edge bg-surface p-6"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2
+            id="screen-capture-heading"
+            className="text-base font-semibold text-fg"
+          >
+            Screen capture
+          </h2>
+          <p className="mt-1 text-sm text-fg-muted">
+            Hide application from screen capture. While enabled, display
+            captures, screen shares and screenshots show nothing where this
+            window sits — the same protection OBS offers its own windows — so
+            capturing your screen on stream never reveals the app.
+          </p>
+        </div>
+        {/* Toggle switch. */}
+        <button
+          type="button"
+          role="switch"
+          aria-checked={hidden}
+          aria-label="Hide application from screen capture"
+          onClick={() => void toggle()}
+          disabled={busy}
+          className={clsx(
+            'relative mt-1 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50',
+            hidden ? 'bg-accent' : 'bg-surface-hover',
+          )}
+        >
+          <span
+            className={clsx(
+              'inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform',
+              hidden ? 'translate-x-5' : 'translate-x-0.5',
+            )}
+          />
+        </button>
+      </div>
+      {error && (
+        <p className="mt-3 text-xs text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </section>
   )
 }
 
@@ -269,6 +348,7 @@ const SOURCE_OPTIONS = [
   {id: 'auto', label: 'Automatic (prefer YouTube)'},
   {id: 'youtube', label: 'YouTube'},
   {id: 'twitch', label: 'Twitch'},
+  {id: 'kick', label: 'Kick'},
 ] as const
 
 function DownloadsSection() {
@@ -276,6 +356,12 @@ function DownloadsSection() {
   const [dir, setDir] = useState('') // '' = use the default
   const [defaultDir, setDefaultDir] = useState('')
   const [source, setSource] = useState('auto')
+  // Move-folder flow: the picked target opens the confirmation, moving marks
+  // the backend call in flight, and moveNote/moveError report how it went.
+  const [moveTarget, setMoveTarget] = useState('')
+  const [moving, setMoving] = useState(false)
+  const [moveError, setMoveError] = useState('')
+  const [moveNote, setMoveNote] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -326,6 +412,42 @@ function DownloadsSection() {
   }
 
   const effective = dir || defaultDir
+
+  const pickMoveTarget = async () => {
+    try {
+      const chosen = await SelectDirectory('Move downloads to…')
+      if (chosen) {
+        setMoveError('')
+        setMoveNote('')
+        setMoveTarget(chosen)
+      }
+    } catch {
+      // Dialog unavailable (e.g. plain Vite dev); ignore.
+    }
+  }
+
+  const confirmMove = async () => {
+    setMoving(true)
+    setMoveError('')
+    try {
+      const count = await MoveDownloadFolder(moveTarget)
+      setDir(moveTarget)
+      setMoveNote(
+        count === 0
+          ? 'Folder moved; there were no downloads to carry over.'
+          : `Moved ${count} download${count === 1 ? '' : 's'} to the new folder.`,
+      )
+      setMoveTarget('')
+    } catch (err) {
+      setMoveError(
+        err instanceof Error && err.message
+          ? err.message
+          : String(err) || 'Could not move the download folder.',
+      )
+    } finally {
+      setMoving(false)
+    }
+  }
 
   return (
     <section
@@ -412,6 +534,14 @@ function DownloadsSection() {
               <FolderOpen size={14} aria-hidden />
               Choose folder
             </button>
+            <button
+              type="button"
+              onClick={() => void pickMoveTarget()}
+              className="inline-flex items-center gap-2 rounded-lg border border-edge bg-bg px-3 py-1.5 text-xs font-medium text-fg transition-colors hover:bg-surface-hover"
+            >
+              <FolderInput size={14} aria-hidden />
+              Move folder…
+            </button>
             {dir && (
               <button
                 type="button"
@@ -422,8 +552,82 @@ function DownloadsSection() {
               </button>
             )}
           </div>
+          <p className="mt-1.5 text-xs text-fg-muted">
+            &ldquo;Choose folder&rdquo; only changes where new downloads land;
+            &ldquo;Move folder&rdquo; also relocates the downloads you already
+            have, and everything keeps working from the new location.
+          </p>
+          {moveNote && (
+            <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-fg-muted">
+              <Check size={14} aria-hidden />
+              {moveNote}
+            </p>
+          )}
+          {moveError && !moveTarget && (
+            <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+              {moveError}
+            </p>
+          )}
         </div>
       )}
+
+      <Modal
+        open={Boolean(moveTarget)}
+        onClose={() => {
+          if (!moving) setMoveTarget('')
+        }}
+        title="Move the download folder?"
+        icon={<FolderInput size={18} aria-hidden className="text-fg-muted" />}
+      >
+        <p className="text-sm text-fg-muted">
+          Your downloaded videos will be moved to the new folder and the app
+          will use it from now on — transcripts, playback and stream history
+          follow automatically.
+        </p>
+        <div className="mt-4 flex flex-col gap-2">
+          <div className="flex items-center gap-2 rounded-lg border border-edge bg-bg px-3 py-2">
+            <Folder size={14} aria-hidden className="shrink-0 text-fg-muted" />
+            <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg">
+              {effective}
+            </span>
+          </div>
+          <MoveRight size={14} aria-hidden className="ml-3 text-fg-muted" />
+          <div className="flex items-center gap-2 rounded-lg border border-edge bg-bg px-3 py-2">
+            <Folder size={14} aria-hidden className="shrink-0 text-fg-muted" />
+            <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg">
+              {moveTarget}
+            </span>
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-fg-muted">
+          Moving between drives copies the files, which can take a while for a
+          large library. Downloads and transcriptions can&apos;t run while the
+          move is in progress.
+        </p>
+        {moveError && (
+          <p className="mt-3 text-sm text-red-600 dark:text-red-400">
+            {moveError}
+          </p>
+        )}
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setMoveTarget('')}
+            disabled={moving}
+            className="rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void confirmMove()}
+            disabled={moving}
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {moving ? 'Moving…' : 'Move downloads'}
+          </button>
+        </div>
+      </Modal>
     </section>
   )
 }

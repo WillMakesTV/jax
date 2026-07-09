@@ -3,12 +3,15 @@ import {
   Captions,
   Clock,
   Download,
+  Eye,
+  EyeOff,
   Gauge,
   Loader2,
   MessageSquare,
   Mic,
   MicOff,
   Music,
+  NotebookText,
   Users,
   Video,
   VideoOff,
@@ -18,8 +21,14 @@ import {useEffect, useState} from 'react'
 import {useChat} from '../chat/ChatProvider'
 import {useDownloadStatus} from '../downloads/DownloadProvider'
 import {useEvents} from '../events/EventsProvider'
+import {useCaptureHidden} from '../lib/captureHidden'
 import {formatCompact, formatDurationMs, formatKbps} from '../lib/format'
 import {aggregateLive, useLiveData} from '../live/LiveDataProvider'
+import {
+  useOutlineJobs,
+  type OutlineJob,
+  type OutlineNotice,
+} from '../outline/OutlineProvider'
 import {
   useVodTranscribe,
   type VodJob,
@@ -31,8 +40,12 @@ interface StatusBarProps {
   onOpenChat: () => void
   /** Navigate to the Live Events tab (unread-events notification). */
   onOpenEvents: () => void
+  /** Open the past stream whose video is being downloaded (by startedAt). */
+  onOpenDownloading: (startedAt: string) => void
   /** Open the stream whose download is being transcribed (by subfolder). */
   onOpenTranscribing: (subfolder: string) => void
+  /** Open the Outline tab of the stream whose outline is generating. */
+  onOpenOutline: (startedAt: string) => void
 }
 
 /**
@@ -43,7 +56,9 @@ interface StatusBarProps {
 export function StatusBar({
   onOpenChat,
   onOpenEvents,
+  onOpenDownloading,
   onOpenTranscribing,
+  onOpenOutline,
 }: StatusBarProps) {
   const {platforms, obs, mics, music, camera, micSourceName, obsConnected} =
     useLiveData()
@@ -51,6 +66,7 @@ export function StatusBar({
   const {unreadCount: unreadEvents} = useEvents()
   const download = useDownloadStatus()
   const vodTranscribe = useVodTranscribe()
+  const outline = useOutlineJobs()
 
   // Prefer the designated primary mic; otherwise "on" when any mic is
   // unmuted. Hidden entirely when OBS is away or has no mic devices.
@@ -106,11 +122,13 @@ export function StatusBar({
         )}
       </span>
 
-      {/* Uptime */}
-      <span className="inline-flex items-center gap-1.5">
-        <Clock size={12} aria-hidden />
-        {uptimeMs !== null ? formatDurationMs(uptimeMs) : '—'}
-      </span>
+      {/* Uptime (only meaningful while live) */}
+      {anyLive && (
+        <span className="inline-flex items-center gap-1.5">
+          <Clock size={12} aria-hidden />
+          {uptimeMs !== null ? formatDurationMs(uptimeMs) : '—'}
+        </span>
+      )}
 
       {/* Mic state across OBS's audio input capture devices. */}
       {obsConnected && mics.length > 0 && (
@@ -170,29 +188,44 @@ export function StatusBar({
         </span>
       )}
 
-      {/* Download / processing status from the sidecar. */}
-      {download.state !== 'idle' && (
-        <span
-          title={download.detail}
-          className={
+      {/* Download / processing status from the sidecar; when the download's
+          source stream is known, the chip clicks through to it. */}
+      {download.state !== 'idle' &&
+        (() => {
+          const cls =
             download.state === 'error'
               ? 'inline-flex min-w-0 items-center gap-1.5 font-medium text-red-500 dark:text-red-400'
               : download.state === 'done'
                 ? 'inline-flex min-w-0 items-center gap-1.5 font-medium text-green-600 dark:text-green-400'
                 : 'inline-flex min-w-0 items-center gap-1.5 font-medium text-fg'
-          }
-        >
-          {download.state === 'running' ? (
-            <Loader2 size={12} aria-hidden className="animate-spin" />
+          const body = (
+            <>
+              {download.state === 'running' ? (
+                <Loader2 size={12} aria-hidden className="animate-spin" />
+              ) : (
+                <Download size={12} aria-hidden />
+              )}
+              <span className="max-w-[22rem] truncate">
+                {download.state === 'done' ? '✓ ' : ''}
+                {download.detail}
+              </span>
+            </>
+          )
+          return download.startedAt ? (
+            <button
+              type="button"
+              onClick={() => onOpenDownloading(download.startedAt)}
+              title="Open the stream being downloaded"
+              className={`${cls} transition-colors hover:text-accent`}
+            >
+              {body}
+            </button>
           ) : (
-            <Download size={12} aria-hidden />
-          )}
-          <span className="max-w-[22rem] truncate">
-            {download.state === 'done' ? '✓ ' : ''}
-            {download.detail}
-          </span>
-        </span>
-      )}
+            <span title={download.detail} className={cls}>
+              {body}
+            </span>
+          )
+        })()}
 
       {/* Downloaded-video transcription queue; click through to the stream
           being transcribed. */}
@@ -200,6 +233,13 @@ export function StatusBar({
         jobs={vodTranscribe.jobs}
         notice={vodTranscribe.notice}
         onOpen={onOpenTranscribing}
+      />
+
+      {/* Outline generation; click through to the stream's Outline tab. */}
+      <OutlineStatus
+        jobs={outline.jobs}
+        notice={outline.notice}
+        onOpen={onOpenOutline}
       />
 
       {/* Unread events notification; click through to the Live Events tab. */}
@@ -228,16 +268,121 @@ export function StatusBar({
         </button>
       )}
 
-      {/* Right-aligned: encoder + viewers */}
+      {/* Right-aligned: encoder + viewers (while live) + capture visibility */}
       <span className="ml-auto inline-flex items-center gap-1.5">
         <Gauge size={12} aria-hidden />
         {encoder}
       </span>
-      <span className="inline-flex items-center gap-1.5">
-        <Users size={12} aria-hidden />
-        {anyLive ? `${formatCompact(totalViewers)} viewers` : '—'}
-      </span>
+      {anyLive && (
+        <span className="inline-flex items-center gap-1.5">
+          <Users size={12} aria-hidden />
+          {formatCompact(totalViewers)} viewers
+        </span>
+      )}
+      <CaptureVisibilityToggle />
     </footer>
+  )
+}
+
+/**
+ * Eye button mirroring Settings → Streams → "Hide application from screen
+ * capture": closed eye = the window is invisible to captures and screen
+ * shares, open eye = capturable. Clicking flips it; the shared hook keeps it
+ * in sync with the settings toggle.
+ */
+function CaptureVisibilityToggle() {
+  const [hidden, setHidden] = useCaptureHidden()
+  const [busy, setBusy] = useState(false)
+
+  const toggle = async () => {
+    setBusy(true)
+    try {
+      await setHidden(!hidden)
+    } catch {
+      // Unsupported here (e.g. old Windows); the settings page explains why.
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={hidden}
+      aria-label="Hide application from screen capture"
+      onClick={() => void toggle()}
+      disabled={busy}
+      title={
+        hidden
+          ? 'Hidden from screen capture — captures, shares and screenshots can’t see this app. Click to make it capturable.'
+          : 'Visible to screen capture. Click to hide this app from captures, screen shares and screenshots.'
+      }
+      className={
+        hidden
+          ? 'inline-flex items-center text-accent transition-colors hover:text-fg disabled:opacity-50'
+          : 'inline-flex items-center text-fg-muted transition-colors hover:text-fg disabled:opacity-50'
+      }
+    >
+      {hidden ? <EyeOff size={14} aria-hidden /> : <Eye size={14} aria-hidden />}
+    </button>
+  )
+}
+
+/**
+ * Outline-generation chip: while a run is in flight it is a button that jumps
+ * to that stream's Outline tab; afterwards the end-of-run notice lingers
+ * briefly (also clickable when the outline is ready).
+ */
+function OutlineStatus({
+  jobs,
+  notice,
+  onOpen,
+}: {
+  jobs: OutlineJob[]
+  notice: OutlineNotice | null
+  onOpen: (startedAt: string) => void
+}) {
+  if (jobs.length > 0) {
+    const label =
+      jobs.length === 1
+        ? `Building outline — ${jobs[0].title || 'stream'}`
+        : `Building ${jobs.length} outlines`
+    return (
+      <button
+        type="button"
+        onClick={() => onOpen(jobs[0].startedAt)}
+        title="Open the stream's outline"
+        className="inline-flex min-w-0 items-center gap-1.5 font-medium text-fg transition-colors hover:text-accent"
+      >
+        <Loader2 size={12} aria-hidden className="animate-spin" />
+        <span className="max-w-[22rem] truncate">{label}</span>
+      </button>
+    )
+  }
+
+  if (!notice) return null
+  if (notice.state === 'done') {
+    return (
+      <button
+        type="button"
+        onClick={() => onOpen(notice.startedAt)}
+        title="Open the outline"
+        className="inline-flex min-w-0 items-center gap-1.5 font-medium text-green-600 transition-colors hover:text-accent dark:text-green-400"
+      >
+        <NotebookText size={12} aria-hidden />
+        <span className="max-w-[22rem] truncate">✓ {notice.detail}</span>
+      </button>
+    )
+  }
+  return (
+    <span
+      title={notice.detail}
+      className="inline-flex min-w-0 items-center gap-1.5 font-medium text-red-500 dark:text-red-400"
+    >
+      <NotebookText size={12} aria-hidden />
+      <span className="max-w-[22rem] truncate">{notice.detail}</span>
+    </span>
   )
 }
 

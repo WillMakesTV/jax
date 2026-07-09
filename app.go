@@ -108,6 +108,8 @@ func (a *App) startup(ctx context.Context) {
 	go a.refreshAppIcon()
 	// Pick the transcription queue back up where the last session left off.
 	go a.restoreTranscribeQueue()
+	// Re-hide the window from screen capture if the preference is on.
+	go a.restoreCaptureExclusion()
 }
 
 // shutdown is called when the app closes. It ends the sidecar processes and

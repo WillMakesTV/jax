@@ -13,10 +13,12 @@ export const SETTING_KEYS = {
   downloadPastStreams: 'download_past_streams',
   /** Target directory for past-stream downloads ('' = the Videos/jax default). */
   downloadDir: 'download_dir',
-  /** Preferred platform to download from: 'auto' | 'youtube' | 'twitch'. */
+  /** Preferred platform to download from: 'auto' | 'youtube' | 'twitch' | 'kick'. */
   downloadSource: 'download_source',
   /** How many downloaded videos may be transcribed at once: '1' | '2'. */
   transcribeConcurrency: 'transcribe_concurrency',
+  /** Root for video-plan edit workspaces ('' = the Videos/jax edits default). */
+  editWorkspaceDir: 'edit_workspace_dir',
   /** OBS input name of the audio input capture designated as primary mic. */
   obsMicSource: 'obs_mic_source',
   /** OBS input name of the Application Audio Capture designated as "Music". */
@@ -37,6 +39,18 @@ export const SETTING_KEYS = {
    * built-in tokens when rendering smart-source templates.
    */
   obsSmartTokens: 'obs_smart_tokens',
+  /**
+   * JSON {title, number}: the OBS text sources the on-air episode's info is
+   * written into directly (title verbatim, number as "Episode N").
+   */
+  obsEpisodeSources: 'obs_episode_sources',
+  /**
+   * "true"/"false": exclude the app window from screen capture
+   * (SetWindowDisplayAffinity, like OBS's hide-from-capture option). Written
+   * by the SetHideFromCapture binding, not saveSetting, so the Go side can
+   * apply it as it persists.
+   */
+  hideFromCapture: 'hide_from_capture',
   /** Optional Google API key for reading public YouTube comments. */
   youtubeApiKey: 'youtube_api_key',
   /**
