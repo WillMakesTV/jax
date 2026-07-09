@@ -59,6 +59,11 @@ func (a *App) GetLiveStreams() []LiveStream {
 	jobs := []job{
 		{"twitch", a.fetchTwitchLive},
 		{"youtube", a.fetchYouTubeLiveThrottled},
+		{"kick", a.fetchKickLive},
+		{"facebook", a.fetchFacebookLive},
+		{"instagram", a.fetchInstagramLive},
+		{"x", a.fetchXLive},
+		{"tiktok", a.fetchTikTokLive},
 	}
 
 	results := make([]*LiveStream, len(jobs))
@@ -242,6 +247,7 @@ func (a *App) RefreshChannelInfo() {
 	if a.store != nil {
 		_ = a.store.deleteCacheEntry(keyYTChannelInfo)
 		_ = a.store.deleteCacheEntry(keyTwitchChannelInfo)
+		_ = a.store.deleteCacheEntry(keyKickChannelInfo)
 	}
 	a.mu.Lock()
 	a.ytLiveResult = nil

@@ -56,7 +56,9 @@ export function ServiceCardGrid({services}: {services: ServiceDef[]}) {
               <div>
                 <p className="text-sm font-semibold text-fg">{service.name}</p>
                 <p className="mt-0.5 text-xs text-fg-muted">
-                  {status.connected && status.account
+                  {/* Private accounts (e.g. the Anthropic email) stay off the
+                      card; the connect dialog reveals them on demand. */}
+                  {status.connected && status.account && !service.privateAccount
                     ? status.account
                     : service.description}
                 </p>

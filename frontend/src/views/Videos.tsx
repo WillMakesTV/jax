@@ -1,16 +1,21 @@
-import {Clapperboard, Eye, RefreshCw} from 'lucide-react'
+import {Clapperboard, Eye, Film, Plus, Radio, RefreshCw, Zap} from 'lucide-react'
 import clsx from 'clsx'
 import {useCallback, useEffect, useState} from 'react'
-import {GetVideos} from '../../wailsjs/go/main/App'
+import {GetVideoPlans, GetVideos} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {PageHeader} from '../components/PageHeader'
 import {PlatformPill} from '../components/PlatformPill'
 import {formatAgo, formatCompact, formatDate} from '../lib/format'
 import {useServices} from '../services/ServicesProvider'
+import {anyChannelConnected} from '../services/services'
 
 interface VideosProps {
   /** Open the details view for one video. */
   onOpenVideo: (video: main.Video) => void
+  /** Open a saved video plan's view page. */
+  onOpenVideoPlan: (plan: main.VideoPlan) => void
+  /** Start planning a new video. */
+  onPlanVideo: () => void
 }
 
 /** Visibility filter options; "public" is the default view. */
@@ -31,12 +36,20 @@ const statusOf = (v: main.Video) => v.status || 'public'
  * Results come from the backend's 1-hour API cache; the refresh CTA forces a
  * fresh fetch.
  */
-export function Videos({onOpenVideo}: VideosProps) {
+export function Videos({onOpenVideo, onOpenVideoPlan, onPlanVideo}: VideosProps) {
   const {statuses} = useServices()
   const [list, setList] = useState<main.VideoList | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('public')
+
+  // Video plans lead the page, like planned streams on the Broadcast page.
+  const [plans, setPlans] = useState<main.VideoPlan[]>([])
+  useEffect(() => {
+    GetVideoPlans()
+      .then((p) => setPlans(p ?? []))
+      .catch(() => {})
+  }, [])
 
   const load = useCallback(async (force: boolean) => {
     setLoading(true)
@@ -54,7 +67,7 @@ export function Videos({onOpenVideo}: VideosProps) {
     void load(false)
   }, [load])
 
-  const oauthConnected = statuses.twitch.connected || statuses.youtube.connected
+  const oauthConnected = anyChannelConnected(statuses)
   const allVideos = list?.videos ?? []
   const videos = allVideos.filter(
     (v) => statusFilter === 'all' || statusOf(v) === statusFilter,
@@ -91,6 +104,79 @@ export function Videos({onOpenVideo}: VideosProps) {
 
       {error && (
         <p className="mb-4 text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+
+      {/* Planned videos: the ideas being produced, ahead of the published
+          list — the Videos-page counterpart of the Broadcast page's planned
+          streams. Each card opens its plan; hidden when nothing is planned. */}
+      {plans.length > 0 && (
+        <section aria-label="Planned videos" className="mb-6">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+              Planned Videos
+            </h2>
+            <button
+              type="button"
+              onClick={onPlanVideo}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90"
+            >
+              <Plus size={14} aria-hidden />
+              Plan a video
+            </button>
+          </div>
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {plans.map((plan) => (
+              <li key={plan.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpenVideoPlan(plan)}
+                  className="flex w-full flex-col rounded-xl border border-edge bg-surface p-4 text-left transition-colors hover:bg-surface-hover"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="min-w-0 flex-1 text-sm font-semibold text-fg">
+                      {plan.title}
+                    </p>
+                    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent">
+                      {plan.format === 'short' ? (
+                        <Zap size={11} aria-hidden />
+                      ) : (
+                        <Film size={11} aria-hidden />
+                      )}
+                      {plan.format === 'short' ? 'Short form' : 'Long form'}
+                    </span>
+                  </div>
+                  {plan.description && (
+                    <p className="mt-1 line-clamp-3 text-sm text-fg-muted">
+                      {plan.description}
+                    </p>
+                  )}
+                  {((plan.streams ?? []).length > 0 ||
+                    (plan.tags ?? []).length > 0) && (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {(plan.streams ?? []).length > 0 && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent">
+                          <Radio size={11} aria-hidden />
+                          {(plan.streams ?? []).length} source{' '}
+                          {(plan.streams ?? []).length === 1
+                            ? 'stream'
+                            : 'streams'}
+                        </span>
+                      )}
+                      {(plan.tags ?? []).map((t) => (
+                        <span
+                          key={t}
+                          className="rounded-full border border-edge bg-bg px-2 py-0.5 text-xs font-medium text-fg-muted"
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {/* Visibility filter. Public-only by default. */}

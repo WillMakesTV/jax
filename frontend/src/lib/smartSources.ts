@@ -1,4 +1,3 @@
-import {SetSetting} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {type LiveEventItem} from '../events/EventsProvider'
 import {type ObsMetrics} from '../live/LiveDataProvider'
@@ -24,18 +23,6 @@ export interface SmartSource {
   template: string
 }
 
-// The on-air episode's identity flows through two auto-managed custom tokens:
-// going live with a planned stream (and the "Update episode info" routine
-// step) writes their values, and any smart-source template referencing them
-// renders through the same pipeline as every other token — one consistent
-// mechanism instead of per-series source mappings.
-export const EPISODE_TITLE_TOKEN = 'episode_title'
-export const EPISODE_NUMBER_TOKEN = 'episode_number'
-
-/** Window event that asks the app-wide updater to re-render immediately
- *  (e.g. right after a routine step rewrote the episode tokens). */
-export const SMART_SOURCES_REFRESH_EVENT = 'jax:smart-sources-refresh'
-
 /** One insertable token and what it resolves to. */
 export const SMART_TOKENS: {token: string; label: string}[] = [
   {token: '{viewers}', label: 'Total live viewers'},
@@ -50,8 +37,6 @@ export const SMART_TOKENS: {token: string; label: string}[] = [
   {token: '{latest_sub}', label: 'Latest subscriber'},
   {token: '{time}', label: 'Current time'},
   {token: '{date}', label: 'Current date'},
-  {token: `{${EPISODE_TITLE_TOKEN}}`, label: "On-air episode's title (auto-updated from the stream plan)"},
-  {token: `{${EPISODE_NUMBER_TOKEN}}`, label: "On-air episode's number (auto-updated from the stream plan)"},
 ]
 
 const timeFmt = new Intl.DateTimeFormat('en', {hour: 'numeric', minute: '2-digit'})
@@ -88,28 +73,119 @@ export function saveCustomTokens(map: Record<string, string>): void {
   saveSetting(SETTING_KEYS.obsSmartTokens, JSON.stringify(map))
 }
 
+// ---------------------------------------------------------------------------
+// Episode text sources
+//
+// The on-air episode's identity is written directly into two designated OBS
+// Text (GDI+) sources: one shows the episode's title verbatim, the other
+// "Episode N". The mapping (chosen on a series' edit page) lives in its own
+// setting — no tokens or templates involved, so nothing in OBS needs to keep
+// a placeholder; the app always writes fresh text from the current plan.
+// ---------------------------------------------------------------------------
+
+export interface EpisodeTextSources {
+  /** OBS text source that shows the episode's title ('' = unmapped). */
+  title: string
+  /** OBS text source that shows "Episode N" ('' = unmapped). */
+  number: string
+}
+
+/** Load the episode-info source mapping. */
+export async function loadEpisodeTextSources(): Promise<EpisodeTextSources> {
+  const raw = (await loadSetting(SETTING_KEYS.obsEpisodeSources)) ?? ''
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as Partial<EpisodeTextSources>
+      return {title: parsed.title ?? '', number: parsed.number ?? ''}
+    } catch {
+      // Unreadable; fall through to the empty mapping.
+    }
+  }
+  return {title: '', number: ''}
+}
+
+/** Persist the episode-info source mapping. */
+export function saveEpisodeTextSources(map: EpisodeTextSources): void {
+  saveSetting(SETTING_KEYS.obsEpisodeSources, JSON.stringify(map))
+}
+
+/** How an episode number reads on screen. */
+export function episodeNumberText(episode: number): string {
+  return episode > 0 ? `Episode ${episode}` : ''
+}
+
+/** The minimal obsRequest shape (mirrors the ServicesProvider's). */
+type ObsPush = (type: string, data?: Record<string, unknown>) => Promise<unknown>
+
 /**
- * Write the on-air episode's title/number into the auto-managed episode
- * tokens, awaiting the persisted write so callers can render right after.
- * Empty values leave the existing token alone. Returns true when a token
- * value actually changed.
+ * Write an episode's info directly into the mapped OBS text sources: the
+ * title verbatim, the number as "Episode N". Empty values and unmapped
+ * sources are left alone. Returns whether anything was written.
  */
-export async function updateEpisodeTokens(
+export async function pushEpisodeText(
+  obsRequest: ObsPush,
   title: string,
   episode: number,
 ): Promise<boolean> {
-  const custom = await loadCustomTokens()
-  const next = {...custom}
-  if (title) next[EPISODE_TITLE_TOKEN] = title
-  if (episode > 0) next[EPISODE_NUMBER_TOKEN] = String(episode)
-  if (
-    next[EPISODE_TITLE_TOKEN] === custom[EPISODE_TITLE_TOKEN] &&
-    next[EPISODE_NUMBER_TOKEN] === custom[EPISODE_NUMBER_TOKEN]
-  ) {
-    return false
+  const map = await loadEpisodeTextSources()
+  const writes: Array<[string, string]> = []
+  if (map.title && title) writes.push([map.title, title])
+  if (map.number && episode > 0) {
+    writes.push([map.number, episodeNumberText(episode)])
   }
-  await SetSetting(SETTING_KEYS.obsSmartTokens, JSON.stringify(next))
-  return true
+  for (const [name, text] of writes) {
+    await obsRequest('SetInputSettings', {
+      inputName: name,
+      inputSettings: {text},
+    })
+  }
+  return writes.length > 0
+}
+
+/**
+ * One-shot migration from the retired episode tokens: a smart source whose
+ * template references {episode_title}/{episode_number} becomes the direct
+ * episode mapping (unless one is already chosen). Sources holding the direct
+ * mapping leave the smart-source map — they are written directly, not
+ * rendered — and the auto-managed token values leave the custom-token store.
+ * Idempotent; the app-wide updater runs it on mount.
+ */
+export async function migrateEpisodeTokenConfig(): Promise<void> {
+  const sources = await loadSmartSources()
+  const referencing = (token: string, exclude: string) =>
+    Object.keys(sources).find(
+      (n) => n !== exclude && sources[n].template.includes(`{${token}}`),
+    ) ?? ''
+  const title = referencing('episode_title', '')
+  const number = referencing('episode_number', title)
+
+  const map = await loadEpisodeTextSources()
+  const next = {
+    title: map.title || title,
+    number: map.number || number,
+  }
+  if (next.title !== map.title || next.number !== map.number) {
+    saveEpisodeTextSources(next)
+  }
+  // Mapped sources get their text written directly; a leftover smart-source
+  // entry would render a template (possibly still holding a dead token) over
+  // the top of it.
+  let changed = false
+  for (const name of [title, number, next.title, next.number]) {
+    if (name && name in sources) {
+      delete sources[name]
+      changed = true
+    }
+  }
+  if (changed) saveSmartSources(sources)
+
+  const custom = await loadCustomTokens()
+  if ('episode_title' in custom || 'episode_number' in custom) {
+    const cleaned = {...custom}
+    delete cleaned.episode_title
+    delete cleaned.episode_number
+    saveCustomTokens(cleaned)
+  }
 }
 
 /** Resolve every token to its current value from the live app state. */
@@ -135,7 +211,7 @@ export function computeTokenValues(
 
   const detail = (label: string): string => {
     for (const p of platforms) {
-      const d = p.details.find((x) => x.label === label)
+      const d = (p.details ?? []).find((x) => x.label === label)
       if (d) return d.value
     }
     return ''
@@ -167,6 +243,11 @@ export function computeTokenValues(
     if (!(key in values)) values[key] = value
   }
   return values
+}
+
+/** Whether the text references any {token}. */
+export function containsToken(text: string): boolean {
+  return /\{[a-z_]+\}/.test(text)
 }
 
 /** Replace {tokens} in a template with their values (unknown tokens kept). */

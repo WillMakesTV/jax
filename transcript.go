@@ -40,9 +40,39 @@ func (a *App) AddTranscriptLine(sessionID, at, endAt int64, text string) error {
 	return a.store.addTranscriptLine(sessionID, at, endAt, text)
 }
 
+// streamAnchorTimes returns every timestamp that identifies the stream
+// startedAt belongs to: the time itself, plus each broadcast go-live of the
+// aggregated past stream containing it. A stream's segments can start further
+// apart than the matching margin (manual groups make the group the identity,
+// not timing), and the aggregate's StartedAt is the most recent segment while
+// downloads anchor to the earliest — so a transcript anchored to any segment
+// must count for the whole stream.
+func (a *App) streamAnchorTimes(target time.Time, margin time.Duration) []time.Time {
+	anchors := []time.Time{target}
+	for _, ps := range a.GetPastStreams(false) {
+		starts := make([]time.Time, 0, len(ps.Broadcasts)+1)
+		if t, err := time.Parse(time.RFC3339, ps.StartedAt); err == nil {
+			starts = append(starts, t)
+		}
+		for _, b := range ps.Broadcasts {
+			if t, err := time.Parse(time.RFC3339, b.StartedAt); err == nil {
+				starts = append(starts, t)
+			}
+		}
+		for _, t := range starts {
+			if absDuration(target.Sub(t)) <= margin {
+				return append(anchors, starts...)
+			}
+		}
+	}
+	return anchors
+}
+
 // matchingTranscriptSessionIDs returns the ids of sessions whose stream start
-// lies within the configured matching margin of startedAt (RFC3339) — the
-// same margin-based identity past-stream aggregation uses.
+// lies within the configured matching margin of the stream startedAt (RFC3339)
+// belongs to — matched against every segment of the aggregated stream, not
+// just the given timestamp, so multi-segment and manually grouped streams find
+// transcripts anchored to any of their broadcasts.
 func (a *App) matchingTranscriptSessionIDs(startedAt string) ([]int64, error) {
 	target, err := time.Parse(time.RFC3339, startedAt)
 	if err != nil {
@@ -54,18 +84,18 @@ func (a *App) matchingTranscriptSessionIDs(startedAt string) ([]int64, error) {
 	}
 
 	margin := a.pastMatchMargin()
+	anchors := a.streamAnchorTimes(target, margin)
 	ids := []int64{}
 	for _, s := range sessions {
 		at, err := time.Parse(time.RFC3339, s.startedAt)
 		if err != nil {
 			continue
 		}
-		dt := target.Sub(at)
-		if dt < 0 {
-			dt = -dt
-		}
-		if dt <= margin {
-			ids = append(ids, s.id)
+		for _, anchor := range anchors {
+			if absDuration(anchor.Sub(at)) <= margin {
+				ids = append(ids, s.id)
+				break
+			}
 		}
 	}
 	return ids, nil

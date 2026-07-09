@@ -1,4 +1,4 @@
-import {Pencil, Play, Plus, Trash2, Workflow} from 'lucide-react'
+import {FlaskConical, Pencil, Play, Plus, Trash2, Workflow} from 'lucide-react'
 import {useCallback, useEffect, useState} from 'react'
 import {DeleteRoutine, GetRoutines} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
@@ -30,7 +30,11 @@ export function RoutinesPanel({
   const obsConnected = statuses.obs.connected
 
   const [routines, setRoutines] = useState<main.Routine[]>([])
-  const [runningId, setRunningId] = useState('')
+  // The routine currently executing, and whether it is a real run or a test
+  // rehearsal (which never starts/stops the stream).
+  const [running, setRunning] = useState<{id: string; test: boolean} | null>(
+    null,
+  )
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [confirmDelete, setConfirmDelete] = useState('')
 
@@ -41,11 +45,11 @@ export function RoutinesPanel({
   }, [])
   useEffect(reload, [reload])
 
-  const run = async (routine: main.Routine) => {
-    setRunningId(routine.id)
+  const run = async (routine: main.Routine, test = false) => {
+    setRunning({id: routine.id, test})
     setNotes((n) => ({...n, [routine.id]: ''}))
     try {
-      const warnings = await runRoutine(routine, obsRequest)
+      const warnings = await runRoutine(routine, obsRequest, {test})
       setNotes((n) => ({...n, [routine.id]: warnings.join(' · ')}))
     } catch (err) {
       setNotes((n) => ({
@@ -56,7 +60,7 @@ export function RoutinesPanel({
             : 'The routine failed.',
       }))
     } finally {
-      setRunningId('')
+      setRunning(null)
     }
   }
 
@@ -127,7 +131,7 @@ export function RoutinesPanel({
                 <button
                   type="button"
                   onClick={() => void run(routine)}
-                  disabled={!obsConnected || runningId !== ''}
+                  disabled={!obsConnected || running !== null}
                   title={
                     obsConnected
                       ? undefined
@@ -136,7 +140,25 @@ export function RoutinesPanel({
                   className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-xs font-semibold text-fg transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Play size={12} aria-hidden />
-                  {runningId === routine.id ? 'Running…' : 'Run'}
+                  {running?.id === routine.id && !running.test
+                    ? 'Running…'
+                    : 'Run'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void run(routine, true)}
+                  disabled={!obsConnected || running !== null}
+                  title={
+                    obsConnected
+                      ? 'Rehearse every step without starting or stopping the stream.'
+                      : 'Connect OBS in Settings → Services to run routines.'
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-xs font-semibold text-fg transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <FlaskConical size={12} aria-hidden />
+                  {running?.id === routine.id && running.test
+                    ? 'Testing…'
+                    : 'Test'}
                 </button>
                 <button
                   type="button"

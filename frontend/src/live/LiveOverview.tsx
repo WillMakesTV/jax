@@ -1,36 +1,18 @@
-import {
-  Activity,
-  Clock,
-  Cpu,
-  ExternalLink,
-  Eye,
-  HardDrive,
-  MonitorPlay,
-  Radio,
-  Video,
-} from 'lucide-react'
+import {Clock, ExternalLink, Eye, Radio} from 'lucide-react'
 import {useEffect, useState} from 'react'
 import {main} from '../../wailsjs/go/models'
 import {BrandTile} from '../components/BrandTile'
 import {Modal} from '../components/Modal'
 import {openExternal} from '../lib/browser'
-import {
-  formatBytes,
-  formatCompact,
-  formatDurationMs,
-  formatFrameDrops,
-  formatKbps,
-  formatNumber,
-  formatUptime,
-} from '../lib/format'
+import {formatCompact, formatNumber, formatUptime} from '../lib/format'
 import {platformName} from '../services/services'
-import {OBS_POLL_MS, useLiveData, type ObsMetrics} from './LiveDataProvider'
+import {useLiveData} from './LiveDataProvider'
 
 // ---------------------------------------------------------------------------
-// Shared live-stream UI: the aggregate overview panel (summary tiles plus
-// per-channel and encoder cards, each opening a detail dialog) and the small
-// status pills used across views. The overview is designed to sit on an
-// accent-coloured hero, so its empty state uses translucent accent styling.
+// Shared live-stream UI: the aggregate overview panel (per-channel cards,
+// each opening a detail dialog) and the small status pills used across
+// views. The overview is designed to sit on an accent-coloured hero, so its
+// empty state uses translucent accent styling.
 // ---------------------------------------------------------------------------
 
 /** Live/offline badge with a pinging dot while live. */
@@ -70,9 +52,8 @@ export function StatusPill({live, label}: {live: boolean; label?: string}) {
 }
 
 /**
- * The live-broadcast overview: aggregate summary tiles and the channel and
- * encoder cards, with their detail dialogs. Requests the fast platform poll
- * cadence while mounted.
+ * The live-broadcast overview: the per-channel cards with their detail
+ * dialogs. Requests the fast platform poll cadence while mounted.
  */
 export function LiveOverview({
   onOpenChannel,
@@ -83,18 +64,14 @@ export function LiveOverview({
    */
   onOpenChannel?: (platform: string) => void
 } = {}) {
-  const {platforms, obs, oauthConnected, obsConnected, requestFastPolling} =
-    useLiveData()
+  const {platforms, oauthConnected, requestFastPolling} = useLiveData()
   const [detail, setDetail] = useState<main.LiveStream | null>(null)
-  const [obsDetailOpen, setObsDetailOpen] = useState(false)
 
   // This panel shows detailed metrics, so ask the shared provider for the
   // fast platform poll cadence while it is on screen.
   useEffect(() => requestFastPolling(), [requestFastPolling])
 
-  const nothingConnected = !oauthConnected && !obsConnected
-
-  if (nothingConnected) {
+  if (!oauthConnected) {
     return (
       <div className="flex items-center gap-3 rounded-xl bg-accent-fg/10 p-5">
         <span
@@ -106,8 +83,8 @@ export function LiveOverview({
         <div>
           <p className="text-sm font-semibold">No services connected</p>
           <p className="text-sm opacity-80">
-            Connect Twitch, YouTube, or OBS in Settings → Services to see live
-            metrics here.
+            Connect Twitch, YouTube, or Kick in Settings → Services to see
+            live metrics here.
           </p>
         </div>
       </div>
@@ -116,8 +93,8 @@ export function LiveOverview({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Channel + encoder cards. Channel cards navigate to the channel's
-          detail page when a handler is provided, else open a dialog. */}
+      {/* Channel cards navigate to the channel's detail page when a handler
+          is provided, else open a dialog. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {platforms.map((p) => (
           <ChannelCard
@@ -128,16 +105,9 @@ export function LiveOverview({
             }
           />
         ))}
-        {obsConnected && (
-          <ObsCard obs={obs} onSelect={() => setObsDetailOpen(true)} />
-        )}
       </div>
 
       <PlatformDetailModal stream={detail} onClose={() => setDetail(null)} />
-      <ObsDetailModal
-        obs={obsDetailOpen ? obs : null}
-        onClose={() => setObsDetailOpen(false)}
-      />
     </div>
   )
 }
@@ -189,7 +159,7 @@ function ChannelCard({
             </span>
           )}
         </>
-      ) : stream.details.length === 0 ? (
+      ) : (stream.details ?? []).length === 0 ? (
         <p className="mt-3 text-sm text-fg-muted">
           Not live. Click for channel details.
         </p>
@@ -197,9 +167,9 @@ function ChannelCard({
 
       {/* Channel analytics (followers, subscribers, totals) ride along on
           the same card so the hero is the one stats surface. */}
-      {!stream.error && stream.details.length > 0 && (
+      {!stream.error && (stream.details ?? []).length > 0 && (
         <dl className="mt-3 divide-y divide-edge border-t border-edge">
-          {stream.details.map((d) => (
+          {(stream.details ?? []).map((d) => (
             <div
               key={d.label}
               className="flex items-baseline justify-between gap-4 py-1.5"
@@ -211,64 +181,6 @@ function ChannelCard({
             </div>
           ))}
         </dl>
-      )}
-    </button>
-  )
-}
-
-function ObsCard({
-  obs,
-  onSelect,
-}: {
-  obs: ObsMetrics | null
-  onSelect: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className="flex flex-col rounded-xl border border-edge bg-surface p-5 text-left transition-colors hover:bg-surface-hover"
-    >
-      <div className="flex w-full items-center gap-3">
-        <BrandTile platform="obs" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-fg">OBS Studio</p>
-          <p className="text-xs text-fg-muted">Encoder</p>
-        </div>
-        <StatusPill
-          live={Boolean(obs?.outputActive)}
-          label={
-            obs?.outputReconnecting
-              ? 'Reconnecting'
-              : obs?.outputActive
-                ? 'Streaming'
-                : 'Idle'
-          }
-        />
-      </div>
-
-      {obs ? (
-        <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm text-fg-muted">
-          <span className="inline-flex items-center gap-1.5">
-            <MonitorPlay size={14} aria-hidden />
-            {Math.round(obs.activeFps)} fps
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <Activity size={14} aria-hidden />
-            {obs.outputActive && obs.kbps !== null ? formatKbps(obs.kbps) : '—'}
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <Cpu size={14} aria-hidden />
-            {obs.cpuUsage.toFixed(1)}% CPU
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <Video size={14} aria-hidden />
-            {formatFrameDrops(obs.outputSkippedFrames, obs.outputTotalFrames)}{' '}
-            dropped
-          </span>
-        </div>
-      ) : (
-        <p className="mt-3 text-sm text-fg-muted">Waiting for stats…</p>
       )}
     </button>
   )
@@ -342,10 +254,10 @@ function PlatformDetailModal({
           </div>
         )}
 
-        {(stream.title || stream.details.length > 0) && (
+        {(stream.title || (stream.details ?? []).length > 0) && (
           <dl className="divide-y divide-edge">
             {stream.title && <DetailRow label="Title" value={stream.title} />}
-            {stream.details.map((d) => (
+            {(stream.details ?? []).map((d) => (
               <DetailRow key={d.label} label={d.label} value={d.value} />
             ))}
           </dl>
@@ -378,94 +290,3 @@ function PlatformDetailModal({
   )
 }
 
-function ObsDetailModal({
-  obs,
-  onClose,
-}: {
-  obs: ObsMetrics | null
-  onClose: () => void
-}) {
-  if (!obs) return null
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title="OBS Studio"
-      icon={<BrandTile platform="obs" size={28} />}
-    >
-      <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <StatusPill
-            live={obs.outputActive}
-            label={
-              obs.outputReconnecting
-                ? 'Reconnecting'
-                : obs.outputActive
-                  ? 'Streaming'
-                  : 'Idle'
-            }
-          />
-          {obs.outputActive && (
-            <span className="text-sm text-fg-muted">
-              up {formatDurationMs(obs.outputDuration)}
-            </span>
-          )}
-        </div>
-
-        <dl className="divide-y divide-edge">
-          <DetailRow
-            label="Bitrate"
-            value={
-              obs.outputActive && obs.kbps !== null ? formatKbps(obs.kbps) : '—'
-            }
-          />
-          <DetailRow
-            label="Data output"
-            value={obs.outputActive ? formatBytes(obs.outputBytes) : '—'}
-          />
-          <DetailRow
-            label="Congestion"
-            value={
-              obs.outputActive
-                ? `${(obs.outputCongestion * 100).toFixed(0)}%`
-                : '—'
-            }
-          />
-          <DetailRow
-            label="Dropped frames (network)"
-            value={formatFrameDrops(
-              obs.outputSkippedFrames,
-              obs.outputTotalFrames,
-            )}
-          />
-          <DetailRow
-            label="Skipped frames (render)"
-            value={formatFrameDrops(
-              obs.renderSkippedFrames,
-              obs.renderTotalFrames,
-            )}
-          />
-          <DetailRow label="FPS" value={String(Math.round(obs.activeFps))} />
-          <DetailRow
-            label="Frame render time"
-            value={`${obs.averageFrameRenderTime.toFixed(1)} ms`}
-          />
-          <DetailRow label="CPU usage" value={`${obs.cpuUsage.toFixed(1)}%`} />
-          <DetailRow
-            label="Memory"
-            value={`${Math.round(obs.memoryUsage)} MB`}
-          />
-          <DetailRow
-            label="Free disk space"
-            value={formatBytes(obs.availableDiskSpace * 1e6)}
-          />
-        </dl>
-
-        <p className="flex items-center gap-2 text-xs text-fg-muted">
-          <HardDrive size={14} aria-hidden />
-          Stats refresh every {OBS_POLL_MS / 1000}s while OBS is connected.
-        </p>
-      </div>
-    </Modal>
-  )
-}

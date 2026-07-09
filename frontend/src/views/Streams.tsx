@@ -1,7 +1,9 @@
 import {
   Calendar,
   CalendarPlus,
+  Clapperboard,
   Eye,
+  HardDrive,
   Link2,
   Plus,
   RefreshCw,
@@ -21,6 +23,9 @@ import {
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {BrandTile} from '../components/BrandTile'
+import {DownloadThumb} from '../components/DownloadThumb'
+import {Modal} from '../components/Modal'
+import {useDownloads} from '../downloads/useDownloads'
 import {openExternal} from '../lib/browser'
 import {formatCompact, formatDate, formatDurationMs} from '../lib/format'
 import {useLiveData} from '../live/LiveDataProvider'
@@ -45,14 +50,20 @@ const streamKeyOf = (s: main.PastStream) =>
 export function PastStreamsSection({
   onOpenStream,
   onOpenLive,
+  onPlanVideo,
   showSummary,
 }: {
   onOpenStream: (stream: main.PastStream) => void
   onOpenLive: () => void
+  /** Open the "Plan a video" form (a short- or long-form video plan). */
+  onPlanVideo?: () => void
   /** Render aggregate stat cards (count, total views, last stream) on top. */
   showSummary?: boolean
 }) {
   const {platforms} = useLiveData()
+  // Maps each stream to its downloaded copy (if any) so a card with a
+  // missing or dead platform thumbnail can heal from the local video.
+  const {byUrl} = useDownloads()
   const [past, setPast] = useState<main.PastStream[]>([])
   const [loaded, setLoaded] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -181,6 +192,7 @@ export function PastStreamsSection({
           </button>
         </div>
 
+        <div className="flex items-center gap-2">
         {/* Selection CTA: group the checked streams into one, or dissolve a
             manual group. Timing-based matching occasionally misses, so this
             is the manual escape hatch. */}
@@ -224,6 +236,19 @@ export function PastStreamsSection({
             )}
           </div>
         )}
+        {/* Plan a produced video (short or long form) — the Videos-page
+            counterpart of "Plan a stream"; plans surface atop that page. */}
+        {onPlanVideo && (
+          <button
+            type="button"
+            onClick={onPlanVideo}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90"
+          >
+            <Clapperboard size={14} aria-hidden />
+            Plan a video
+          </button>
+        )}
+        </div>
       </div>
 
       {!loaded && past.length === 0 ? (
@@ -249,6 +274,11 @@ export function PastStreamsSection({
             <PastStreamCard
               key={streamKeyOf(stream)}
               stream={stream}
+              subfolder={
+                stream.broadcasts
+                  .map((b) => byUrl.get(b.url)?.subfolder)
+                  .find(Boolean) ?? ''
+              }
               selected={selected.has(streamKeyOf(stream))}
               onToggleSelect={() => toggleSelected(stream)}
               onOpen={() => onOpenStream(stream)}
@@ -285,21 +315,38 @@ function StatTile({
 function CardThumbnail({
   url,
   alt,
+  subfolder,
   overlay,
 }: {
   url: string
   alt: string
+  /** The stream's download subfolder ('' when it has no downloaded copy).
+   *  When set, a missing or dead platform thumbnail is replaced by a frame
+   *  extracted from the downloaded video (see DownloadThumb). */
+  subfolder?: string
   overlay?: ReactNode
 }) {
   return (
     <div className="relative">
-      {url ? (
-        <img src={url} alt={alt} className="aspect-video w-full object-cover" />
-      ) : (
-        <div className="flex aspect-video w-full items-center justify-center bg-surface-hover text-fg-muted">
-          <Video size={28} aria-hidden />
-        </div>
-      )}
+      {/* Placeholder underneath keeps the card's aspect while an image loads
+          (or when there is none); a loaded image simply covers it. */}
+      <div className="flex aspect-video w-full items-center justify-center bg-surface-hover text-fg-muted">
+        <Video size={28} aria-hidden />
+      </div>
+      {subfolder ? (
+        <DownloadThumb
+          subfolder={subfolder}
+          src={url}
+          alt={alt}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : url ? (
+        <img
+          src={url}
+          alt={alt}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : null}
       {overlay}
     </div>
   )
@@ -376,12 +423,15 @@ function LiveNowCard({
 
 function PastStreamCard({
   stream,
+  subfolder = '',
   selected = false,
   onToggleSelect,
   onOpen,
   live = false,
 }: {
   stream: main.PastStream
+  /** The stream's download subfolder ('' when it has no downloaded copy). */
+  subfolder?: string
   selected?: boolean
   /** Absent on the live card — an active broadcast cannot be grouped. */
   onToggleSelect?: () => void
@@ -444,6 +494,7 @@ function PastStreamCard({
         <CardThumbnail
           url={stream.thumbnailUrl}
           alt={`${stream.title || 'Untitled stream'} thumbnail`}
+          subfolder={subfolder}
           overlay={
             live ? (
               <span className="absolute left-2 top-2 inline-flex items-center gap-1.5 rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-semibold text-white">
@@ -452,6 +503,17 @@ function PastStreamCard({
                   <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
                 </span>
                 Live
+              </span>
+            ) : stream.local ? (
+              // The platforms no longer list this stream; only the
+              // downloaded copy remains (top-right — the grouping checkbox
+              // owns the other corner).
+              <span
+                title="No longer available on its platforms — only the downloaded copy remains"
+                className="absolute right-2 top-2 inline-flex items-center gap-1.5 rounded-full bg-slate-900/80 px-2 py-0.5 text-[11px] font-semibold text-white backdrop-blur-sm"
+              >
+                <HardDrive size={11} aria-hidden />
+                Local
               </span>
             ) : undefined
           }
@@ -502,6 +564,8 @@ export function PlanningSection({
   const [plans, setPlans] = useState<main.PlannedStream[]>([])
   // Series titles for the plan cards' series tags, keyed by series id.
   const [seriesTitles, setSeriesTitles] = useState<Record<string, string>>({})
+  // The plan awaiting delete confirmation.
+  const [toDelete, setToDelete] = useState<main.PlannedStream | null>(null)
 
   useEffect(() => {
     GetPlannedStreams()
@@ -571,11 +635,43 @@ export function PlanningSection({
               plan={plan}
               seriesTitle={seriesTitles[plan.seriesId] ?? ''}
               onOpen={() => onOpenPlan(plan)}
-              onDelete={() => remove(plan.id)}
+              onDelete={() => setToDelete(plan)}
             />
           ))}
         </ul>
       )}
+
+      <Modal
+        open={toDelete !== null}
+        onClose={() => setToDelete(null)}
+        title="Delete this plan?"
+        icon={<Trash2 size={18} aria-hidden className="text-fg-muted" />}
+      >
+        <p className="text-sm text-fg-muted">
+          “{toDelete?.title}” will be removed from your planning. This can't
+          be undone.
+        </p>
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setToDelete(null)}
+            className="rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const plan = toDelete
+              setToDelete(null)
+              if (plan) void remove(plan.id)
+            }}
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+          >
+            Delete plan
+          </button>
+        </div>
+      </Modal>
     </section>
   )
 }
@@ -592,15 +688,31 @@ function PlanCard({
   onOpen: () => void
   onDelete: () => void
 }) {
+  // Series + episode read as the card's own label — an eyebrow line above
+  // the title rather than generic pills.
+  const eyebrow = [
+    seriesTitle,
+    plan.episodeNumber > 0 ? `Episode ${plan.episodeNumber}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
   return (
     <li className="flex flex-col rounded-xl border border-edge bg-surface p-4">
       <div className="flex items-start justify-between gap-3">
         <button
           type="button"
           onClick={onOpen}
-          className="min-w-0 flex-1 text-left text-sm font-semibold text-fg hover:underline"
+          className="min-w-0 flex-1 text-left"
         >
-          {plan.title}
+          {eyebrow && (
+            <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide text-accent">
+              {eyebrow}
+            </span>
+          )}
+          <span className="block text-sm font-semibold text-fg hover:underline">
+            {plan.title}
+          </span>
         </button>
         <button
           type="button"
@@ -620,18 +732,9 @@ function PlanCard({
           <span className="line-clamp-3">{plan.description}</span>
         </button>
       )}
-      {(seriesTitle || plan.episodeNumber > 0 || plan.channels.length > 0) && (
+      {/* Channels sit on their own row below the plan's text. */}
+      {plan.channels.length > 0 && (
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          {seriesTitle && (
-            <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent">
-              {seriesTitle}
-            </span>
-          )}
-          {plan.episodeNumber > 0 && (
-            <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent">
-              Episode {plan.episodeNumber}
-            </span>
-          )}
           {plan.channels.map((c) => (
             <span
               key={c}

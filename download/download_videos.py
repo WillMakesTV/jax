@@ -85,6 +85,9 @@ def main() -> int:
     parser.add_argument("--subdir", default="")
     parser.add_argument("--name", required=True)
     parser.add_argument("--manifest", default="")
+    # Re-download: replace any existing video files instead of letting
+    # yt-dlp skip URLs whose output file already exists.
+    parser.add_argument("--fresh", action="store_true")
     parser.add_argument("urls", nargs="+")
     args = parser.parse_args()
 
@@ -94,6 +97,19 @@ def main() -> int:
         target_dir = os.path.join(args.dir, safe_name(args.subdir))
     os.makedirs(target_dir, exist_ok=True)
     args.dir = target_dir
+
+    if args.fresh:
+        # Drop the old local copy up front so the folder never holds a stale
+        # file the app could mistake for the fresh one (names can differ when
+        # the stream's title changed since the first download).
+        for entry in os.listdir(target_dir):
+            if os.path.splitext(entry)[1].lower() in {
+                ".mp4", ".mkv", ".webm", ".mov", ".m4v", ".part", ".ytdl"
+            }:
+                try:
+                    os.remove(os.path.join(target_dir, entry))
+                except OSError:
+                    pass
     name = safe_name(args.name)
     total = len(args.urls)
     emit({"status": "start", "total": total})
@@ -130,6 +146,8 @@ def main() -> int:
             "merge_output_format": "mp4",
             "ffmpeg_location": ffmpeg_dir,
         }
+        if args.fresh:
+            opts["overwrites"] = True
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=True)

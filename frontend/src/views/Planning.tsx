@@ -20,6 +20,8 @@ interface PlanningProps {
   onOpenPlan: (plan: main.PlannedStream) => void
   /** Open the series editor page (null = create a new series). */
   onEditSeries: (series: main.ContentSeries | null) => void
+  /** Open the "Plan a video" form (short- or long-form video plan). */
+  onPlanVideo: () => void
 }
 
 /**
@@ -34,6 +36,7 @@ export function Planning({
   onPlanStream,
   onOpenPlan,
   onEditSeries,
+  onPlanVideo,
 }: PlanningProps) {
   const tabs: {id: PlanningTab; label: string}[] = [
     {id: 'dashboard', label: 'Dashboard'},
@@ -72,6 +75,7 @@ export function Planning({
           <PastStreamsSection
             onOpenStream={onOpenStream}
             onOpenLive={onOpenLive}
+            onPlanVideo={onPlanVideo}
             showSummary
           />
         </div>

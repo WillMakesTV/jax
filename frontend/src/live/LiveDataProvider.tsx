@@ -19,6 +19,7 @@ import {
 import {loadSceneCameras} from '../lib/sceneCameras'
 import {SETTING_KEYS, loadSetting} from '../lib/settings'
 import {useServices} from '../services/ServicesProvider'
+import {anyChannelConnected} from '../services/services'
 
 /**
  * App-wide live-broadcast data: Twitch/YouTube stream state from the Go
@@ -156,7 +157,7 @@ export function LiveDataProvider({children}: {children: ReactNode}) {
   const [obsNonce, setObsNonce] = useState(0)
   const refreshObs = useCallback(() => setObsNonce((n) => n + 1), [])
 
-  const oauthConnected = statuses.twitch.connected || statuses.youtube.connected
+  const oauthConnected = anyChannelConnected(statuses)
   const obsConnected = statuses.obs.connected
 
   const requestFastPolling = useCallback(() => {

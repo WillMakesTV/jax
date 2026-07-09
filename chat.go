@@ -353,6 +353,39 @@ func (a *App) SendBroadcastChat(message string) []BroadcastSendResult {
 		results = append(results, r)
 	}
 
+	if conn, ok := a.freshConn("kick"); ok {
+		r := BroadcastSendResult{Platform: "kick"}
+		if status, err := sendKickChat(conn, message); err != nil {
+			log.Printf("jax: kick broadcast send: %v", err)
+			r.Error = sendErrorMessage("kick", status, err)
+		} else {
+			r.Sent = true
+		}
+		results = append(results, r)
+	}
+
+	if conn, ok := a.freshConn("facebook"); ok {
+		r := BroadcastSendResult{Platform: "facebook"}
+		if status, err := a.sendFacebookChat(conn, message); err != nil {
+			log.Printf("jax: facebook broadcast send: %v", err)
+			r.Error = sendErrorMessage("facebook", status, err)
+		} else {
+			r.Sent = true
+		}
+		results = append(results, r)
+	}
+
+	if conn, ok := a.freshConn("instagram"); ok {
+		r := BroadcastSendResult{Platform: "instagram"}
+		if status, err := a.sendInstagramChat(conn, message); err != nil {
+			log.Printf("jax: instagram broadcast send: %v", err)
+			r.Error = sendErrorMessage("instagram", status, err)
+		} else {
+			r.Sent = true
+		}
+		results = append(results, r)
+	}
+
 	return results
 }
 

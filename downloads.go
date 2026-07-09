@@ -80,6 +80,12 @@ func (a *App) GetDownloads() []DownloadedVideo {
 			continue // nothing playable
 		}
 		dv.MediaURL = base + "/media/" + url.PathEscape(dv.Subfolder) + "/" + url.PathEscape(dv.VideoFile)
+		// A locally extracted poster frame (see thumbnails.go) overrides the
+		// manifest's platform thumbnail — it is only ever generated because
+		// that URL was missing or dead.
+		if fileExists(filepath.Join(folder, generatedThumbName)) {
+			dv.ThumbnailURL = base + "/media/" + url.PathEscape(dv.Subfolder) + "/" + generatedThumbName
+		}
 		out = append(out, dv)
 	}
 

@@ -150,7 +150,7 @@ function CategoryChip({
   serviceId,
   category,
 }: {
-  serviceId: 'twitch' | 'youtube'
+  serviceId: 'twitch' | 'youtube' | 'kick'
   category: main.ServiceCategory | undefined
 }) {
   const svc = SERVICES.find((s) => s.id === serviceId)
@@ -178,7 +178,9 @@ function SeriesCard({
   onToggleDefault: () => void
 }) {
   const hasCategories =
-    Boolean(series.twitchCategory?.id) || Boolean(series.youtubeCategory?.id)
+    Boolean(series.twitchCategory?.id) ||
+    Boolean(series.youtubeCategory?.id) ||
+    Boolean(series.kickCategory?.id)
   return (
     <li
       className={`flex flex-col rounded-xl border bg-surface p-4 ${
@@ -246,6 +248,7 @@ function SeriesCard({
         )}
         <CategoryChip serviceId="twitch" category={series.twitchCategory} />
         <CategoryChip serviceId="youtube" category={series.youtubeCategory} />
+        <CategoryChip serviceId="kick" category={series.kickCategory} />
       </div>
       )}
 

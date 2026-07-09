@@ -407,7 +407,7 @@ function LiveChannelCard({stream}: {stream: main.LiveStream}) {
             label="Went live"
             value={formatDateTime(stream.startedAt) || '—'}
           />
-          {stream.details.map((d) => (
+          {(stream.details ?? []).map((d) => (
             <DetailRow key={d.label} label={d.label} value={d.value} />
           ))}
         </dl>

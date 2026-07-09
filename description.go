@@ -1,16 +1,10 @@
 package main
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
 	"sort"
 	"strings"
-	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -23,19 +17,25 @@ import (
 // cover. A second endpoint applies requested edits, either to a highlighted
 // section or to the whole text.
 //
-// Like outlines, calls run on the connected Anthropic service: account mode
-// through Claude Code headless, API-key mode against the Messages API.
+// Like outlines, calls run on the connected AI service via askAI (see
+// ai.go): subscription accounts through Claude Code / Codex headless, API
+// keys against the raw APIs.
 // ---------------------------------------------------------------------------
 
-const (
-	messagesAPIURL   = "https://api.anthropic.com/v1/messages"
-	descriptionModel = "claude-opus-4-8" // API-key mode; account mode uses Claude Code's default
+// How many previous episodes of the series feed the prompt.
+const descriptionEpisodeLookback = 5
 
-	// How many previous episodes of the series feed the prompt.
-	descriptionEpisodeLookback = 5
-)
-
-var descriptionHTTP = &http.Client{Timeout: 3 * time.Minute}
+// descriptionTools are the app MCP tools a Claude-account description run may
+// call — read access to the series, past streams, and their transcripts and
+// outlines, so drafts and edits are grounded in what actually happened
+// instead of invented.
+const descriptionTools = "mcp__jax__get_app_status," +
+	"mcp__jax__list_content_series," +
+	"mcp__jax__list_past_streams," +
+	"mcp__jax__get_episode_numbers," +
+	"mcp__jax__get_stream_outline," +
+	"mcp__jax__get_stream_transcript," +
+	"mcp__jax__list_brand_links"
 
 const generateSuggestionInstructions = `You help a broadcaster plan their next live stream.
 
@@ -47,17 +47,22 @@ Respond with ONLY a JSON object — no markdown fences, no commentary — in exa
 Rules:
 - "title": a concise stream title. No episode number — the app composes that in. When the input carries a working title, refine that topic rather than replacing it.
 - "description": plain markdown — 2-4 short paragraphs or a brief intro plus a bulleted list of the items planned for this stream. Continue naturally from where the previous episodes left off: pick up loose threads, unfinished work, and questions the outlines surface, and propose the concrete next items to cover. Written in the streamer's voice to their audience; don't mention "episodes", "outlines", or this prompt.
-- "tags": 5-10 short lowercase tags for this stream (single words or short phrases).`
+- "tags": 5-10 short lowercase tags for this stream (single words or short phrases).
+- When the input includes a "# Brand links" section, close the description with a short links line (e.g. a "Follow along" list) using the relevant ones — URLs verbatim, only from that list, never invented.`
 
 const editSelectionInstructions = `You edit stream descriptions. The input contains a full description, one highlighted section from it, and an instruction.
 
 Rewrite ONLY the highlighted section following the instruction, keeping it coherent with the surrounding text.
+
+The input may include a "# Brand links" section for reference — when linking to the brand's socials or site, use those URLs verbatim and never invent others.
 
 Respond with ONLY the replacement text for the highlighted section — no commentary, no code fences, no surrounding text.`
 
 const editWholeInstructions = `You edit stream descriptions. The input contains a full description and an instruction.
 
 Revise the description following the instruction.
+
+The input may include a "# Brand links" section for reference — when linking to the brand's socials or site, use those URLs verbatim and never invent others.
 
 Respond with ONLY the full revised description in plain markdown — no commentary, no code fences.`
 
@@ -84,7 +89,10 @@ type PlanSuggestion struct {
 func (a *App) GeneratePlanSuggestion(title, seriesID string, episodeNumber int) (PlanSuggestion, error) {
 	var s PlanSuggestion
 	input := a.descriptionContext(title, seriesID, episodeNumber)
-	text, err := a.askClaude(generateSuggestionInstructions, input)
+	text, err := a.askAIText(
+		generateSuggestionInstructions, input,
+		a.claudeMCPArgs(descriptionTools)...,
+	)
 	if err != nil {
 		return s, err
 	}
@@ -130,10 +138,16 @@ func (a *App) EditPlanDescription(description, selection, instruction string) (s
 	} else {
 		system = editWholeInstructions
 	}
+	// The brand's outward links (Profile → Links) always ride along, so edits
+	// that add socials/site references use the real URLs.
+	if links := a.brandLinksText(); links != "" {
+		b.WriteString("\n\n")
+		b.WriteString(links)
+	}
 	b.WriteString("\n\n# Instruction\n")
 	b.WriteString(instruction)
 
-	return a.askClaude(system, b.String())
+	return a.askAIText(system, b.String(), a.claudeMCPArgs(descriptionTools)...)
 }
 
 // descriptionContext assembles the series + previous-episodes document the
@@ -203,6 +217,13 @@ func (a *App) descriptionContext(title, seriesID string, episodeNumber int) stri
 			b.WriteString(a.storedOutlineText(ep.StartedAt))
 		}
 	}
+
+	// The brand's outward links (Profile → Links) always ride along, so the
+	// drafted description can point the audience at the real socials/site.
+	if links := a.brandLinksText(); links != "" {
+		b.WriteString("\n")
+		b.WriteString(links)
+	}
 	return b.String()
 }
 
@@ -234,119 +255,3 @@ func (a *App) storedOutlineText(startedAt string) string {
 	return b.String()
 }
 
-// askClaude runs a system+input prompt on the connected Anthropic service and
-// returns the response text, trimmed.
-func (a *App) askClaude(system, input string) (string, error) {
-	conn, connected := a.getConn(anthropicService)
-	if !connected {
-		return "", fmt.Errorf("connect Anthropic in Settings → AI first")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-
-	var text string
-	var err error
-	if conn.login == anthropicModeAPIKey {
-		text, err = a.askClaudeAPI(ctx, system, input)
-	} else {
-		text, err = askClaudeCode(ctx, system, input)
-	}
-	if err != nil {
-		return "", err
-	}
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return "", fmt.Errorf("the model returned no text — try again")
-	}
-	return text, nil
-}
-
-// askClaudeCode runs the prompt through Claude Code headless (subscription
-// usage); the document goes in on stdin.
-func askClaudeCode(ctx context.Context, system, input string) (string, error) {
-	cmd, err := claudeHeadlessCmd(ctx, system)
-	if err != nil {
-		return "", err
-	}
-	// A neutral working directory keeps Claude Code from picking up this
-	// app's (or any) project context.
-	cmd.Dir = os.TempDir()
-	cmd.Stdin = strings.NewReader(input)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		msg := firstNonEmpty(strings.TrimSpace(stderr.String()), err.Error())
-		if len(msg) > 300 {
-			msg = msg[:300]
-		}
-		return "", fmt.Errorf("Claude Code could not respond: %s", msg)
-	}
-	return stdout.String(), nil
-}
-
-// askClaudeAPI runs the prompt against the Messages API with the stored key.
-func (a *App) askClaudeAPI(ctx context.Context, system, input string) (string, error) {
-	headers, err := a.anthropicAuthHeaders()
-	if err != nil {
-		return "", err
-	}
-	body, err := json.Marshal(map[string]any{
-		"model":      descriptionModel,
-		"max_tokens": 4096,
-		"system":     system,
-		"messages": []map[string]any{
-			{"role": "user", "content": input},
-		},
-	})
-	if err != nil {
-		return "", err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, messagesAPIURL, bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	resp, err := descriptionHTTP.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("could not reach the Anthropic API: %v", err)
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	if resp.StatusCode != http.StatusOK {
-		msg := string(raw)
-		if len(msg) > 300 {
-			msg = msg[:300]
-		}
-		return "", fmt.Errorf("Anthropic API error (%d): %s", resp.StatusCode, msg)
-	}
-
-	var r struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-		StopReason string `json:"stop_reason"`
-	}
-	if err := json.Unmarshal(raw, &r); err != nil {
-		return "", err
-	}
-	var b strings.Builder
-	for _, block := range r.Content {
-		if block.Type == "text" {
-			b.WriteString(block.Text)
-		}
-	}
-	if b.Len() == 0 {
-		return "", fmt.Errorf("the model returned no text (stop reason: %s)", r.StopReason)
-	}
-	return b.String(), nil
-}

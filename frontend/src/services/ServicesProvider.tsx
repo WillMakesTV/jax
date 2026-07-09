@@ -41,6 +41,14 @@ export interface ServiceConfigs {
   twitchClientId: string
   youtubeClientId: string
   youtubeClientSecret: string
+  kickClientId: string
+  kickClientSecret: string
+  facebookAppId: string
+  facebookClientToken: string
+  xClientId: string
+  xClientSecret: string
+  tiktokClientKey: string
+  tiktokClientSecret: string
   obsHost: string
   obsPort: string
   obsPassword: string
@@ -52,6 +60,14 @@ const DEFAULT_CONFIGS: ServiceConfigs = {
   twitchClientId: '',
   youtubeClientId: '',
   youtubeClientSecret: '',
+  kickClientId: '',
+  kickClientSecret: '',
+  facebookAppId: '',
+  facebookClientToken: '',
+  xClientId: '',
+  xClientSecret: '',
+  tiktokClientKey: '',
+  tiktokClientSecret: '',
   obsHost: 'localhost',
   obsPort: '4455',
   obsPassword: '',
@@ -66,8 +82,14 @@ const OBS_RETRY_MS = 10_000
 const emptyStatuses = (): Record<ServiceId, ServiceStatus> => ({
   twitch: {...EMPTY_STATUS},
   youtube: {...EMPTY_STATUS},
+  kick: {...EMPTY_STATUS},
+  facebook: {...EMPTY_STATUS},
+  instagram: {...EMPTY_STATUS},
+  x: {...EMPTY_STATUS},
+  tiktok: {...EMPTY_STATUS},
   obs: {...EMPTY_STATUS},
   anthropic: {...EMPTY_STATUS},
+  openai: {...EMPTY_STATUS},
 })
 
 interface ServicesContextValue {
@@ -152,7 +174,13 @@ export function ServicesProvider({children}: {children: ReactNode}) {
             if (
               s.name === 'twitch' ||
               s.name === 'youtube' ||
-              s.name === 'anthropic'
+              s.name === 'kick' ||
+              s.name === 'facebook' ||
+              s.name === 'instagram' ||
+              s.name === 'x' ||
+              s.name === 'tiktok' ||
+              s.name === 'anthropic' ||
+              s.name === 'openai'
             ) {
               next[s.name] = {connected: s.connected, account: s.account}
             }

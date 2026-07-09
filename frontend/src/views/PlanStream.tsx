@@ -1,15 +1,31 @@
-import {ArrowLeft, Check, Sparkles, WandSparkles} from 'lucide-react'
-import clsx from 'clsx'
-import {useEffect, useState} from 'react'
 import {
+  ArrowLeft,
+  Check,
+  CheckCircle2,
+  Pencil,
+  RotateCcw,
+  Sparkles,
+  WandSparkles,
+} from 'lucide-react'
+import clsx from 'clsx'
+import {useEffect, useState, type ReactNode} from 'react'
+import {
+  ConcludePlannedStream,
   EditPlanDescription,
   GeneratePlanSuggestion,
   GetContentSeries,
+  GetPlanSessions,
   GetSeriesTypes,
+  ResetPlannedStream,
   SavePlannedStream,
   UsedEpisodeNumbers,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
+import {Modal} from '../components/Modal'
+import {
+  PlanThumbnailEditor,
+  zipThumbHistory,
+} from '../components/PlanThumbnailEditor'
 import {MarkdownField} from '../components/markdown/MarkdownField'
 import {
   DEFAULT_YOUTUBE_LIVE_PREFIX,
@@ -21,12 +37,13 @@ import {
   twitchLabelName,
   YOUTUBE_MADE_FOR_KIDS_NAME,
 } from '../lib/contentLabels'
+import {useLiveData} from '../live/LiveDataProvider'
 import {SERVICES} from '../services/services'
 import {useServices} from '../services/ServicesProvider'
 
 /** The platforms a stream can be broadcast to. */
 const BROADCAST_SERVICES = SERVICES.filter(
-  (s) => s.id === 'twitch' || s.id === 'youtube',
+  (s) => s.category === 'channels',
 )
 
 /**
@@ -47,6 +64,15 @@ export function PlanStream({
   onSaved: () => void
 }) {
   const {statuses} = useServices()
+  const {obs} = useLiveData()
+  const streaming = Boolean(obs?.outputActive)
+
+  // The stored plan, kept current across per-field saves. null while the
+  // plan is still being created (create mode: one classic editable form);
+  // once it exists, every field is read-only with a hover Edit CTA and
+  // saves itself — there is no whole-form Save.
+  const [savedPlan, setSavedPlan] = useState<main.PlannedStream | null>(plan)
+  const editMode = savedPlan !== null
 
   const [title, setTitle] = useState(plan?.title ?? '')
   const [description, setDescription] = useState(plan?.description ?? '')
@@ -66,8 +92,146 @@ export function PlanStream({
   const [types, setTypes] = useState<main.SeriesType[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // The plan's latest broadcast session (if it has gone live), for the
+  // "Conclude episode" action once that broadcast is over.
+  const [session, setSession] = useState<main.PlanSessionInfo | null>(null)
+  const [concluding, setConcluding] = useState(false)
+  const [confirmConclude, setConfirmConclude] = useState(false)
+  const [resetting, setResetting] = useState(false)
+  const [confirmReset, setConfirmReset] = useState(false)
+  useEffect(() => {
+    if (!plan) return
+    GetPlanSessions()
+      .then((s) => setSession((s ?? []).find((x) => x.planId === plan.id) ?? null))
+      .catch(() => {})
+  }, [plan])
+  const canConclude = Boolean(
+    plan && session && (session.endedAt !== '' || !streaming),
+  )
+
+  const conclude = async () => {
+    if (!plan) return
+    setConcluding(true)
+    setError('')
+    try {
+      await ConcludePlannedStream(plan.id)
+      onSaved() // the plan is gone; return to the Planning lists
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'The episode could not be concluded.',
+      )
+      setConcluding(false)
+      setConfirmConclude(false)
+    }
+  }
   // The description textarea's selection range, for scoped AI edits.
   const [descSelection, setDescSelection] = useState<[number, number]>([0, 0])
+
+  // Thumbnail: generated or uploaded via the shared PlanThumbnailEditor;
+  // in edit mode every change persists onto the plan immediately.
+  const [thumbFile, setThumbFile] = useState(plan?.thumbnailFile ?? '')
+  const [thumbUrl, setThumbUrl] = useState(plan?.thumbnailUrl ?? '')
+  const [thumbOpen, setThumbOpen] = useState(false)
+
+  // Which field is being edited ('title' | 'series' | 'tags' | 'thumb'),
+  // its in-flight save, its error, and a transient per-field "Saved" flash.
+  const [editingField, setEditingField] = useState<string | null>(null)
+  const [fieldSaving, setFieldSaving] = useState(false)
+  const [fieldError, setFieldError] = useState('')
+  const [savedFlash, setSavedFlash] = useState<string | null>(null)
+  const flash = (field: string) => {
+    setSavedFlash(field)
+    window.setTimeout(
+      () => setSavedFlash((cur) => (cur === field ? null : cur)),
+      2000,
+    )
+  }
+  const errMsg = (err: unknown, fallback: string) =>
+    err instanceof Error && err.message
+      ? err.message
+      : typeof err === 'string' && err.trim()
+        ? err
+        : fallback
+
+  const parseTags = (v: string) =>
+    v
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean)
+
+  /** Persist a patch on top of the stored plan (edit mode only). */
+  const persist = async (patch: Partial<main.PlannedStream>) => {
+    if (!savedPlan) return
+    const stored = await SavePlannedStream(
+      main.PlannedStream.createFrom({
+        id: savedPlan.id,
+        title: savedPlan.title,
+        description: savedPlan.description,
+        channels: savedPlan.channels ?? [],
+        seriesId: savedPlan.seriesId,
+        episodeNumber: savedPlan.episodeNumber,
+        tags: savedPlan.tags ?? [],
+        thumbnailFile: savedPlan.thumbnailFile ?? '',
+        createdAt: savedPlan.createdAt,
+        ...patch,
+      }),
+    )
+    setSavedPlan(stored)
+    return stored
+  }
+
+  const openField = (field: string) => {
+    setEditingField(field)
+    setFieldError('')
+  }
+  const closeField = () => {
+    setEditingField(null)
+    setFieldError('')
+  }
+  /** Save one field's patch, close its editor, and flash confirmation. */
+  const saveField = async (field: string, patch: Partial<main.PlannedStream>) => {
+    setFieldSaving(true)
+    setFieldError('')
+    try {
+      await persist(patch)
+      closeField()
+      flash(field)
+    } catch (err) {
+      setFieldError(errMsg(err, 'Could not save the change.'))
+    } finally {
+      setFieldSaving(false)
+    }
+  }
+
+  // Reflect (and in edit mode persist) a thumbnail change from the editor.
+  const applyThumb = async (t: {file: string; url: string}) => {
+    setThumbFile(t.file)
+    setThumbUrl(t.url)
+    if (savedPlan) {
+      await persist({thumbnailFile: t.file})
+      flash('thumb')
+    }
+  }
+
+  // Resetting forgets the plan was ever broadcast: sessions and the go-live
+  // assignments go away, the plan stays for a future stream.
+  const resetStream = async () => {
+    if (!savedPlan) return
+    setResetting(true)
+    setError('')
+    try {
+      await ResetPlannedStream(savedPlan.id)
+      setSession(null)
+      setConfirmReset(false)
+    } catch (err) {
+      setError(errMsg(err, 'Could not reset the broadcast.'))
+    } finally {
+      setResetting(false)
+    }
+  }
+
   // The configured "🔴 LIVE: " marker YouTube titles carry.
   const [ytPrefix, setYtPrefix] = useState(DEFAULT_YOUTUBE_LIVE_PREFIX)
   useEffect(() => {
@@ -117,8 +281,10 @@ export function PlanStream({
         setUsedEpisodes(list)
         // An edited plan keeps its own number while it stays on its series;
         // a new plan (or a series switch) prefills the next in sequence.
-        if (plan && seriesId === plan.seriesId) {
-          setEpisode(plan.episodeNumber ? String(plan.episodeNumber) : '')
+        if (savedPlan && seriesId === savedPlan.seriesId) {
+          setEpisode(
+            savedPlan.episodeNumber ? String(savedPlan.episodeNumber) : '',
+          )
         } else {
           setEpisode(String((list[list.length - 1] ?? 0) + 1))
         }
@@ -127,7 +293,7 @@ export function PlanStream({
     return () => {
       cancelled = true
     }
-  }, [episodicPlan, seriesId, plan])
+  }, [episodicPlan, seriesId, savedPlan])
 
   const episodeNum = Number(episode)
   const episodeValid =
@@ -137,15 +303,28 @@ export function PlanStream({
     episodicPlan &&
     episodeValid &&
     usedEpisodes.includes(episodeNum) &&
-    !(plan && plan.seriesId === seriesId && plan.episodeNumber === episodeNum)
+    !(
+      savedPlan &&
+      savedPlan.seriesId === seriesId &&
+      savedPlan.episodeNumber === episodeNum
+    )
 
-  const toggle = (id: string) =>
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+  // Channel toggles apply (and, in edit mode, save) immediately — no edit
+  // state needed for what is already a single click.
+  const toggleChannel = async (id: string) => {
+    const next = new Set(selected)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setSelected(next)
+    if (!savedPlan) return
+    try {
+      await persist({channels: [...next]})
+      flash('channels')
+    } catch (err) {
+      setSelected(new Set(savedPlan.channels ?? []))
+      setError(errMsg(err, 'Could not save the channel selection.'))
+    }
+  }
 
   const save = async () => {
     if (!title.trim()) {
@@ -182,6 +361,7 @@ export function PlanStream({
             .split(',')
             .map((t) => t.trim())
             .filter(Boolean),
+          thumbnailFile: thumbFile,
           createdAt: plan?.createdAt ?? '',
         }),
       )
@@ -208,11 +388,11 @@ export function PlanStream({
         Back to Planning
       </button>
 
-      <div className="max-w-2xl">
+      <div className="max-w-4xl">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-fg-muted">
-            {plan
-              ? 'Review and adjust this planned broadcast.'
+            {editMode
+              ? 'Review this planned broadcast — hover a field and choose Edit; changes save as you finish each one.'
               : 'Outline your next broadcast and choose where it goes out.'}
           </p>
           <GeneratePlanButton
@@ -221,10 +401,25 @@ export function PlanStream({
             episodeNumber={episodicPlan && episodeValid ? episodeNum : 0}
             hasDraft={Boolean(description.trim() || tags.trim())}
             onSuggestion={(s) => {
-              if (s.title) setTitle(s.title)
-              if (s.description) setDescription(s.description)
-              if ((s.tags ?? []).length > 0) setTags((s.tags ?? []).join(', '))
+              const nextTitle = s.title || title
+              const nextDescription = s.description || description
+              const nextTags =
+                (s.tags ?? []).length > 0 ? (s.tags ?? []) : parseTags(tags)
+              setTitle(nextTitle)
+              setDescription(nextDescription)
+              setTags(nextTags.join(', '))
               setDescSelection([0, 0])
+              if (savedPlan) {
+                persist({
+                  title: nextTitle.trim(),
+                  description: nextDescription.trim(),
+                  tags: nextTags,
+                })
+                  .then(() => flash('plan'))
+                  .catch((err) =>
+                    setError(errMsg(err, 'Could not save the suggestion.')),
+                  )
+              }
             }}
           />
         </div>
@@ -232,29 +427,115 @@ export function PlanStream({
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            void save()
+            if (!editMode) void save()
           }}
           className="flex flex-col gap-5"
         >
-          <div>
-            <label
-              htmlFor="plan-title"
-              className="mb-1.5 block text-sm font-medium text-fg"
-            >
-              Title
-            </label>
+          {/* Hero: identity (title + series) on the left, thumbnail on the
+              right; the description spans full width below. */}
+          <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_24rem]">
+          <div className="flex flex-col gap-5">
+          {/* The hero echoes the broadcast page: series kicker, the accent
+              episode number, then the title — each editable on hover. */}
+          <EditableField
+            label="Title"
+            editMode={editMode}
+            editing={editingField === 'title'}
+            saved={savedFlash === 'title'}
+            saving={fieldSaving}
+            error={editingField === 'title' ? fieldError : ''}
+            frameless
+            className="order-2"
+            onEdit={() => openField('title')}
+            onCancel={() => {
+              setTitle(savedPlan?.title ?? '')
+              closeField()
+            }}
+            onSave={() => {
+              if (!title.trim()) {
+                setFieldError('Give your stream a title.')
+                return
+              }
+              void saveField('title', {title: title.trim()})
+            }}
+            view={
+              <h1 className="pr-16 text-2xl font-semibold tracking-tight text-fg">
+                {savedPlan?.title}
+              </h1>
+            }
+          >
             <input
               id="plan-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (editMode && e.key === 'Enter') {
+                  e.preventDefault()
+                  if (title.trim()) void saveField('title', {title: title.trim()})
+                }
+              }}
               placeholder="e.g. Building the planner"
               autoFocus
               className="w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
             />
-          </div>
+          </EditableField>
 
           {series.length > 0 && (
-            <div>
+            <EditableField
+              label="Content series"
+              labelExtra="(optional)"
+              editMode={editMode}
+              editing={editingField === 'series'}
+              saved={savedFlash === 'series'}
+              saving={fieldSaving}
+              error={editingField === 'series' ? fieldError : ''}
+              frameless
+              className="order-1"
+              onEdit={() => openField('series')}
+              onCancel={() => {
+                setSeriesId(savedPlan?.seriesId ?? '')
+                closeField()
+              }}
+              onSave={() => {
+                if (episodicPlan && episode.trim() !== '') {
+                  if (!episodeValid) {
+                    setFieldError(
+                      'The episode number must be a whole number of 1 or more.',
+                    )
+                    return
+                  }
+                  if (episodeTaken) {
+                    setFieldError(
+                      `Episode ${episodeNum} is already used in this series — pick another number.`,
+                    )
+                    return
+                  }
+                }
+                void saveField('series', {
+                  seriesId,
+                  episodeNumber:
+                    episodicPlan && episode.trim() !== '' && episodeValid
+                      ? episodeNum
+                      : 0,
+                })
+              }}
+              view={
+                <div className="pr-16">
+                  {activeSeries ? (
+                    <p className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+                      {activeSeries.title}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-fg-muted">No series</p>
+                  )}
+                  {episodicPlan && (savedPlan?.episodeNumber ?? 0) > 0 && (
+                    <p className="mt-1 text-4xl font-bold tracking-tight text-accent">
+                      Episode {savedPlan?.episodeNumber}
+                    </p>
+                  )}
+                </div>
+              }
+            >
               {/* Series and episode share one row; the episode column only
                   appears for episodic series. */}
               <div className="flex flex-wrap gap-4">
@@ -331,7 +612,8 @@ export function PlanStream({
               {activeSeries && (
                 <div className="mt-2 rounded-lg border border-edge bg-surface p-3 text-sm">
                   {(activeSeries.twitchCategory?.id ||
-                    activeSeries.youtubeCategory?.id) && (
+                    activeSeries.youtubeCategory?.id ||
+                    activeSeries.kickCategory?.id) && (
                     <p className="text-xs font-medium text-fg-muted">
                       {[
                         activeSeries.twitchCategory?.id
@@ -339,6 +621,9 @@ export function PlanStream({
                           : '',
                         activeSeries.youtubeCategory?.id
                           ? `YouTube: ${activeSeries.youtubeCategory.name}`
+                          : '',
+                        activeSeries.kickCategory?.id
+                          ? `Kick: ${activeSeries.kickCategory.name}`
                           : '',
                       ]
                         .filter(Boolean)
@@ -369,23 +654,79 @@ export function PlanStream({
                   )}
                 </div>
               )}
-            </div>
+            </EditableField>
           )}
+          </div>
+
+          <EditableField
+            label="Thumbnail"
+            labelExtra="(optional)"
+            editMode={editMode}
+            editing={editingField === 'thumb'}
+            saved={savedFlash === 'thumb'}
+            doneOnly
+            frameless
+            onEdit={() => openField('thumb')}
+            onCancel={closeField}
+            view={
+              thumbUrl ? (
+                <img
+                  src={thumbUrl}
+                  alt="Stream thumbnail"
+                  className="aspect-video w-full rounded-md border border-edge object-cover"
+                />
+              ) : (
+                <p className="flex aspect-video w-full items-center justify-center rounded-md border border-dashed border-edge text-sm text-fg-muted">
+                  No thumbnail yet
+                </p>
+              )
+            }
+          >
+            <PlanThumbnailEditor
+              planTitle={title}
+              planDescription={description}
+              file={thumbFile}
+              url={thumbUrl}
+              history={zipThumbHistory(
+                savedPlan?.thumbnailHistory,
+                savedPlan?.thumbnailHistoryUrls,
+              )}
+              onApply={applyThumb}
+              onOpenFull={() => setThumbOpen(true)}
+            />
+          </EditableField>
+          </div>
 
           <div>
-            <label
-              htmlFor="plan-description"
-              className="mb-1.5 block text-sm font-medium text-fg"
-            >
+            <span className="mb-1.5 flex items-center gap-2 text-sm font-medium text-fg">
               Description{' '}
               <span className="font-normal text-fg-muted">(optional)</span>
-            </label>
+              {savedFlash === 'description' && (
+                <span className="inline-flex items-center gap-1 text-xs font-normal text-fg-muted">
+                  <Check size={12} aria-hidden />
+                  Saved
+                </span>
+              )}
+            </span>
             <MarkdownField
               id="plan-description"
               value={description}
               onChange={setDescription}
               placeholder="What's the plan for this stream?"
               onSelectionChange={(start, end) => setDescSelection([start, end])}
+              onDone={
+                editMode
+                  ? () => {
+                      persist({description: description.trim()})
+                        .then(() => flash('description'))
+                        .catch((err) =>
+                          setError(
+                            errMsg(err, 'Could not save the description.'),
+                          ),
+                        )
+                    }
+                  : undefined
+              }
             />
             <DescriptionAiActions
               description={description}
@@ -393,24 +734,77 @@ export function PlanStream({
               onDescription={(next) => {
                 setDescription(next)
                 setDescSelection([0, 0])
+                if (savedPlan) {
+                  persist({description: next.trim()})
+                    .then(() => flash('description'))
+                    .catch((err) =>
+                      setError(errMsg(err, 'Could not save the description.')),
+                    )
+                }
               }}
             />
           </div>
 
-          <div>
-            <label
-              htmlFor="plan-tags"
-              className="mb-1.5 block text-sm font-medium text-fg"
-            >
-              Tags{' '}
-              <span className="font-normal text-fg-muted">
-                (comma-separated — blank uses the series&apos; tags)
-              </span>
-            </label>
+          <Modal
+            open={thumbOpen}
+            onClose={() => setThumbOpen(false)}
+            title={title.trim() || 'Stream thumbnail'}
+            maxWidthClass="max-w-5xl"
+          >
+            {thumbUrl && (
+              <img
+                src={thumbUrl}
+                alt="Stream thumbnail, full size"
+                className="w-full rounded-lg"
+              />
+            )}
+          </Modal>
+
+          <EditableField
+            label="Tags"
+            labelExtra="(comma-separated — blank uses the series' tags)"
+            editMode={editMode}
+            editing={editingField === 'tags'}
+            saved={savedFlash === 'tags'}
+            saving={fieldSaving}
+            error={editingField === 'tags' ? fieldError : ''}
+            onEdit={() => openField('tags')}
+            onCancel={() => {
+              setTags((savedPlan?.tags ?? []).join(', '))
+              closeField()
+            }}
+            onSave={() => void saveField('tags', {tags: parseTags(tags)})}
+            view={
+              (savedPlan?.tags ?? []).length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 pr-16">
+                  {(savedPlan?.tags ?? []).map((t) => (
+                    <span
+                      key={t}
+                      className="rounded-md bg-surface-hover px-2 py-0.5 text-xs text-fg-muted"
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="pr-16 text-sm text-fg-muted">
+                  {(activeSeries?.tags?.length ?? 0) > 0
+                    ? `Using the series' tags: ${activeSeries!.tags.join(', ')}`
+                    : 'No tags'}
+                </p>
+              )
+            }
+          >
             <input
               id="plan-tags"
               value={tags}
               onChange={(e) => setTags(e.target.value)}
+              onKeyDown={(e) => {
+                if (editMode && e.key === 'Enter') {
+                  e.preventDefault()
+                  void saveField('tags', {tags: parseTags(tags)})
+                }
+              }}
               placeholder={
                 (activeSeries?.tags?.length ?? 0) > 0
                   ? activeSeries!.tags.join(', ')
@@ -418,11 +812,17 @@ export function PlanStream({
               }
               className="w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
             />
-          </div>
+          </EditableField>
 
           <div>
-            <span className="mb-2 block text-sm font-medium text-fg">
+            <span className="mb-2 flex items-center gap-2 text-sm font-medium text-fg">
               Broadcast to
+              {savedFlash === 'channels' && (
+                <span className="inline-flex items-center gap-1 text-xs font-normal text-fg-muted">
+                  <Check size={12} aria-hidden />
+                  Saved
+                </span>
+              )}
             </span>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {BROADCAST_SERVICES.map((svc) => {
@@ -434,7 +834,7 @@ export function PlanStream({
                   <button
                     key={svc.id}
                     type="button"
-                    onClick={() => toggle(svc.id)}
+                    onClick={() => void toggleChannel(svc.id)}
                     disabled={!connected}
                     className={clsx(
                       'flex items-center gap-3 rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50',
@@ -498,7 +898,9 @@ export function PlanStream({
                     const category =
                       svc.id === 'twitch'
                         ? activeSeries?.twitchCategory?.name ?? ''
-                        : activeSeries?.youtubeCategory?.name ?? ''
+                        : svc.id === 'kick'
+                          ? activeSeries?.kickCategory?.name ?? ''
+                          : activeSeries?.youtubeCategory?.name ?? ''
                     // The plan's own tags win; the series' are the fallback.
                     const planTags = tags
                       .split(',')
@@ -521,7 +923,8 @@ export function PlanStream({
                         ? (activeSeries?.twitchLabels ?? []).map(
                             twitchLabelName,
                           )
-                        : activeSeries?.youtubeMadeForKids
+                        : svc.id === 'youtube' &&
+                            activeSeries?.youtubeMadeForKids
                           ? [YOUTUBE_MADE_FOR_KIDS_NAME]
                           : []
                     const Logo = svc.Icon
@@ -567,6 +970,37 @@ export function PlanStream({
                               category, and tags only.
                             </p>
                           )}
+                          {svc.id === 'kick' && (
+                            <p className="mt-0.5 text-xs text-fg-muted/70">
+                              Kick streams carry no description — title and
+                              category only.
+                            </p>
+                          )}
+                          {svc.id === 'facebook' && (
+                            <p className="mt-0.5 text-xs text-fg-muted/70">
+                              Retitles the Page&apos;s live video and posts a
+                              go-live announcement once on the air.
+                            </p>
+                          )}
+                          {svc.id === 'instagram' && (
+                            <p className="mt-0.5 text-xs text-fg-muted/70">
+                              Instagram&apos;s API can&apos;t set live info or
+                              post announcements — share from the app.
+                            </p>
+                          )}
+                          {svc.id === 'x' && (
+                            <p className="mt-0.5 text-xs text-fg-muted/70">
+                              Posts one go-live announcement with your watch
+                              links once the stream is on the air.
+                            </p>
+                          )}
+                          {svc.id === 'tiktok' && (
+                            <p className="mt-0.5 text-xs text-fg-muted/70">
+                              Posts one go-live announcement video (rendered
+                              from the plan thumbnail) once on the air —
+                              private until the TikTok app passes its audit.
+                            </p>
+                          )}
                         </div>
                       </li>
                     )
@@ -584,21 +1018,96 @@ export function PlanStream({
             <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
           )}
 
-          <div className="flex items-center gap-3">
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-lg bg-accent px-5 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              {saving ? 'Saving…' : 'Save plan'}
-            </button>
-            <button
-              type="button"
-              onClick={onBack}
-              className="rounded-lg border border-edge bg-surface px-5 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
-            >
-              Cancel
-            </button>
+          <div className="flex flex-wrap items-center gap-3">
+            {!editMode && (
+              <>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="rounded-lg bg-accent px-5 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+                >
+                  {saving ? 'Creating…' : 'Create plan'}
+                </button>
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="rounded-lg border border-edge bg-surface px-5 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+            {canConclude && (
+              <div className="ml-auto flex items-center gap-2">
+                {confirmConclude ? (
+                  <>
+                    <span className="text-xs text-fg-muted">
+                      Keep its details on the past stream and remove the plan?
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void conclude()}
+                      disabled={concluding}
+                      className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+                    >
+                      {concluding ? 'Concluding…' : 'Confirm conclude'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmConclude(false)}
+                      disabled={concluding}
+                      className="rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+                    >
+                      Keep plan
+                    </button>
+                  </>
+                ) : confirmReset ? (
+                  <>
+                    <span className="text-xs text-fg-muted">
+                      Forget this broadcast and keep the plan for a future
+                      stream?
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void resetStream()}
+                      disabled={resetting}
+                      className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+                    >
+                      {resetting ? 'Resetting…' : 'Confirm reset'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmReset(false)}
+                      disabled={resetting}
+                      className="rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmReset(true)}
+                      title="False start? Forget this broadcast — sessions and go-live assignments are cleared, the plan stays for a future stream."
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                    >
+                      <RotateCcw size={14} aria-hidden />
+                      Reset broadcast
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmConclude(true)}
+                      title="This episode has been broadcast — wrap it up as a past stream."
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-semibold text-fg transition-colors hover:bg-surface-hover"
+                    >
+                      <CheckCircle2 size={14} aria-hidden />
+                      Conclude episode
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </form>
       </div>
@@ -607,12 +1116,158 @@ export function PlanStream({
 }
 
 /**
- * The "Request edits" AI helper under the description field: applies an
- * instruction to the description — scoped to the highlighted section when one
- * is selected, otherwise the whole text. (Generation lives in
- * GeneratePlanButton at the top of the form.)
+ * One field of the plan form. Creating a plan (editMode false) renders the
+ * editor directly — the whole form submits at once. Editing an existing plan
+ * shows a read-only view with a subtle Edit CTA on hover (mirroring
+ * MarkdownField); choosing it swaps in the editor with its own Save/Cancel
+ * (or a single Done for fields whose actions save themselves), so each field
+ * persists independently and the form needs no global Save.
  */
-function DescriptionAiActions({
+function EditableField({
+  label,
+  labelExtra,
+  editMode,
+  editing,
+  saved,
+  saving = false,
+  error = '',
+  doneOnly = false,
+  frameless = false,
+  className,
+  onEdit,
+  onSave,
+  onCancel,
+  view,
+  children,
+}: {
+  label: string
+  labelExtra?: string
+  editMode: boolean
+  editing: boolean
+  /** Show the transient "Saved" confirmation next to the label. */
+  saved: boolean
+  saving?: boolean
+  error?: string
+  /** The field saves itself (e.g. thumbnail actions): show only Done. */
+  doneOnly?: boolean
+  /** Hero styling: the view renders bare (no label row, border, or padding)
+   *  with the Edit CTA overlaid — the view's own typography is the label. */
+  frameless?: boolean
+  className?: string
+  onEdit: () => void
+  onSave?: () => void
+  onCancel: () => void
+  /** Read-only rendering of the stored value. */
+  view: ReactNode
+  /** The editor controls. */
+  children: ReactNode
+}) {
+  const heading = (
+    <span className="mb-1.5 flex items-center gap-2 text-sm font-medium text-fg">
+      {label}
+      {labelExtra && (
+        <span className="font-normal text-fg-muted">{labelExtra}</span>
+      )}
+      {saved && !frameless && (
+        <span className="inline-flex items-center gap-1 text-xs font-normal text-fg-muted">
+          <Check size={12} aria-hidden />
+          Saved
+        </span>
+      )}
+    </span>
+  )
+
+  if (!editMode) {
+    return (
+      <div className={className}>
+        {heading}
+        {children}
+      </div>
+    )
+  }
+
+  if (!editing) {
+    return (
+      <div className={className}>
+        {!frameless && heading}
+        <div
+          className={clsx(
+            'group relative rounded-lg',
+            !frameless && 'border border-edge bg-bg px-3 py-2.5',
+          )}
+        >
+          {view}
+          <div className="absolute right-2 top-2 flex items-center gap-1.5">
+            {saved && frameless && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-surface px-2 py-1 text-xs font-medium text-fg-muted shadow-sm">
+                <Check size={12} aria-hidden />
+                Saved
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={onEdit}
+              title={`Edit ${label.toLowerCase()}`}
+              className="inline-flex items-center gap-1 rounded-md border border-edge bg-surface px-2 py-1 text-xs font-medium text-fg-muted opacity-0 shadow-sm transition-opacity focus-visible:opacity-100 group-hover:opacity-100 hover:bg-surface-hover hover:text-fg"
+            >
+              <Pencil size={12} aria-hidden />
+              Edit
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className={className}>
+      {heading}
+      {children}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {doneOnly ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex items-center gap-1 rounded-lg border border-edge px-3 py-1.5 text-xs font-semibold text-fg transition-colors hover:bg-surface-hover"
+          >
+            <Check size={12} aria-hidden />
+            Done
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={saving}
+              className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={saving}
+              className="rounded-lg border border-edge px-3 py-1.5 text-xs font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </>
+        )}
+        {error && (
+          <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The "Request edits" AI helper under a description field: applies an
+ * instruction to the description — scoped to the highlighted section when one
+ * is selected, otherwise the whole text. Shared with the video-plan form.
+ * (Whole-plan generation lives in GeneratePlanButton at the top of the form.)
+ */
+export function DescriptionAiActions({
   description,
   selection,
   onDescription,
@@ -623,7 +1278,9 @@ function DescriptionAiActions({
   onDescription: (next: string) => void
 }) {
   const {statuses} = useServices()
-  const aiConnected = statuses['anthropic']?.connected ?? false
+  const aiConnected =
+    (statuses['anthropic']?.connected ?? false) ||
+    (statuses['openai']?.connected ?? false)
 
   const [editOpen, setEditOpen] = useState(false)
   const [instruction, setInstruction] = useState('')
@@ -782,7 +1439,9 @@ function GeneratePlanButton({
   onSuggestion: (s: main.PlanSuggestion) => void
 }) {
   const {statuses} = useServices()
-  const aiConnected = statuses['anthropic']?.connected ?? false
+  const aiConnected =
+    (statuses['anthropic']?.connected ?? false) ||
+    (statuses['openai']?.connected ?? false)
 
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)

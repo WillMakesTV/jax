@@ -58,6 +58,15 @@ func (a *App) GetChatUserInfo(platform, id, login string) (ChatUserInfo, error) 
 		if platform == "youtube" {
 			return fetchYouTubeChatUser(conn, id)
 		}
+		if platform == "kick" {
+			return fetchKickChatUser(login)
+		}
+		if platform == "facebook" {
+			return fetchFacebookChatUser(conn, id)
+		}
+		if platform == "instagram" {
+			return fetchInstagramChatUser(conn, login)
+		}
 		return ChatUserInfo{}, fmt.Errorf("unknown platform %q", platform)
 	}
 

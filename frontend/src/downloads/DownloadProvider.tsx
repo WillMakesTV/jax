@@ -13,11 +13,15 @@ export type DownloadState = 'idle' | 'running' | 'done' | 'error'
 interface DownloadStatus {
   state: DownloadState
   detail: string
+  /** startedAt of the past stream being downloaded ('' when unknown), so the
+   *  status-bar chip can route back to that stream. */
+  startedAt: string
 }
 
 interface DownloadContextValue extends DownloadStatus {
-  /** Optimistically mark a download as starting (before the first event). */
-  markStarting: () => void
+  /** Optimistically mark a download as starting (before the first event),
+   *  recording which past stream (by startedAt) it belongs to. */
+  markStarting: (startedAt: string) => void
   /** Report a synchronous start failure (StartDownload threw). */
   markError: (detail: string) => void
 }
@@ -25,6 +29,7 @@ interface DownloadContextValue extends DownloadStatus {
 const DownloadContext = createContext<DownloadContextValue>({
   state: 'idle',
   detail: '',
+  startedAt: '',
   markStarting: () => {},
   markError: () => {},
 })
@@ -41,13 +46,14 @@ export function DownloadProvider({children}: {children: ReactNode}) {
   const [status, setStatus] = useState<DownloadStatus>({
     state: 'idle',
     detail: '',
+    startedAt: '',
   })
   const clearTimer = useRef<number | undefined>(undefined)
 
   const scheduleClear = () => {
     window.clearTimeout(clearTimer.current)
     clearTimer.current = window.setTimeout(
-      () => setStatus({state: 'idle', detail: ''}),
+      () => setStatus({state: 'idle', detail: '', startedAt: ''}),
       CLEAR_MS,
     )
   }
@@ -67,28 +73,34 @@ export function DownloadProvider({children}: {children: ReactNode}) {
         return
       }
       window.clearTimeout(clearTimer.current)
+      // Progress events keep the startedAt recorded when the download began.
       if (m.error) {
-        setStatus({state: 'error', detail: m.error})
+        setStatus((s) => ({...s, state: 'error', detail: m.error ?? ''}))
         scheduleClear()
       } else if (m.status === 'downloading') {
-        setStatus({
+        setStatus((s) => ({
+          ...s,
           state: 'running',
           detail:
             (m.total ?? 1) > 1
               ? `Downloading video ${m.part}/${m.total} — ${m.percent ?? 0}%`
               : `Downloading — ${m.percent ?? 0}%`,
-        })
+        }))
       } else if (m.status === 'stitching') {
-        setStatus({state: 'running', detail: 'Stitching videos together…'})
+        setStatus((s) => ({
+          ...s,
+          state: 'running',
+          detail: 'Stitching videos together…',
+        }))
       } else if (m.status === 'start') {
-        setStatus({state: 'running', detail: 'Starting…'})
+        setStatus((s) => ({...s, state: 'running', detail: 'Starting…'}))
       }
     })
     const offExit = EventsOn('download:exit', (d: string) => {
-      setStatus(
+      setStatus((s) =>
         d
-          ? {state: 'error', detail: d}
-          : {state: 'done', detail: 'Saved to your download folder.'},
+          ? {...s, state: 'error', detail: d}
+          : {...s, state: 'done', detail: 'Saved to your download folder.'},
       )
       scheduleClear()
     })
@@ -99,13 +111,13 @@ export function DownloadProvider({children}: {children: ReactNode}) {
     }
   }, [])
 
-  const markStarting = () => {
+  const markStarting = (startedAt: string) => {
     window.clearTimeout(clearTimer.current)
-    setStatus({state: 'running', detail: 'Starting…'})
+    setStatus({state: 'running', detail: 'Starting…', startedAt})
   }
 
   const markError = (detail: string) => {
-    setStatus({state: 'error', detail})
+    setStatus((s) => ({...s, state: 'error', detail}))
     scheduleClear()
   }
 

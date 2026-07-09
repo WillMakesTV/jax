@@ -11,6 +11,7 @@ import {ChatProvider} from './chat/ChatProvider'
 import {TranscriptProvider} from './transcript/TranscriptProvider'
 import {VodTranscribeProvider} from './transcript/VodTranscribeProvider'
 import {DownloadProvider} from './downloads/DownloadProvider'
+import {OutlineProvider} from './outline/OutlineProvider'
 
 const container = document.getElementById('root')
 
@@ -27,7 +28,9 @@ root.render(
                                 <TranscriptProvider>
                                     <DownloadProvider>
                                         <VodTranscribeProvider>
-                                            <App/>
+                                            <OutlineProvider>
+                                                <App/>
+                                            </OutlineProvider>
                                         </VodTranscribeProvider>
                                     </DownloadProvider>
                                 </TranscriptProvider>

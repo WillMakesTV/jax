@@ -10,6 +10,9 @@ import {
 } from 'react'
 import {
   GetChatHistory,
+  GetFacebookLiveChat,
+  GetInstagramLiveChat,
+  GetKickChatIDs,
   GetYouTubeLiveChat,
   MarkAllChatRead,
   SaveChatMessages,
@@ -18,12 +21,13 @@ import {
 import {main} from '../../wailsjs/go/models'
 import {useEvents} from '../events/EventsProvider'
 import {useLiveData} from '../live/LiveDataProvider'
+import {connectKickChat} from '../lib/kickChat'
 import {connectTwitchChat} from '../lib/twitchChat'
 
 /** One chat message, normalised across platforms. */
 export interface ChatItem {
   id: string
-  platform: string // 'twitch' | 'youtube' | 'broadcast' (sent from the app)
+  platform: string // 'twitch' | 'youtube' | 'kick' | 'broadcast' (sent from the app)
   author: string
   /** Platform user/channel id of the author; '' when unknown. */
   authorId: string
@@ -199,6 +203,32 @@ export function ChatProvider({children}: {children: ReactNode}) {
     )
   }, [twitchLogin, append])
 
+  // Kick: the public Pusher socket while the channel is live — chat messages
+  // plus live events (follows, subs, gifted subs, hosts). The subscription
+  // ids come from the backend (only kick.com's site API has them).
+  const kickLive = platforms.some((p) => p.platform === 'kick' && p.live)
+  useEffect(() => {
+    if (!kickLive) return
+    let cancelled = false
+    let cleanup: (() => void) | undefined
+    GetKickChatIDs()
+      .then((ids) => {
+        if (cancelled || !ids?.chatroomId) return
+        cleanup = connectKickChat(
+          ids,
+          (m) => append([{...m, platform: 'kick', avatarUrl: '', read: false}]),
+          (e) => pushEvents([{...e, platform: 'kick'}]),
+        )
+      })
+      .catch(() => {
+        // Chatroom unresolvable (Cloudflare block, offline); chat stays quiet.
+      })
+    return () => {
+      cancelled = true
+      cleanup?.()
+    }
+  }, [kickLive, append, pushEvents])
+
   // YouTube: poll the live chat through the backend while broadcasting. The
   // first (token-less) page includes recent history.
   const youtubeLive = platforms.some((p) => p.platform === 'youtube' && p.live)
@@ -267,6 +297,25 @@ export function ChatProvider({children}: {children: ReactNode}) {
     }
   }, [youtubeLive, append, pushEvents])
 
+  // Meta platforms: comments are polled through the backend while live. The
+  // polls return the latest page each time; the provider's dedupe (seenKeys)
+  // absorbs the overlap, and the first page counts as read history.
+  const facebookLive = platforms.some(
+    (p) => p.platform === 'facebook' && p.live,
+  )
+  useEffect(
+    () => (facebookLive ? pollMetaChat(GetFacebookLiveChat, append) : undefined),
+    [facebookLive, append],
+  )
+  const instagramLive = platforms.some(
+    (p) => p.platform === 'instagram' && p.live,
+  )
+  useEffect(
+    () =>
+      instagramLive ? pollMetaChat(GetInstagramLiveChat, append) : undefined,
+    [instagramLive, append],
+  )
+
   const sendBroadcast = useCallback(
     async (text: string) => {
       const trimmed = text.trim()
@@ -313,7 +362,12 @@ export function ChatProvider({children}: {children: ReactNode}) {
     [append],
   )
 
-  const active = Boolean(twitchLogin) || youtubeLive
+  const active =
+    Boolean(twitchLogin) ||
+    youtubeLive ||
+    kickLive ||
+    facebookLive ||
+    instagramLive
   const unreadCount = useMemo(
     () => messages.reduce((n, m) => n + (m.read ? 0 : 1), 0),
     [messages],
@@ -324,6 +378,62 @@ export function ChatProvider({children}: {children: ReactNode}) {
   )
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
+}
+
+/**
+ * Poll one Meta platform's live comments until cleaned up. Each poll returns
+ * the newest page; the provider's identity dedupe absorbs the overlap. The
+ * first page is treated as history (read), later pages as fresh messages.
+ */
+function pollMetaChat(
+  fetchPage: () => Promise<main.LiveChatPage>,
+  append: (items: ChatItem[]) => void,
+): () => void {
+  let cancelled = false
+  let timer: number | undefined
+  let first = true
+
+  const tick = async () => {
+    try {
+      const page = await fetchPage()
+      if (cancelled) return
+      if (page.live) {
+        const isHistoryPage = first
+        first = false
+        append(
+          (page.messages ?? []).map((m) => ({
+            id: m.id,
+            platform: m.platform,
+            author: m.author,
+            authorId: m.authorId,
+            // Instagram identifies chatters by username; the user popup
+            // looks profiles up by it.
+            authorLogin:
+              m.platform === 'instagram' ? m.author.replace(/^@/, '') : '',
+            avatarUrl: m.avatarUrl,
+            badges: m.badges ?? [],
+            text: m.text,
+            color: '',
+            at: Date.parse(m.publishedAt) || Date.now(),
+            read: isHistoryPage,
+          })),
+        )
+      }
+      timer = window.setTimeout(
+        () => void tick(),
+        Math.max(page.pollIntervalMs || 10_000, 10_000),
+      )
+    } catch {
+      if (!cancelled) {
+        timer = window.setTimeout(() => void tick(), 15_000)
+      }
+    }
+  }
+  void tick()
+  return () => {
+    cancelled = true
+    window.clearTimeout(timer)
+  }
 }
 
 export function useChat(): ChatContextValue {

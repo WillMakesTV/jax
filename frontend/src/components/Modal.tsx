@@ -29,12 +29,24 @@ export function Modal({
   const dialogRef = useRef<HTMLDivElement>(null)
   const previouslyFocused = useRef<HTMLElement | null>(null)
 
+  // The latest onClose, readable from the open-lifecycle effect without
+  // retriggering it. Callers pass inline closures whose identity changes on
+  // every parent render (and pages re-render constantly — polling contexts,
+  // typing into fields whose state lives in the parent). Depending on
+  // onClose made the effect tear down and re-run on each of those renders,
+  // and its dialogRef.focus() stole the caret from whatever field was being
+  // typed in.
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onCloseRef.current = onClose
+  })
+
   useEffect(() => {
     if (!open) return
     previouslyFocused.current = document.activeElement as HTMLElement | null
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') onCloseRef.current()
     }
     document.addEventListener('keydown', onKeyDown)
 
@@ -50,7 +62,7 @@ export function Modal({
       document.body.style.overflow = prevOverflow
       previouslyFocused.current?.focus?.()
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) return null
 

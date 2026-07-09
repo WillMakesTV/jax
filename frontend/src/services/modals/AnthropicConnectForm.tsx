@@ -15,6 +15,7 @@ import {
   ConnectAnthropicAccount,
 } from '../../../wailsjs/go/main/App'
 import {useServices} from '../ServicesProvider'
+import {ClaudeMCPSection} from './ClaudeMCPSection'
 import {ConnectedPanel, Field, fieldInputClass} from './shared'
 
 /**
@@ -32,11 +33,15 @@ export function AnthropicConnectForm() {
 
   if (status.connected) {
     return (
-      <ConnectedPanel
-        label="Connected as"
-        account={status.account}
-        onDisconnect={() => disconnect('anthropic')}
-      />
+      <div className="space-y-4">
+        <ConnectedPanel
+          label="Connected as"
+          account={status.account}
+          masked
+          onDisconnect={() => disconnect('anthropic')}
+        />
+        <ClaudeMCPSection />
+      </div>
     )
   }
 
@@ -70,23 +75,15 @@ export function AnthropicConnectForm() {
     <div className="space-y-5">
       <div>
         <p className="text-sm text-fg-muted">
-          Sign in with your Claude account — Pro, Max, Team, and Enterprise
-          plans all work. Your default browser opens to approve access.
+          Use your Claude account — Pro, Max, Team, and Enterprise plans all
+          work. AI features run through Claude Code on your subscription: no
+          API workspace, no per-token billing.
         </p>
         <p className="mt-1.5 text-xs text-fg-muted">
-          Sign-in is brokered by Anthropic's CLI (
-          <span className="font-mono">ant</span>) — Anthropic doesn't allow
-          apps to run it directly. If the CLI isn't installed yet, it is
-          installed automatically first (
-          <a
-            href="https://platform.claude.com/docs/en/cli-sdks-libraries/cli/quickstart"
-            target="_blank"
-            rel="noreferrer"
-            className="text-accent underline"
-          >
-            via Go
-          </a>
-          ), so the first sign-in can take a minute or two.
+          Anthropic only permits subscription sign-in inside Claude Code, so
+          this links the account Claude Code on this computer is signed in
+          with. Not signed in yet? A terminal opens — run{' '}
+          <span className="font-mono">/login</span> there, then retry.
         </p>
         <button
           type="button"
@@ -96,16 +93,9 @@ export function AnthropicConnectForm() {
         >
           <Sparkles size={15} aria-hidden />
           {busy === 'account'
-            ? 'Waiting for the browser sign-in…'
-            : 'Sign in with Claude (recommended)'}
+            ? 'Linking your Claude account…'
+            : 'Use my Claude account (recommended)'}
         </button>
-        {busy === 'account' && (
-          <p className="mt-2 text-xs text-fg-muted">
-            Complete the sign-in in your browser — this dialog updates when
-            it's done. (A first-time CLI install happens before the browser
-            opens and can take a minute.)
-          </p>
-        )}
       </div>
 
       <div className="flex items-center gap-3 text-xs uppercase tracking-wide text-fg-muted">

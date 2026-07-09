@@ -18,7 +18,7 @@ import {formatCompact, formatDate, formatNumber, formatUptime} from '../lib/form
 import {platformName} from '../services/services'
 
 interface ChannelDetailsProps {
-  /** The connected platform whose channel to show ('twitch' | 'youtube'). */
+  /** The connected platform whose channel to show ('twitch' | 'youtube' | 'kick'). */
   platform: string
   onBack: () => void
   /** Open one of the channel's videos in the video details view. */
@@ -108,14 +108,14 @@ export function ChannelDetails({
       )}
 
       {/* Channel analytics from the live poll's detail list. */}
-      {stream.details.length > 0 && (
+      {(stream.details ?? []).length > 0 && (
         <section aria-label="Analytics" className="mb-8">
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-fg-muted">
             <BarChart3 size={16} aria-hidden />
             Channel analytics
           </h2>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-            {stream.details.map((d) => (
+            {(stream.details ?? []).map((d) => (
               <div
                 key={d.label}
                 className="rounded-xl border border-edge bg-surface p-4"

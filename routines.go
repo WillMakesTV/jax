@@ -36,11 +36,13 @@ const (
 // and steps parsed out of a Stream Deck Multi Action.
 type RoutineStep struct {
 	// Kind: "obs-scene" | "obs-source" | "obs-mute" | "obs-stream" |
-	// "obs-record" | "delay" | "update-smart-sources" | "apply-stream-info" |
-	// "streamdeck" | "unsupported". ("update-smart-sources" pushes the on-air
-	// planned stream's episode info to its series' mapped OBS text sources;
-	// "apply-stream-info" pushes its title/description to Twitch and YouTube
-	// via ApplyStreamInfo — see frontend obs/routines.ts.)
+	// "obs-record" | "delay" | "hotkey" | "update-smart-sources" |
+	// "apply-stream-info" | "streamdeck" | "unsupported".
+	// ("update-smart-sources" pushes the on-air planned stream's episode info
+	// to its series' mapped OBS text sources; "apply-stream-info" pushes its
+	// title/description to Twitch and YouTube via ApplyStreamInfo; "hotkey"
+	// synthesizes a keyboard shortcut via PressHotkey — see frontend
+	// obs/routines.ts.)
 	Kind string `json:"kind"`
 	// Scene name (obs-scene: the scene to switch to; obs-source: the scene
 	// holding the item).
@@ -56,6 +58,14 @@ type RoutineStep struct {
 	Mode string `json:"mode,omitempty"`
 	// DelayMs of a delay step.
 	DelayMs int `json:"delayMs,omitempty"`
+	// Hotkey (kind "hotkey", parsed from a Stream Deck Hotkey button): the
+	// Windows virtual-key code to press plus its modifiers. Description
+	// carries the human-readable combo (e.g. "Ctrl+Shift+Q").
+	VKey  int  `json:"vkey,omitempty"`
+	Ctrl  bool `json:"ctrl,omitempty"`
+	Shift bool `json:"shift,omitempty"`
+	Alt   bool `json:"alt,omitempty"`
+	Win   bool `json:"win,omitempty"`
 	// StreamdeckActionID references a Stream Deck Multi Action whose steps
 	// are replayed in place of this step at run time (kind "streamdeck");
 	// Description carries its title for display when the deck is unavailable.

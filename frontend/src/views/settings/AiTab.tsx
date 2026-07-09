@@ -7,7 +7,7 @@ export function AiTab() {
     <>
       <p className="mb-4 max-w-2xl text-sm text-fg-muted">
         Connect the AI services that power assistant features. Signing in with
-        your Claude account is recommended; an API key also works.
+        your Claude or ChatGPT account is recommended; an API key also works.
       </p>
 
       <ServiceCardGrid

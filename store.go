@@ -23,6 +23,9 @@ const (
 	// keyYouTubeLivePrefix holds the "🔴 LIVE: "-style prefix for YouTube
 	// broadcast titles; shared with the frontend's SETTING_KEYS.
 	keyYouTubeLivePrefix = "youtube_live_prefix"
+	// keyAppSkillOverrides holds the id → markdown map of user-edited
+	// Application Skills; ids absent from the map use the embedded default.
+	keyAppSkillOverrides = "app_skill_overrides"
 )
 
 // Store wraps the SQLite database that persists all app data. The database
@@ -153,6 +156,11 @@ CREATE TABLE IF NOT EXISTS stream_sessions (
 	started_at TEXT NOT NULL,
 	ended_at   TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS local_broadcasts (
+	broadcast_key TEXT PRIMARY KEY,
+	subfolder     TEXT NOT NULL,
+	data          TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS chat_messages (
 	platform     TEXT NOT NULL,
 	id           TEXT NOT NULL,
@@ -167,7 +175,18 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 	read         INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (platform, id)
 );
-CREATE INDEX IF NOT EXISTS idx_chat_messages_at ON chat_messages(at);`
+CREATE INDEX IF NOT EXISTS idx_chat_messages_at ON chat_messages(at);
+CREATE TABLE IF NOT EXISTS live_events (
+	platform TEXT NOT NULL,
+	id       TEXT NOT NULL,
+	type     TEXT NOT NULL DEFAULT '',
+	author   TEXT NOT NULL DEFAULT '',
+	detail   TEXT NOT NULL DEFAULT '',
+	at       INTEGER NOT NULL,
+	read     INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (platform, id)
+);
+CREATE INDEX IF NOT EXISTS idx_live_events_at ON live_events(at);`
 	_, err := s.db.Exec(schema)
 	return err
 }
@@ -462,6 +481,62 @@ func (s *Store) groupBroadcasts(keys []string) error {
 // time-based aggregation.
 func (s *Store) ungroupBroadcasts(groupID int64) error {
 	_, err := s.db.Exec(`DELETE FROM stream_groups WHERE group_id = ?`, groupID)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// Local broadcast snapshots
+//
+// Platforms eventually remove past broadcasts (Twitch expires archive VODs),
+// but a downloaded copy should keep its past stream listed forever. While a
+// downloaded broadcast is still listed by its platform, its PastBroadcast is
+// snapshotted here (keyed by the same "platform|url" identity every other
+// per-broadcast assignment uses); once the platform drops it, the snapshot is
+// replayed as a local-only broadcast (see local.go).
+// ---------------------------------------------------------------------------
+
+// localBroadcastRow is one stored snapshot: the download subfolder holding the
+// video plus the broadcast's PastBroadcast JSON.
+type localBroadcastRow struct {
+	subfolder string
+	data      string
+}
+
+// getLocalBroadcasts returns every snapshot, keyed by broadcast key.
+func (s *Store) getLocalBroadcasts() (map[string]localBroadcastRow, error) {
+	rows, err := s.db.Query(`SELECT broadcast_key, subfolder, data FROM local_broadcasts`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]localBroadcastRow{}
+	for rows.Next() {
+		var key string
+		var row localBroadcastRow
+		if err := rows.Scan(&key, &row.subfolder, &row.data); err != nil {
+			return nil, err
+		}
+		out[key] = row
+	}
+	return out, rows.Err()
+}
+
+// upsertLocalBroadcast stores (or refreshes) one broadcast snapshot.
+func (s *Store) upsertLocalBroadcast(key, subfolder, data string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO local_broadcasts (broadcast_key, subfolder, data) VALUES (?, ?, ?)
+		 ON CONFLICT(broadcast_key) DO UPDATE SET
+			subfolder = excluded.subfolder, data = excluded.data`,
+		key, subfolder, data,
+	)
+	return err
+}
+
+// deleteLocalBroadcastsBySubfolder drops every snapshot backed by a download
+// subfolder (the download was deleted).
+func (s *Store) deleteLocalBroadcastsBySubfolder(subfolder string) error {
+	_, err := s.db.Exec(`DELETE FROM local_broadcasts WHERE subfolder = ?`, subfolder)
 	return err
 }
 
@@ -861,6 +936,72 @@ func (s *Store) endOpenStreamSessions(endedAt string) error {
 	return err
 }
 
+// latestSessionForPlan returns the newest session opened for a plan, ok false
+// when the plan has never gone live.
+func (s *Store) latestSessionForPlan(planID string) (startedAt, endedAt string, ok bool, err error) {
+	err = s.db.QueryRow(
+		`SELECT started_at, ended_at FROM stream_sessions
+		 WHERE plan_id = ? ORDER BY id DESC LIMIT 1`, planID,
+	).Scan(&startedAt, &endedAt)
+	if err == sql.ErrNoRows {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, err
+	}
+	return startedAt, endedAt, true, nil
+}
+
+// deletePlanSessions removes every stream session opened for a plan and
+// returns the deleted sessions' start times so the caller can unwind what
+// each go-live registered.
+func (s *Store) deletePlanSessions(planID string) ([]string, error) {
+	rows, err := s.db.Query(
+		`SELECT started_at FROM stream_sessions WHERE plan_id = ?`, planID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var starts []string
+	for rows.Next() {
+		var at string
+		if err := rows.Scan(&at); err != nil {
+			return nil, err
+		}
+		starts = append(starts, at)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	_, err = s.db.Exec(`DELETE FROM stream_sessions WHERE plan_id = ?`, planID)
+	return starts, err
+}
+
+// planSessions returns each plan's newest [started_at, ended_at] session
+// window, keyed by plan id.
+func (s *Store) planSessions() (map[string][2]string, error) {
+	rows, err := s.db.Query(
+		`SELECT plan_id, started_at, ended_at FROM stream_sessions
+		 WHERE plan_id != '' ORDER BY id ASC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string][2]string{}
+	for rows.Next() {
+		var id string
+		var w [2]string
+		if err := rows.Scan(&id, &w[0], &w[1]); err != nil {
+			return nil, err
+		}
+		out[id] = w // ascending scan: the last row per plan wins
+	}
+	return out, rows.Err()
+}
+
 // streamSessionWindows returns every session's [started_at, ended_at] pair
 // (ended_at is "" while the session is open).
 func (s *Store) streamSessionWindows() ([][2]string, error) {
@@ -917,6 +1058,151 @@ func (s *Store) getChatHistory(limit int) ([]StoredChatMessage, error) {
 // markAllChatRead flips every stored message to read.
 func (s *Store) markAllChatRead() error {
 	_, err := s.db.Exec(`UPDATE chat_messages SET read = 1 WHERE read = 0`)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// Live-events log
+//
+// Every channel event the app sees (follows, subs, cheers, raids, members,
+// Super Chats, new YouTube subscribers) is kept locally — one unified list
+// across all streaming destinations — so the feed survives restarts. Unlike
+// chat there is no rolling cap: events are rare and small, so all are kept.
+// ---------------------------------------------------------------------------
+
+// saveLiveEvents inserts events not yet stored (existing platform+id rows are
+// left untouched, preserving their read state) and returns the ones that were
+// actually new. Never returns nil.
+func (s *Store) saveLiveEvents(items []StoredLiveEvent) ([]StoredLiveEvent, error) {
+	fresh := []StoredLiveEvent{}
+	if len(items) == 0 {
+		return fresh, nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fresh, err
+	}
+	defer tx.Rollback()
+
+	for _, e := range items {
+		res, err := tx.Exec(
+			`INSERT INTO live_events (platform, id, type, author, detail, at, read)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(platform, id) DO NOTHING`,
+			e.Platform, e.ID, e.Type, e.Author, e.Detail, e.At, boolToInt(e.Read),
+		)
+		if err != nil {
+			return fresh, err
+		}
+		if n, err := res.RowsAffected(); err == nil && n > 0 {
+			fresh = append(fresh, e)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fresh, err
+	}
+	return fresh, nil
+}
+
+// getLiveEventHistory returns the newest limit events in chronological order.
+func (s *Store) getLiveEventHistory(limit int) ([]StoredLiveEvent, error) {
+	rows, err := s.db.Query(
+		`SELECT platform, id, type, author, detail, at, read
+		 FROM (
+			SELECT * FROM live_events ORDER BY at DESC LIMIT ?
+		 ) ORDER BY at ASC`, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	events := []StoredLiveEvent{}
+	for rows.Next() {
+		var e StoredLiveEvent
+		var read int
+		if err := rows.Scan(
+			&e.Platform, &e.ID, &e.Type, &e.Author, &e.Detail, &e.At, &read,
+		); err != nil {
+			return nil, err
+		}
+		e.Read = read != 0
+		events = append(events, e)
+	}
+	return events, rows.Err()
+}
+
+// getLiveEventsBefore returns the newest limit events strictly older than
+// before (unix millis), in chronological order — one page of the feed's
+// lazy-loaded history.
+func (s *Store) getLiveEventsBefore(before int64, limit int) ([]StoredLiveEvent, error) {
+	rows, err := s.db.Query(
+		`SELECT platform, id, type, author, detail, at, read
+		 FROM (
+			SELECT * FROM live_events WHERE at < ? ORDER BY at DESC LIMIT ?
+		 ) ORDER BY at ASC`, before, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	events := []StoredLiveEvent{}
+	for rows.Next() {
+		var e StoredLiveEvent
+		var read int
+		if err := rows.Scan(
+			&e.Platform, &e.ID, &e.Type, &e.Author, &e.Detail, &e.At, &read,
+		); err != nil {
+			return nil, err
+		}
+		e.Read = read != 0
+		events = append(events, e)
+	}
+	return events, rows.Err()
+}
+
+// getLiveEventsBetween returns the stored events inside [lo, hi] (unix
+// millis) in chronological order.
+func (s *Store) getLiveEventsBetween(lo, hi int64) ([]StoredLiveEvent, error) {
+	rows, err := s.db.Query(
+		`SELECT platform, id, type, author, detail, at, read
+		 FROM live_events WHERE at BETWEEN ? AND ? ORDER BY at ASC`, lo, hi,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	events := []StoredLiveEvent{}
+	for rows.Next() {
+		var e StoredLiveEvent
+		var read int
+		if err := rows.Scan(
+			&e.Platform, &e.ID, &e.Type, &e.Author, &e.Detail, &e.At, &read,
+		); err != nil {
+			return nil, err
+		}
+		e.Read = read != 0
+		events = append(events, e)
+	}
+	return events, rows.Err()
+}
+
+// latestLiveEventAt returns the newest stored event timestamp (unix millis),
+// 0 when no events have ever been stored.
+func (s *Store) latestLiveEventAt() (int64, error) {
+	var at sql.NullInt64
+	err := s.db.QueryRow(`SELECT MAX(at) FROM live_events`).Scan(&at)
+	if err != nil {
+		return 0, err
+	}
+	return at.Int64, nil
+}
+
+// markAllLiveEventsRead flips every stored event to read.
+func (s *Store) markAllLiveEventsRead() error {
+	_, err := s.db.Exec(`UPDATE live_events SET read = 1 WHERE read = 0`)
 	return err
 }
 

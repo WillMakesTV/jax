@@ -218,10 +218,27 @@ export function ScenesPanel() {
   }, [sourcesRev])
 
   // Toggle a Text (GDI+) source as a smart source (managed text template).
-  const toggleSmart = (name: string) => {
+  // Designating one retains whatever text it already shows in OBS: that text
+  // becomes the template, and only the {tokens} inside it get replaced with
+  // live values. The starter template is used only when the source is empty.
+  const toggleSmart = async (name: string) => {
     const next = {...smart}
-    if (next[name]) delete next[name]
-    else next[name] = {template: DEFAULT_SMART_TEMPLATE}
+    if (next[name]) {
+      delete next[name]
+    } else {
+      let template = DEFAULT_SMART_TEMPLATE
+      try {
+        const r = await obsRequest<{inputSettings: {text?: string}}>(
+          'GetInputSettings',
+          {inputName: name},
+        )
+        const current = r.inputSettings?.text
+        if (typeof current === 'string' && current.trim()) template = current
+      } catch {
+        // OBS unreachable; fall back to the starter template.
+      }
+      next[name] = {template}
+    }
     setSmart(next)
     saveSmartSources(next)
     refreshObs()
@@ -330,7 +347,7 @@ export function ScenesPanel() {
                   {isText && (
                     <SmartButton
                       active={Boolean(smart[item.name])}
-                      onClick={() => toggleSmart(item.name)}
+                      onClick={() => void toggleSmart(item.name)}
                     />
                   )}
                   {/* Designate this source as the primary for its role. */}

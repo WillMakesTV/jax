@@ -5,8 +5,6 @@ interface NavItemProps {
   item: NavItemConfig
   active: boolean
   collapsed: boolean
-  /** Render the item's icon as a pulsing red "on air" indicator. */
-  live?: boolean
   onSelect: () => void
 }
 
@@ -14,7 +12,7 @@ interface NavItemProps {
  * A single sidebar navigation button. When the sidebar is collapsed the label
  * is hidden but remains accessible via `aria-label` and a native tooltip.
  */
-export function NavItem({item, active, collapsed, live, onSelect}: NavItemProps) {
+export function NavItem({item, active, collapsed, onSelect}: NavItemProps) {
   const Icon = item.icon
   return (
     <button
@@ -31,16 +29,7 @@ export function NavItem({item, active, collapsed, live, onSelect}: NavItemProps)
           : 'text-fg-muted hover:bg-surface-hover hover:text-fg',
       )}
     >
-      <Icon
-        size={20}
-        strokeWidth={2}
-        aria-hidden
-        className={clsx(
-          'shrink-0',
-          live &&
-            'animate-pulse text-red-500 drop-shadow-[0_0_6px_rgba(239,68,68,0.75)] dark:text-red-400',
-        )}
-      />
+      <Icon size={20} strokeWidth={2} aria-hidden className="shrink-0" />
       {!collapsed && <span className="truncate">{item.label}</span>}
     </button>
   )

@@ -11,13 +11,14 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Stream Deck Multi Action discovery
+// Stream Deck button discovery
 //
 // The Elgato Stream Deck software offers no API for an external app to press
-// a button, so a routine "managed with Streamdeck" works by reading the Multi
-// Action's steps straight out of the Stream Deck's own profile files and
-// replaying the ones Jax understands (OBS actions and delays) over the app's
-// obs-websocket connection. Steps Jax cannot replay (third-party plugins like
+// a button, so a routine "managed with Streamdeck" works by reading the
+// button's actions straight out of the Stream Deck's own profile files and
+// replaying the ones Jax understands: OBS actions and delays over the app's
+// obs-websocket connection, and Hotkey actions as synthesized keystrokes
+// (see hotkey_windows.go). Steps Jax cannot replay (third-party plugins like
 // Philips Hue) are surfaced as unsupported so the user knows they only run
 // when the button is pressed on the deck itself.
 //
@@ -26,11 +27,13 @@ import (
 // device), and one Profiles/{PageID}/manifest.json per page holding the
 // buttons. A Multi Action button carries UUID
 // com.elgato.streamdeck.multiactions[.routine|.switch] and nests its child
-// actions in Actions[0].Actions.
+// actions in Actions[0].Actions; a standalone Hotkey button carries
+// com.elgato.streamdeck.system.hotkey and is exposed as a one-step action.
 // ---------------------------------------------------------------------------
 
-// StreamdeckMultiAction is one Multi Action button found on a Stream Deck,
-// with its child actions normalized into routine steps.
+// StreamdeckMultiAction is one replayable button found on a Stream Deck — a
+// Multi Action or a standalone Hotkey — with its actions normalized into
+// routine steps.
 type StreamdeckMultiAction struct {
 	// ID is the button's stable ActionID (a GUID that survives profile edits).
 	ID string `json:"id"`
@@ -135,13 +138,24 @@ func (a *App) GetStreamdeckMultiActions() ([]StreamdeckMultiAction, error) {
 			}
 			for _, controller := range manifest.Controllers {
 				for coords, action := range controller.Actions {
-					if !strings.HasPrefix(action.UUID, "com.elgato.streamdeck.multiactions") ||
-						len(action.Actions) == 0 {
+					var steps []RoutineStep
+					switch {
+					case strings.HasPrefix(action.UUID, "com.elgato.streamdeck.multiactions") &&
+						len(action.Actions) > 0:
+						steps = []RoutineStep{}
+						for _, child := range action.Actions[0].Actions {
+							steps = append(steps, normalizeStreamdeckStep(child))
+						}
+					case action.UUID == sdHotkeyUUID:
+						// A standalone Hotkey button is replayable too: one
+						// step that presses its keyboard shortcut.
+						step := normalizeStreamdeckStep(action)
+						if step.Kind != "hotkey" {
+							continue // no key configured
+						}
+						steps = []RoutineStep{step}
+					default:
 						continue
-					}
-					steps := []RoutineStep{}
-					for _, child := range action.Actions[0].Actions {
-						steps = append(steps, normalizeStreamdeckStep(child))
 					}
 					actions = append(actions, StreamdeckMultiAction{
 						ID:          action.ActionID,
@@ -192,14 +206,25 @@ func sdInt(settings map[string]any, key string) int {
 	return int(v)
 }
 
+// sdHotkeyUUID is the Stream Deck "Hotkey" system action: a button that
+// presses a keyboard shortcut.
+const sdHotkeyUUID = "com.elgato.streamdeck.system.hotkey"
+
 // normalizeStreamdeckStep maps one Multi Action child onto a routine step.
-// Anything Jax cannot replay over obs-websocket becomes an unsupported step
-// describing what it was.
+// Anything Jax cannot replay (over obs-websocket, or as a synthesized
+// keystroke for Hotkey actions) becomes an unsupported step describing what
+// it was.
 func normalizeStreamdeckStep(action sdAction) RoutineStep {
 	settings := action.Settings
 	switch {
 	case action.UUID == "com.elgato.streamdeck.multiactions.delay":
 		return RoutineStep{Kind: "delay", DelayMs: sdInt(settings, "delay")}
+
+	case action.UUID == sdHotkeyUUID:
+		if step, ok := hotkeyStep(settings); ok {
+			return step
+		}
+		return RoutineStep{Kind: "unsupported", Description: "Hotkey (no key configured)"}
 
 	case action.UUID == "com.elgato.obsstudio.scene":
 		target := sdString(settings, "target")
@@ -264,4 +289,91 @@ func normalizeStreamdeckStep(action sdAction) RoutineStep {
 		desc = action.UUID
 	}
 	return RoutineStep{Kind: "unsupported", Description: desc}
+}
+
+// hotkeyStep parses a Hotkey action's settings into a routine step. The
+// Settings.Hotkeys array holds fixed slots; unused ones carry VKeyCode -1,
+// so the first slot with a real virtual-key code is the configured shortcut.
+func hotkeyStep(settings map[string]any) (RoutineStep, bool) {
+	raw, _ := settings["Hotkeys"].([]any)
+	for _, entry := range raw {
+		hk, _ := entry.(map[string]any)
+		if hk == nil {
+			continue
+		}
+		vkey := sdInt(hk, "VKeyCode")
+		if vkey <= 0 {
+			continue
+		}
+		ctrl, _ := hk["KeyCtrl"].(bool)
+		shift, _ := hk["KeyShift"].(bool)
+		alt, _ := hk["KeyOption"].(bool)
+		win, _ := hk["KeyCmd"].(bool)
+		return RoutineStep{
+			Kind:        "hotkey",
+			VKey:        vkey,
+			Ctrl:        ctrl,
+			Shift:       shift,
+			Alt:         alt,
+			Win:         win,
+			Description: hotkeyLabel(vkey, ctrl, shift, alt, win),
+		}, true
+	}
+	return RoutineStep{}, false
+}
+
+// hotkeyLabel renders a shortcut the way it reads on a keycap
+// ("Ctrl+Shift+Q").
+func hotkeyLabel(vkey int, ctrl, shift, alt, win bool) string {
+	parts := []string{}
+	if ctrl {
+		parts = append(parts, "Ctrl")
+	}
+	if shift {
+		parts = append(parts, "Shift")
+	}
+	if alt {
+		parts = append(parts, "Alt")
+	}
+	if win {
+		parts = append(parts, "Win")
+	}
+	parts = append(parts, vkeyName(vkey))
+	return strings.Join(parts, "+")
+}
+
+// vkeyName names a Windows virtual-key code for display.
+func vkeyName(vkey int) string {
+	switch {
+	case vkey >= 'A' && vkey <= 'Z', vkey >= '0' && vkey <= '9':
+		return string(rune(vkey))
+	case vkey >= 0x70 && vkey <= 0x87: // VK_F1..VK_F24
+		return fmt.Sprintf("F%d", vkey-0x70+1)
+	case vkey >= 0x60 && vkey <= 0x69: // numpad digits
+		return fmt.Sprintf("Numpad %d", vkey-0x60)
+	}
+	names := map[int]string{
+		0x08: "Backspace", 0x09: "Tab", 0x0D: "Enter", 0x13: "Pause",
+		0x14: "Caps Lock", 0x1B: "Esc", 0x20: "Space", 0x21: "Page Up",
+		0x22: "Page Down", 0x23: "End", 0x24: "Home", 0x25: "Left",
+		0x26: "Up", 0x27: "Right", 0x28: "Down", 0x2C: "Print Screen",
+		0x2D: "Insert", 0x2E: "Delete", 0x6A: "Numpad *", 0x6B: "Numpad +",
+		0x6D: "Numpad -", 0x6E: "Numpad .", 0x6F: "Numpad /",
+		0x90: "Num Lock", 0x91: "Scroll Lock", 0xBA: ";", 0xBB: "=",
+		0xBC: ",", 0xBD: "-", 0xBE: ".", 0xBF: "/", 0xC0: "`",
+		0xDB: "[", 0xDC: "\\", 0xDD: "]", 0xDE: "'",
+	}
+	if name, ok := names[vkey]; ok {
+		return name
+	}
+	return fmt.Sprintf("key 0x%X", vkey)
+}
+
+// PressHotkey synthesizes a keyboard shortcut at OS level — how Jax replays a
+// Stream Deck Hotkey button (routine step kind "hotkey").
+func (a *App) PressHotkey(vkey int, ctrl, shift, alt, win bool) error {
+	if vkey <= 0 {
+		return fmt.Errorf("no key to press")
+	}
+	return pressHotkey(vkey, ctrl, shift, alt, win)
 }

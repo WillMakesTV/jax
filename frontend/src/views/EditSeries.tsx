@@ -4,17 +4,15 @@ import {
   GetSeriesTypes,
   GetYouTubeCategories,
   SaveContentSeries,
+  SearchKickCategories,
   SearchTwitchCategories,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {TWITCH_CONTENT_LABELS} from '../lib/contentLabels'
 import {
-  EPISODE_NUMBER_TOKEN,
-  EPISODE_TITLE_TOKEN,
   TEXT_GDIPLUS_KINDS,
-  loadSmartSources,
-  saveSmartSources,
-  type SmartSource,
+  loadEpisodeTextSources,
+  saveEpisodeTextSources,
 } from '../lib/smartSources'
 import {useLiveData} from '../live/LiveDataProvider'
 import {SERVICES} from '../services/services'
@@ -45,6 +43,7 @@ export function EditSeries({
   const {refreshObs} = useLiveData()
   const twitchConnected = statuses['twitch']?.connected ?? false
   const youtubeConnected = statuses['youtube']?.connected ?? false
+  const kickConnected = statuses['kick']?.connected ?? false
   const obsConnected = statuses['obs']?.connected ?? false
 
   const [title, setTitle] = useState(series?.title ?? '')
@@ -54,6 +53,9 @@ export function EditSeries({
   )
   const [youtubeCat, setYoutubeCat] = useState<main.ServiceCategory | null>(
     series?.youtubeCategory?.id ? series.youtubeCategory : null,
+  )
+  const [kickCat, setKickCat] = useState<main.ServiceCategory | null>(
+    series?.kickCategory?.id ? series.kickCategory : null,
   )
   const [types, setTypes] = useState<main.SeriesType[]>([])
   const [typeId, setTypeId] = useState(series?.typeId ?? '')
@@ -70,29 +72,20 @@ export function EditSeries({
 
   const episodic = Boolean(types.find((t) => t.id === typeId)?.episodic)
 
-  // Episode-info smart sources: a convenience mapping that writes the
-  // {episode_title}/{episode_number} token templates into the chosen OBS text
-  // sources. The mapping lives in the smart-source map itself (a source whose
-  // template is exactly the token), so it round-trips reliably — reopening the
-  // form re-derives the state from what is actually saved.
-  const [smartMap, setSmartMap] = useState<Record<string, SmartSource>>({})
+  // Episode-info text sources: the OBS text sources the on-air episode's
+  // title and "Episode N" are written into directly (see smartSources.ts).
+  // The mapping lives in its own setting, so reopening the form re-derives
+  // the state from what is actually saved.
   const [smartEpisodeInfo, setSmartEpisodeInfo] = useState(false)
   const [titleSource, setTitleSource] = useState('')
   const [numberSource, setNumberSource] = useState('')
   const [textSources, setTextSources] = useState<string[]>([])
 
   useEffect(() => {
-    loadSmartSources().then((map) => {
-      setSmartMap(map)
-      const exact = (token: string) =>
-        Object.keys(map).find(
-          (n) => map[n].template.trim() === `{${token}}`,
-        ) ?? ''
-      const t = exact(EPISODE_TITLE_TOKEN)
-      const n = exact(EPISODE_NUMBER_TOKEN)
-      setTitleSource(t)
-      setNumberSource(n)
-      setSmartEpisodeInfo(Boolean(t || n))
+    loadEpisodeTextSources().then((map) => {
+      setTitleSource(map.title)
+      setNumberSource(map.number)
+      setSmartEpisodeInfo(Boolean(map.title || map.number))
     })
   }, [])
 
@@ -139,6 +132,10 @@ export function EditSeries({
       setError('Choose a YouTube category for this series.')
       return
     }
+    if (kickConnected && !kickCat) {
+      setError('Choose a Kick category for this series.')
+      return
+    }
     setSaving(true)
     setError('')
     try {
@@ -149,6 +146,7 @@ export function EditSeries({
           description: description.trim(),
           twitchCategory: twitchCat ?? {id: '', name: ''},
           youtubeCategory: youtubeCat ?? {id: '', name: ''},
+          kickCategory: kickCat ?? {id: '', name: ''},
           tags: tags
             .split(',')
             .map((t) => t.trim())
@@ -161,28 +159,14 @@ export function EditSeries({
           youtubeMadeForKids: ytMadeForKids,
         }),
       )
-      // Persist the episode-info mapping as smart-source templates. Only
-      // templates that are exactly the token are managed here; customized
-      // templates that merely reference the tokens are left alone. Managed
-      // only while the section is visible (episodic), so editing a
-      // non-episodic series never disturbs another series' mapping.
+      // Persist the episode-info source mapping. Managed only while the
+      // section is visible (episodic), so editing a non-episodic series never
+      // disturbs another series' mapping.
       if (episodic) {
-        const map = {...smartMap}
-        const applyMapping = (token: string, chosen: string) => {
-          const tpl = `{${token}}`
-          for (const name of Object.keys(map)) {
-            if (name !== chosen && map[name].template.trim() === tpl) {
-              delete map[name]
-            }
-          }
-          if (chosen) map[chosen] = {template: tpl}
-        }
-        applyMapping(EPISODE_TITLE_TOKEN, smartEpisodeInfo ? titleSource : '')
-        applyMapping(
-          EPISODE_NUMBER_TOKEN,
-          smartEpisodeInfo ? numberSource : '',
-        )
-        saveSmartSources(map)
+        saveEpisodeTextSources({
+          title: smartEpisodeInfo ? titleSource : '',
+          number: smartEpisodeInfo ? numberSource : '',
+        })
         refreshObs()
       }
       onSaved()
@@ -320,6 +304,22 @@ export function EditSeries({
             </div>
           </fieldset>
 
+          <fieldset className="flex flex-col gap-4 rounded-xl border border-edge bg-surface p-4">
+            <ServiceLegend id="kick" />
+            <p className="-mt-2 text-xs text-fg-muted">
+              Applied to the Kick channel when a stream in this series goes
+              live. The category is required while Kick is connected.
+            </p>
+            <SearchCategoryPicker
+              connected={kickConnected}
+              value={kickCat}
+              onChange={setKickCat}
+              serviceName="Kick"
+              inputId="series-kick-category"
+              search={SearchKickCategories}
+            />
+          </fieldset>
+
           {types.length > 0 && (
             <div>
               <label htmlFor="series-type" className={labelCls}>
@@ -357,15 +357,13 @@ export function EditSeries({
                 />
                 <span>
                   <span className="block text-sm font-medium text-fg">
-                    Use Smart Sources for Episode Information
+                    Show episode info in OBS text sources
                   </span>
                   <span className="mt-0.5 block text-xs text-fg-muted">
-                    Keeps the mapped OBS text sources updated with the on-air
-                    episode&apos;s title and number (via the{' '}
-                    <span className="font-mono">{'{episode_title}'}</span> and{' '}
-                    <span className="font-mono">{'{episode_number}'}</span>{' '}
-                    smart-source tokens — also usable in any template under
-                    OBS Studio → Smart Sources).
+                    Writes the on-air episode&apos;s info straight into the
+                    chosen OBS text sources: the title as-is, and the number
+                    as e.g.{' '}
+                    <span className="font-mono">Episode 8</span>.
                   </span>
                 </span>
               </label>
@@ -522,7 +520,7 @@ function EpisodeSourcePicker({
 }
 
 /** Fieldset legend for one service's section: brand tile + service name. */
-function ServiceLegend({id}: {id: 'twitch' | 'youtube'}) {
+function ServiceLegend({id}: {id: 'twitch' | 'youtube' | 'kick'}) {
   const svc = SERVICES.find((s) => s.id === id)
   if (!svc) return null
   return (
@@ -560,14 +558,39 @@ function DisconnectedNote({name}: {name: string}) {
  * Search-as-you-type picker over Twitch's category/game catalogue. The chosen
  * category is shown as the input value; typing again reopens the search.
  */
-function TwitchCategoryPicker({
+function TwitchCategoryPicker(props: {
+  connected: boolean
+  value: main.ServiceCategory | null
+  onChange: (c: main.ServiceCategory | null) => void
+}) {
+  return (
+    <SearchCategoryPicker
+      {...props}
+      serviceName="Twitch"
+      inputId="series-twitch-category"
+      search={SearchTwitchCategories}
+    />
+  )
+}
+
+/**
+ * Shared search-as-you-type category picker for the platforms whose
+ * catalogues are searched (Twitch games, Kick categories).
+ */
+function SearchCategoryPicker({
   connected,
   value,
   onChange,
+  serviceName,
+  inputId,
+  search,
 }: {
   connected: boolean
   value: main.ServiceCategory | null
   onChange: (c: main.ServiceCategory | null) => void
+  serviceName: string
+  inputId: string
+  search: (query: string) => Promise<main.ServiceCategory[]>
 }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<main.ServiceCategory[]>([])
@@ -583,7 +606,7 @@ function TwitchCategoryPicker({
       return
     }
     debounce.current = window.setTimeout(() => {
-      SearchTwitchCategories(query)
+      search(query)
         .then((r) => {
           setResults(r ?? [])
           setSearchError('')
@@ -598,20 +621,20 @@ function TwitchCategoryPicker({
         })
     }, 300)
     return () => window.clearTimeout(debounce.current)
-  }, [query, open])
+  }, [query, open, search])
 
   if (!connected) {
     return (
       <div>
-        <CategoryLabel htmlFor="series-twitch-category" />
-        <DisconnectedNote name="Twitch" />
+        <CategoryLabel htmlFor={inputId} />
+        <DisconnectedNote name={serviceName} />
       </div>
     )
   }
 
   return (
     <div className="relative">
-      <CategoryLabel htmlFor="series-twitch-category" />
+      <CategoryLabel htmlFor={inputId} />
       <div className="relative">
         <Search
           size={14}
@@ -619,7 +642,7 @@ function TwitchCategoryPicker({
           className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted"
         />
         <input
-          id="series-twitch-category"
+          id={inputId}
           value={open ? query : value?.name ?? ''}
           onFocus={() => {
             setOpen(true)
@@ -630,7 +653,7 @@ function TwitchCategoryPicker({
             window.setTimeout(() => setOpen(false), 150)
           }}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search Twitch categories…"
+          placeholder={`Search ${serviceName} categories…`}
           autoComplete="off"
           className={`${field} pl-8`}
         />

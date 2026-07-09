@@ -152,6 +152,10 @@ func (a *App) TranscribeDownload(subfolder string) error {
 	}
 
 	a.mu.Lock()
+	if a.movingDownloads {
+		a.mu.Unlock()
+		return fmt.Errorf("the download folder is being moved — try again once it finishes")
+	}
 	for _, j := range a.vodJobs {
 		if j.sub == subfolder {
 			a.mu.Unlock()

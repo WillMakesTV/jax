@@ -30,6 +30,9 @@ type PastBroadcast struct {
 	Duration     string `json:"duration"`  // human-readable, e.g. "3h8m33s"
 	DurationSecs int    `json:"durationSecs"`
 	ViewCount    int    `json:"viewCount"`
+	// Local marks a broadcast the platform no longer lists but whose
+	// downloaded copy keeps it alive (see local.go).
+	Local bool `json:"local"`
 }
 
 // PastStream is a finished stream aggregated across platforms.
@@ -47,7 +50,13 @@ type PastStream struct {
 	// number 0 = the stream is not part of an episodic series).
 	EpisodeNumber      int             `json:"episodeNumber"`
 	EpisodeDescription string          `json:"episodeDescription"`
-	Broadcasts         []PastBroadcast `json:"broadcasts"`
+	// Local is true when every broadcast of the stream is local-only: the
+	// downloaded copy is the last one and the stream can be deleted for good.
+	Local      bool            `json:"local"`
+	Broadcasts []PastBroadcast `json:"broadcasts"`
+	// Plan is the concluded plan's snapshot (description, tags, channels)
+	// when this stream was broadcast from a plan (see conclude.go).
+	Plan *StreamPlanInfo `json:"plan"`
 }
 
 // broadcastKey is the stable identity of one platform's broadcast, used to
@@ -91,6 +100,8 @@ func (a *App) GetPastStreams(forceRefresh bool) []PastStream {
 		}
 		fetch("twitch", fetchTwitchArchives)
 		fetch("youtube", fetchYouTubeCompleted)
+		fetch("kick", fetchKickVODs)
+		fetch("facebook", a.fetchFacebookPastLives)
 		wg.Wait()
 
 		if attempted == 0 {
@@ -101,9 +112,15 @@ func (a *App) GetPastStreams(forceRefresh bool) []PastStream {
 
 	all, _, _, err := cachedJSON(a, a.connsCacheKey("past_broadcasts"), apiCacheTTL, forceRefresh, fetchAll)
 	if err != nil {
+		// Platform fetches failing (or no services connected) still leaves the
+		// locally retained broadcasts to show.
 		log.Printf("jax: GetPastStreams: %v", err)
-		return []PastStream{}
+		all = nil
 	}
+
+	// Downloaded broadcasts outlive the platforms: snapshot the ones still
+	// listed, resurrect the ones that are gone (see local.go).
+	all = a.mergeLocalBroadcasts(all)
 
 	// Manual group assignments take precedence; the rest cluster by timing.
 	groups := map[string]int64{}
@@ -140,6 +157,21 @@ func (a *App) GetPastStreams(forceRefresh bool) []PastStream {
 			for _, b := range out[i].Broadcasts {
 				if sid := seriesByKey[broadcastKey(b)]; sid != "" {
 					out[i].SeriesID = sid
+					break
+				}
+			}
+		}
+	}
+
+	// Concluded plan snapshots attach the same way series do (keyed by any of
+	// the stream's broadcasts).
+	plansByKey := a.streamPlans()
+	if len(plansByKey) > 0 {
+		for i := range out {
+			for _, b := range out[i].Broadcasts {
+				if p, ok := plansByKey[broadcastKey(b)]; ok {
+					p := p
+					out[i].Plan = &p
 					break
 				}
 			}
@@ -287,6 +319,36 @@ func (a *App) adoptLiveAssignments(out []PastStream) {
 	if changed {
 		if err := a.store.setJSON(keyPastStreamSeries, series); err != nil {
 			log.Printf("jax: adopt live series: %v", err)
+		}
+	}
+
+	// Concluded plan snapshots migrate onto the finished broadcasts the same
+	// way, so the plan's description and custom data stay on the stream.
+	plans := a.streamPlans()
+	changed = false
+	for key, p := range plans {
+		if _, ok := parseLiveKey(key); !ok {
+			continue
+		}
+		for i := range out {
+			if out[i].Plan == nil && match(key, &out[i]) {
+				p := p
+				out[i].Plan = &p
+				for _, b := range out[i].Broadcasts {
+					plans[broadcastKey(b)] = p
+				}
+				changed = true
+				break
+			}
+		}
+		if prune(key) {
+			delete(plans, key)
+			changed = true
+		}
+	}
+	if changed {
+		if err := a.store.setJSON(keyStreamPlans, plans); err != nil {
+			log.Printf("jax: adopt live plans: %v", err)
 		}
 	}
 
@@ -475,8 +537,11 @@ func aggregatePastStreams(items []PastBroadcast, margin time.Duration) []PastStr
 
 // buildPastStream finalises one aggregated stream from its broadcasts.
 func buildPastStream(items []PastBroadcast) PastStream {
-	ps := PastStream{}
+	ps := PastStream{Local: len(items) > 0}
 	for _, b := range items {
+		if !b.Local {
+			ps.Local = false
+		}
 		ps.Broadcasts = append(ps.Broadcasts, b)
 		ps.TotalViews += b.ViewCount
 		if b.StartedAt > ps.StartedAt {

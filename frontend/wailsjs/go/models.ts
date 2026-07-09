@@ -22,6 +22,26 @@ export namespace main {
 	        this.startedAt = source["startedAt"];
 	    }
 	}
+	export class AppSkill {
+	    id: string;
+	    title: string;
+	    description: string;
+	    content: string;
+	    overridden: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new AppSkill(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.description = source["description"];
+	        this.content = source["content"];
+	        this.overridden = source["overridden"];
+	    }
+	}
 	export class AuthPollResult {
 	    status: string;
 	    account: string;
@@ -36,6 +56,50 @@ export namespace main {
 	        this.status = source["status"];
 	        this.account = source["account"];
 	        this.message = source["message"];
+	    }
+	}
+	export class BrandAsset {
+	    id: string;
+	    name: string;
+	    description: string;
+	    sizeBytes: number;
+	    addedAt: string;
+	    mediaUrl: string;
+
+	    static createFrom(source: any = {}) {
+	        return new BrandAsset(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.sizeBytes = source["sizeBytes"];
+	        this.addedAt = source["addedAt"];
+	        this.mediaUrl = source["mediaUrl"];
+	    }
+	}
+	export class BrandLink {
+	    id: string;
+	    label: string;
+	    url: string;
+	    iconFile: string;
+	    addedAt: string;
+	    iconUrl: string;
+
+	    static createFrom(source: any = {}) {
+	        return new BrandLink(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.label = source["label"];
+	        this.url = source["url"];
+	        this.iconFile = source["iconFile"];
+	        this.addedAt = source["addedAt"];
+	        this.iconUrl = source["iconUrl"];
 	    }
 	}
 	export class BroadcastSendResult {
@@ -182,6 +246,7 @@ export namespace main {
 	    description: string;
 	    twitchCategory: ServiceCategory;
 	    youtubeCategory: ServiceCategory;
+	    kickCategory: ServiceCategory;
 	    tags: string[];
 	    notes: string;
 	    twitchLabels: string[];
@@ -201,6 +266,7 @@ export namespace main {
 	        this.description = source["description"];
 	        this.twitchCategory = this.convertValues(source["twitchCategory"], ServiceCategory);
 	        this.youtubeCategory = this.convertValues(source["youtubeCategory"], ServiceCategory);
+	        this.kickCategory = this.convertValues(source["kickCategory"], ServiceCategory);
 	        this.tags = source["tags"];
 	        this.notes = source["notes"];
 	        this.twitchLabels = source["twitchLabels"];
@@ -283,6 +349,146 @@ export namespace main {
 	        this.videoFile = source["videoFile"];
 	        this.downloadedAt = source["downloadedAt"];
 	        this.mediaUrl = source["mediaUrl"];
+	    }
+	}
+	export class EditorTools {
+	    git: boolean;
+	    ffmpeg: boolean;
+	    python: boolean;
+	    claude: boolean;
+	    node: string;
+	    videoUse: boolean;
+	    videoUseDir: string;
+	    ready: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new EditorTools(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.git = source["git"];
+	        this.ffmpeg = source["ffmpeg"];
+	        this.python = source["python"];
+	        this.claude = source["claude"];
+	        this.node = source["node"];
+	        this.videoUse = source["videoUse"];
+	        this.videoUseDir = source["videoUseDir"];
+	        this.ready = source["ready"];
+	    }
+	}
+	export class EditSource {
+	    startedAt: string;
+	    title: string;
+	    episodeNumber: number;
+	    file: string;
+	    downloaded: boolean;
+	    hasTranscript: boolean;
+	    subfolder: string;
+
+	    static createFrom(source: any = {}) {
+	        return new EditSource(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.startedAt = source["startedAt"];
+	        this.title = source["title"];
+	        this.episodeNumber = source["episodeNumber"];
+	        this.file = source["file"];
+	        this.downloaded = source["downloaded"];
+	        this.hasTranscript = source["hasTranscript"];
+	        this.subfolder = source["subfolder"];
+	    }
+	}
+	export class EditOutput {
+	    name: string;
+	    mediaUrl: string;
+	    modifiedAt: string;
+	    sizeBytes: number;
+
+	    static createFrom(source: any = {}) {
+	        return new EditOutput(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.mediaUrl = source["mediaUrl"];
+	        this.modifiedAt = source["modifiedAt"];
+	        this.sizeBytes = source["sizeBytes"];
+	    }
+	}
+	export class EditWorkspaceInfo {
+	    planId: string;
+	    dir: string;
+	    prepared: boolean;
+	    sources: EditSource[];
+	    outputs: EditOutput[];
+	    running: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new EditWorkspaceInfo(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.planId = source["planId"];
+	        this.dir = source["dir"];
+	        this.prepared = source["prepared"];
+	        this.sources = this.convertValues(source["sources"], EditSource);
+	        this.outputs = this.convertValues(source["outputs"], EditOutput);
+	        this.running = source["running"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class FBPageInfo {
+	    id: string;
+	    name: string;
+	    selected: boolean;
+	    instagram: string;
+
+	    static createFrom(source: any = {}) {
+	        return new FBPageInfo(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.selected = source["selected"];
+	        this.instagram = source["instagram"];
+	    }
+	}
+	export class KickChatIDs {
+	    chatroomId: number;
+	    channelId: number;
+
+	    static createFrom(source: any = {}) {
+	        return new KickChatIDs(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.chatroomId = source["chatroomId"];
+	        this.channelId = source["channelId"];
 	    }
 	}
 	export class LiveEvent {
@@ -420,6 +626,65 @@ export namespace main {
 	        this.episodeDescription = source["episodeDescription"];
 	    }
 	}
+	export class MCPTargetStatus {
+	    name: string;
+	    installed: boolean;
+	    configured: boolean;
+	    current: boolean;
+	    path: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MCPTargetStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.installed = source["installed"];
+	        this.configured = source["configured"];
+	        this.current = source["current"];
+	        this.path = source["path"];
+	    }
+	}
+	export class MCPStatus {
+	    token: string;
+	    running: boolean;
+	    toolCount: number;
+	    claudeCode: MCPTargetStatus;
+	    claudeDesktop: MCPTargetStatus;
+	
+	    static createFrom(source: any = {}) {
+	        return new MCPStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.token = source["token"];
+	        this.running = source["running"];
+	        this.toolCount = source["toolCount"];
+	        this.claudeCode = this.convertValues(source["claudeCode"], MCPTargetStatus);
+	        this.claudeDesktop = this.convertValues(source["claudeDesktop"], MCPTargetStatus);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class OutlineItem {
 	    at: string;
 	    title: string;
@@ -445,6 +710,7 @@ export namespace main {
 	    duration: string;
 	    durationSecs: number;
 	    viewCount: number;
+	    local: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new PastBroadcast(source);
@@ -460,6 +726,33 @@ export namespace main {
 	        this.duration = source["duration"];
 	        this.durationSecs = source["durationSecs"];
 	        this.viewCount = source["viewCount"];
+	        this.local = source["local"];
+	    }
+	}
+	export class StreamPlanInfo {
+	    planId: string;
+	    title: string;
+	    description: string;
+	    channels: string[];
+	    seriesId: string;
+	    episodeNumber: number;
+	    tags: string[];
+	    concludedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new StreamPlanInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.planId = source["planId"];
+	        this.title = source["title"];
+	        this.description = source["description"];
+	        this.channels = source["channels"];
+	        this.seriesId = source["seriesId"];
+	        this.episodeNumber = source["episodeNumber"];
+	        this.tags = source["tags"];
+	        this.concludedAt = source["concludedAt"];
 	    }
 	}
 	export class PastStream {
@@ -471,7 +764,9 @@ export namespace main {
 	    seriesId: string;
 	    episodeNumber: number;
 	    episodeDescription: string;
+	    local: boolean;
 	    broadcasts: PastBroadcast[];
+	    plan?: StreamPlanInfo;
 	
 	    static createFrom(source: any = {}) {
 	        return new PastStream(source);
@@ -487,7 +782,9 @@ export namespace main {
 	        this.seriesId = source["seriesId"];
 	        this.episodeNumber = source["episodeNumber"];
 	        this.episodeDescription = source["episodeDescription"];
+	        this.local = source["local"];
 	        this.broadcasts = this.convertValues(source["broadcasts"], PastBroadcast);
+	        this.plan = this.convertValues(source["plan"], StreamPlanInfo);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -508,6 +805,46 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class PlanChannelInfo {
+	    channel: string;
+	    connected: boolean;
+	    matches: boolean;
+	    currentTitle: string;
+	    wantTitle: string;
+	    detail?: string;
+	    thumbnailStale: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new PlanChannelInfo(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.channel = source["channel"];
+	        this.connected = source["connected"];
+	        this.matches = source["matches"];
+	        this.currentTitle = source["currentTitle"];
+	        this.wantTitle = source["wantTitle"];
+	        this.detail = source["detail"];
+	        this.thumbnailStale = source["thumbnailStale"];
+	    }
+	}
+	export class PlanSessionInfo {
+	    planId: string;
+	    startedAt: string;
+	    endedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PlanSessionInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.planId = source["planId"];
+	        this.startedAt = source["startedAt"];
+	        this.endedAt = source["endedAt"];
+	    }
+	}
 	export class PlanSuggestion {
 	    title: string;
 	    description: string;
@@ -524,6 +861,20 @@ export namespace main {
 	        this.tags = source["tags"];
 	    }
 	}
+	export class PlanThumbnail {
+	    file: string;
+	    url: string;
+
+	    static createFrom(source: any = {}) {
+	        return new PlanThumbnail(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.file = source["file"];
+	        this.url = source["url"];
+	    }
+	}
 	export class PlannedStream {
 	    id: string;
 	    title: string;
@@ -532,12 +883,16 @@ export namespace main {
 	    seriesId: string;
 	    episodeNumber: number;
 	    tags: string[];
+	    thumbnailFile: string;
+	    thumbnailUrl: string;
+	    thumbnailHistory: string[];
+	    thumbnailHistoryUrls: string[];
 	    createdAt: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new PlannedStream(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -547,6 +902,10 @@ export namespace main {
 	        this.seriesId = source["seriesId"];
 	        this.episodeNumber = source["episodeNumber"];
 	        this.tags = source["tags"];
+	        this.thumbnailFile = source["thumbnailFile"];
+	        this.thumbnailUrl = source["thumbnailUrl"];
+	        this.thumbnailHistory = source["thumbnailHistory"];
+	        this.thumbnailHistoryUrls = source["thumbnailHistoryUrls"];
 	        this.createdAt = source["createdAt"];
 	    }
 	}
@@ -656,6 +1015,11 @@ export namespace main {
 	    sceneItemId?: number;
 	    mode?: string;
 	    delayMs?: number;
+	    vkey?: number;
+	    ctrl?: boolean;
+	    shift?: boolean;
+	    alt?: boolean;
+	    win?: boolean;
 	    streamdeckActionId?: string;
 	    description?: string;
 	
@@ -672,6 +1036,11 @@ export namespace main {
 	        this.sceneItemId = source["sceneItemId"];
 	        this.mode = source["mode"];
 	        this.delayMs = source["delayMs"];
+	        this.vkey = source["vkey"];
+	        this.ctrl = source["ctrl"];
+	        this.shift = source["shift"];
+	        this.alt = source["alt"];
+	        this.win = source["win"];
 	        this.streamdeckActionId = source["streamdeckActionId"];
 	        this.description = source["description"];
 	    }
@@ -756,6 +1125,14 @@ export namespace main {
 	    twitchClientId: string;
 	    youtubeClientId: string;
 	    youtubeClientSecret: string;
+	    kickClientId: string;
+	    kickClientSecret: string;
+	    facebookAppId: string;
+	    facebookClientToken: string;
+	    xClientId: string;
+	    xClientSecret: string;
+	    tiktokClientKey: string;
+	    tiktokClientSecret: string;
 	    obsHost: string;
 	    obsPort: string;
 	    obsPassword: string;
@@ -770,6 +1147,14 @@ export namespace main {
 	        this.twitchClientId = source["twitchClientId"];
 	        this.youtubeClientId = source["youtubeClientId"];
 	        this.youtubeClientSecret = source["youtubeClientSecret"];
+	        this.kickClientId = source["kickClientId"];
+	        this.kickClientSecret = source["kickClientSecret"];
+	        this.facebookAppId = source["facebookAppId"];
+	        this.facebookClientToken = source["facebookClientToken"];
+	        this.xClientId = source["xClientId"];
+	        this.xClientSecret = source["xClientSecret"];
+	        this.tiktokClientKey = source["tiktokClientKey"];
+	        this.tiktokClientSecret = source["tiktokClientSecret"];
 	        this.obsHost = source["obsHost"];
 	        this.obsPort = source["obsPort"];
 	        this.obsPassword = source["obsPassword"];
@@ -820,6 +1205,30 @@ export namespace main {
 	        this.badges = source["badges"];
 	        this.color = source["color"];
 	        this.text = source["text"];
+	        this.at = source["at"];
+	        this.read = source["read"];
+	    }
+	}
+	export class StoredLiveEvent {
+	    platform: string;
+	    id: string;
+	    type: string;
+	    author: string;
+	    detail: string;
+	    at: number;
+	    read: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new StoredLiveEvent(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.platform = source["platform"];
+	        this.id = source["id"];
+	        this.type = source["type"];
+	        this.author = source["author"];
+	        this.detail = source["detail"];
 	        this.at = source["at"];
 	        this.read = source["read"];
 	    }
@@ -898,6 +1307,7 @@ export namespace main {
 		    return a;
 		}
 	}
+	
 	export class StreamdeckMultiAction {
 	    id: string;
 	    title: string;
@@ -1078,6 +1488,70 @@ export namespace main {
 	        this.videos = this.convertValues(source["videos"], Video);
 	        this.fetchedAt = source["fetchedAt"];
 	        this.fromCache = source["fromCache"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class VideoPlanStream {
+	    startedAt: string;
+	    title: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VideoPlanStream(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.startedAt = source["startedAt"];
+	        this.title = source["title"];
+	    }
+	}
+	export class VideoPlan {
+	    id: string;
+	    title: string;
+	    description: string;
+	    format: string;
+	    tags: string[];
+	    streams: VideoPlanStream[];
+	    thumbnailFile: string;
+	    thumbnailUrl: string;
+	    thumbnailHistory: string[];
+	    thumbnailHistoryUrls: string[];
+	    createdAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VideoPlan(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.description = source["description"];
+	        this.format = source["format"];
+	        this.tags = source["tags"];
+	        this.streams = this.convertValues(source["streams"], VideoPlanStream);
+	        this.thumbnailFile = source["thumbnailFile"];
+	        this.thumbnailUrl = source["thumbnailUrl"];
+	        this.thumbnailHistory = source["thumbnailHistory"];
+	        this.thumbnailHistoryUrls = source["thumbnailHistoryUrls"];
+	        this.createdAt = source["createdAt"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

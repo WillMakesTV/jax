@@ -1,10 +1,12 @@
-import {Captions, MessageSquare} from 'lucide-react'
+import {Bell, Captions, MessageSquare} from 'lucide-react'
 import {useEffect, useState} from 'react'
 import {
   GetChatForStream,
+  GetLiveEventsForStream,
   GetTranscriptForStream,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
+import {EVENT_ICONS} from '../events/EventsPanel'
 import {
   groupTranscriptLines,
   type TranscriptLine,
@@ -125,6 +127,81 @@ export function ChatLogPanel({
             </span>
           </li>
         ))}
+      </ul>
+    </div>
+  )
+}
+
+/**
+ * The channel events (follows, subs, cheers, raids, members, Super Chats)
+ * captured during a stream's window, across every destination channel.
+ */
+export function EventsLogPanel({
+  startedAt,
+  durationSecs,
+  noun = 'broadcast',
+}: {
+  startedAt: string
+  durationSecs: number
+  noun?: MediaNoun
+}) {
+  const [events, setEvents] = useState<main.StoredLiveEvent[]>([])
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    GetLiveEventsForStream(startedAt, durationSecs)
+      .then((r) => {
+        if (!cancelled) setEvents(r ?? [])
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoaded(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [startedAt, durationSecs])
+
+  if (!loaded) return <p className="text-sm text-fg-muted">Loading events…</p>
+  if (events.length === 0) {
+    return (
+      <MediaEmptyState
+        icon={Bell}
+        text={`No channel events were captured during this ${noun}'s window.`}
+      />
+    )
+  }
+
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-edge bg-surface p-4">
+      <ul className="space-y-2">
+        {events.map((e) => {
+          const Icon = EVENT_ICONS[e.type] ?? Bell
+          return (
+            <li
+              key={`${e.platform}-${e.id}`}
+              className="flex items-start gap-3 rounded-lg border border-edge bg-bg p-3"
+            >
+              <span
+                aria-hidden
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent"
+              >
+                <Icon size={16} />
+              </span>
+              <p className="min-w-0 flex-1 break-words text-sm leading-snug">
+                <span className="font-semibold text-fg">{e.author}</span>{' '}
+                <span className="text-fg">{e.detail}</span>
+              </p>
+              <span className="flex shrink-0 items-center gap-1.5 font-mono text-[11px] text-fg-muted">
+                <BrandTile platform={e.platform} size={14} />
+                <span title={new Date(e.at).toLocaleString()}>
+                  {timeFmt.format(e.at)}
+                </span>
+              </span>
+            </li>
+          )
+        })}
       </ul>
     </div>
   )

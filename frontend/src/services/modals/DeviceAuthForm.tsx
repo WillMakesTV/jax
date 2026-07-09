@@ -1,15 +1,21 @@
 import {ExternalLink} from 'lucide-react'
 import {useEffect, useRef, useState, type FormEvent, type ReactNode} from 'react'
 import type {main} from '../../../wailsjs/go/models'
-import {useServices} from '../ServicesProvider'
+import {useServices, type ServiceConfigs} from '../ServicesProvider'
 import type {ServiceDef} from '../services'
-import {ConnectedPanel, Field, PrimaryButton, fieldInputClass} from './shared'
+import {ConnectedPanel, Field, PrimaryButton, errorMessage, fieldInputClass} from './shared'
 
 interface DeviceAuthFormProps {
   service: ServiceDef
   requiresSecret: boolean
   /** Hint shown under the Client ID field (e.g. where to register the app). */
   clientIdHint: ReactNode
+  /** ServiceConfigs keys the credentials persist under. */
+  idConfigKey: keyof ServiceConfigs
+  secretConfigKey?: keyof ServiceConfigs
+  /** Field labels; Meta calls them "App ID" / "Client Token". */
+  idLabel?: string
+  secretLabel?: string
   start: (
     clientId: string,
     clientSecret: string,
@@ -25,18 +31,21 @@ export function DeviceAuthForm({
   service,
   requiresSecret,
   clientIdHint,
+  idConfigKey,
+  secretConfigKey,
+  idLabel = 'Client ID',
+  secretLabel = 'Client Secret',
   start,
   poll,
 }: DeviceAuthFormProps) {
   const {statuses, configs, updateConfigs, setStatus, disconnect} =
     useServices()
   const status = statuses[service.id]
-  const isYouTube = service.id === 'youtube'
 
-  const [clientId, setClientId] = useState(
-    isYouTube ? configs.youtubeClientId : configs.twitchClientId,
+  const [clientId, setClientId] = useState(String(configs[idConfigKey] ?? ''))
+  const [clientSecret, setClientSecret] = useState(
+    secretConfigKey ? String(configs[secretConfigKey] ?? '') : '',
   )
-  const [clientSecret, setClientSecret] = useState(configs.youtubeClientSecret)
   const [phase, setPhase] = useState<'config' | 'awaiting'>('config')
   const [info, setInfo] = useState<main.DeviceCodeInfo | null>(null)
   const [error, setError] = useState('')
@@ -67,14 +76,9 @@ export function DeviceAuthForm({
   }
 
   const saveConfig = () => {
-    if (isYouTube) {
-      updateConfigs({
-        youtubeClientId: clientId,
-        youtubeClientSecret: clientSecret,
-      })
-    } else {
-      updateConfigs({twitchClientId: clientId})
-    }
+    const partial: Record<string, string> = {[idConfigKey]: clientId}
+    if (secretConfigKey) partial[secretConfigKey] = clientSecret
+    updateConfigs(partial)
   }
 
   const schedulePoll = (
@@ -108,7 +112,7 @@ export function DeviceAuthForm({
         }
       } catch (err) {
         if (poller.current.cancelled) return
-        setError(err instanceof Error ? err.message : 'Authorization failed.')
+        setError(errorMessage(err, 'Authorization failed.'))
         setPhase('config')
       }
     }, intervalSec * 1000)
@@ -128,9 +132,7 @@ export function DeviceAuthForm({
       const ttl = deviceInfo.expiresIn > 0 ? deviceInfo.expiresIn : 900
       schedulePoll(deviceInfo.deviceCode, interval, Date.now() + ttl * 1000)
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Could not start authorization.',
-      )
+      setError(errorMessage(err, 'Could not start authorization.'))
     } finally {
       setBusy(false)
     }
@@ -176,26 +178,26 @@ export function DeviceAuthForm({
         {service.description} You'll approve access in your browser.
       </p>
 
-      <Field label="Client ID" htmlFor={`${service.id}-client-id`} hint={clientIdHint}>
+      <Field label={idLabel} htmlFor={`${service.id}-client-id`} hint={clientIdHint}>
         <input
           id={`${service.id}-client-id`}
           type="text"
           value={clientId}
           onChange={(e) => setClientId(e.target.value)}
-          placeholder="Your app's Client ID"
+          placeholder={`Your app's ${idLabel}`}
           className={fieldInputClass}
           autoComplete="off"
         />
       </Field>
 
       {requiresSecret && (
-        <Field label="Client Secret" htmlFor={`${service.id}-client-secret`}>
+        <Field label={secretLabel} htmlFor={`${service.id}-client-secret`}>
           <input
             id={`${service.id}-client-secret`}
             type="password"
             value={clientSecret}
             onChange={(e) => setClientSecret(e.target.value)}
-            placeholder="Your app's Client Secret"
+            placeholder={`Your app's ${secretLabel}`}
             className={fieldInputClass}
             autoComplete="off"
           />

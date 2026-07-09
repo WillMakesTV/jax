@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  Bell,
   Calendar,
   Captions,
   Check,
@@ -8,17 +9,21 @@ import {
   Download,
   ExternalLink,
   Eye,
+  HardDrive,
   LayoutGrid,
   Loader2,
   MessageSquare,
+  NotebookText,
   PlayCircle,
-  PlaySquare,
   Radio,
+  RefreshCw,
+  Trash2,
   Video,
 } from 'lucide-react'
 import clsx from 'clsx'
 import {useEffect, useState} from 'react'
 import {
+  DeleteLocalStream,
   GetContentSeries,
   GetPastStreams,
   GetSeriesTypes,
@@ -30,9 +35,10 @@ import {main} from '../../wailsjs/go/models'
 import {BrandTile} from '../components/BrandTile'
 import {Modal} from '../components/Modal'
 import {PageHeader} from '../components/PageHeader'
+import {OutlinePanel} from '../components/OutlinePanel'
 import {
   ChatLogPanel,
-  MediaEmptyState,
+  EventsLogPanel,
   TranscriptPanel,
 } from '../components/StreamMedia'
 import {useDownloadStatus} from '../downloads/DownloadProvider'
@@ -136,10 +142,12 @@ function resolveDownload(
   return {platform, urls, picks}
 }
 
-type StreamTab = 'overview' | 'video' | 'chat' | 'transcript'
+export type StreamTab = 'overview' | 'chat' | 'events' | 'transcript' | 'outline'
 
 interface StreamDetailsProps {
   stream: main.PastStream
+  /** Tab to open on; navigation (e.g. the status bar's outline chip) sets it. */
+  initialTab?: StreamTab
   onBack: () => void
   /** Open a downloaded broadcast's video page (player + chat + transcript). */
   onOpenDownload: (download: main.DownloadedVideo) => void
@@ -153,15 +161,22 @@ interface StreamDetailsProps {
  */
 export function StreamDetails({
   stream,
+  initialTab,
   onBack,
   onOpenDownload,
 }: StreamDetailsProps) {
-  const [tab, setTab] = useState<StreamTab>('overview')
+  const [tab, setTab] = useState<StreamTab>(initialTab ?? 'overview')
   const [detail, setDetail] = useState<main.PastBroadcast | null>(null)
+
+  // Navigating to this view again with an explicit tab (same mounted
+  // component, new nav entry) should switch to it.
+  useEffect(() => {
+    if (initialTab) setTab(initialTab)
+  }, [initialTab])
   // The stream's content series assignment, lifted here so the episode
   // editor reacts when it changes.
   const [seriesId, setSeriesId] = useState(stream.seriesId ?? '')
-  const {byUrl} = useDownloads()
+  const {byUrl, refresh: refreshDownloads} = useDownloads()
   // A downloaded copy of this stream (any of its broadcasts), if present.
   const streamDownload = stream.broadcasts
     .map((b) => byUrl.get(b.url))
@@ -202,17 +217,22 @@ export function StreamDetails({
     loadSetting(SETTING_KEYS.downloadSource).then((v) => setSource(v ?? 'auto'))
   }, [])
   const download = resolveDownload(clusters, source)
+  const [confirmRedownload, setConfirmRedownload] = useState(false)
 
-  const startDownload = async () => {
+  const startDownload = async (fresh = false) => {
     if (!download) return
-    dlStatus.markStarting()
+    dlStatus.markStarting(stream.startedAt)
     try {
       const name = stream.title || `Stream ${formatDate(stream.startedAt)}`
       // Per-stream subfolder: timestamp + stream title + source channel name.
+      // A re-download reuses the existing download's subfolder so everything
+      // keyed on it (transcripts, broadcast snapshots) stays attached.
       const channel =
-        statuses[download.platform as 'twitch' | 'youtube']?.account ||
+        statuses[download.platform as 'twitch' | 'youtube' | 'kick']?.account ||
         platformName(download.platform)
-      const subfolder = `${downloadStamp(stream.startedAt)} - ${name} - ${channel}`
+      const subfolder =
+        (fresh && streamDownload?.subfolder) ||
+        `${downloadStamp(stream.startedAt)} - ${name} - ${channel}`
 
       // Metadata written alongside the video as manifest.json so the app can
       // track and play the downloaded broadcast. Built from the actual picked
@@ -237,6 +257,7 @@ export function StreamDetails({
         name,
         subfolder,
         JSON.stringify(manifest),
+        fresh,
         download.urls,
       )
     } catch (err) {
@@ -263,64 +284,19 @@ export function StreamDetails({
         description={`${clusters.length} broadcast${
           clusters.length === 1 ? '' : 's'
         } across ${channelCount} channel${channelCount === 1 ? '' : 's'}.`}
-        actions={
-          <div className="flex items-center gap-2">
-            {streamDownload ? (
-              <button
-                type="button"
-                onClick={() => onOpenDownload(streamDownload)}
-                title="Already downloaded — click to play"
-                className="inline-flex items-center gap-2 rounded-lg border border-green-600/40 bg-green-600/10 px-4 py-2 text-sm font-semibold text-green-700 transition-colors hover:bg-green-600/20 dark:text-green-400"
-              >
-                <Check size={16} aria-hidden />
-                Downloaded
-              </button>
-            ) : (
-              download && (
-                <button
-                  type="button"
-                  onClick={() => void startDownload()}
-                  disabled={dlStatus.state === 'running'}
-                  title={`Download every broadcast's VOD${
-                    download.urls.length > 1 ? 's (stitched together)' : ''
-                  }`}
-                  className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
-                >
-                  {dlStatus.state === 'running' ? (
-                    <Loader2 size={16} aria-hidden className="animate-spin" />
-                  ) : (
-                    <Download size={16} aria-hidden />
-                  )}
-                  Download videos
-                </button>
-              )
-            )}
-          </div>
-        }
       />
 
       <StreamTabs tab={tab} onChange={setTab} />
 
-      {tab === 'video' &&
-        (streamDownload ? (
-          <div className="overflow-hidden rounded-2xl border border-edge bg-black">
-            <video
-              key={streamDownload.mediaUrl}
-              controls
-              autoPlay
-              poster={streamDownload.thumbnailUrl || stream.thumbnailUrl || undefined}
-              src={streamDownload.mediaUrl}
-              className="aspect-video w-full bg-black"
-            />
-          </div>
-        ) : (
-          <MediaEmptyState
-            icon={PlaySquare}
-            text="No downloaded copy of this stream yet — use “Download videos” above to fetch its VODs and play them here."
-          />
-        ))}
       {tab === 'chat' && (
         <ChatLogPanel
+          startedAt={stream.startedAt}
+          durationSecs={chatDurationSecs}
+          noun="stream"
+        />
+      )}
+      {tab === 'events' && (
+        <EventsLogPanel
           startedAt={stream.startedAt}
           durationSecs={chatDurationSecs}
           noun="stream"
@@ -333,6 +309,13 @@ export function StreamDetails({
           noun="stream"
         />
       )}
+      {tab === 'outline' && (
+        <OutlinePanel
+          startedAt={stream.startedAt}
+          durationSecs={chatDurationSecs}
+          title={stream.title || `Stream ${formatDate(stream.startedAt)}`}
+        />
+      )}
 
       {tab === 'overview' && (
         <>
@@ -343,33 +326,125 @@ export function StreamDetails({
       />
       <EpisodeEditor stream={stream} seriesId={seriesId} />
 
+      {/* The concluded plan's description and custom data live on with the
+          stream (see conclude.go). */}
+      {stream.plan &&
+        (stream.plan.description || (stream.plan.tags ?? []).length > 0) && (
+          <section
+            aria-label="Episode details from the concluded plan"
+            className="mb-6 rounded-xl border border-edge bg-surface p-4"
+          >
+            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-fg-muted">
+              Episode details
+            </h2>
+            {stream.plan.description && (
+              <p className="whitespace-pre-wrap text-sm text-fg">
+                {stream.plan.description}
+              </p>
+            )}
+            {(stream.plan.tags ?? []).length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {(stream.plan.tags ?? []).map((t) => (
+                  <span
+                    key={t}
+                    className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent"
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
       {/* Summary: thumbnail + aggregate tiles. */}
       <section
         aria-label="Stream summary"
         className="flex flex-col gap-4 lg:flex-row"
       >
         {streamDownload ? (
+          <div className="flex w-full max-w-md flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => onOpenDownload(streamDownload)}
+              aria-label="Play downloaded video"
+              className="group relative aspect-video w-full overflow-hidden rounded-xl border border-edge bg-black"
+            >
+              {(streamDownload.thumbnailUrl || stream.thumbnailUrl) && (
+                <img
+                  src={streamDownload.thumbnailUrl || stream.thumbnailUrl}
+                  alt=""
+                  aria-hidden
+                  className="h-full w-full object-cover opacity-80 transition-opacity group-hover:opacity-60"
+                />
+              )}
+              <span className="absolute inset-0 flex items-center justify-center">
+                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-transform group-hover:scale-110">
+                  <PlayCircle size={32} aria-hidden />
+                </span>
+              </span>
+              <span className="absolute left-2 top-2 rounded-full bg-green-600 px-2 py-0.5 text-[11px] font-semibold text-white">
+                Downloaded
+              </span>
+            </button>
+            {/* The platforms still list this stream's VODs, so the local copy
+                can be replaced from the source (e.g. a corrupted file, or a
+                download made at a lower quality). */}
+            {download && !stream.local && (
+              <button
+                type="button"
+                onClick={() => setConfirmRedownload(true)}
+                disabled={dlStatus.state === 'running'}
+                className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {dlStatus.state === 'running' ? (
+                  <Loader2 size={13} aria-hidden className="animate-spin" />
+                ) : (
+                  <RefreshCw size={13} aria-hidden />
+                )}
+                {dlStatus.state === 'running'
+                  ? 'Downloading…'
+                  : `Re-download from ${platformName(download.platform)}`}
+              </button>
+            )}
+          </div>
+        ) : download ? (
+          // Not downloaded yet: the thumbnail itself is the download CTA.
+          // Once downloaded it becomes the play button above.
           <button
             type="button"
-            onClick={() => onOpenDownload(streamDownload)}
-            aria-label="Play downloaded video"
+            onClick={() => void startDownload()}
+            disabled={dlStatus.state === 'running'}
+            title={`Download every broadcast's VOD${
+              download.urls.length > 1 ? 's (stitched together)' : ''
+            }`}
             className="group relative aspect-video w-full max-w-md overflow-hidden rounded-xl border border-edge bg-black"
           >
-            {(streamDownload.thumbnailUrl || stream.thumbnailUrl) && (
+            {stream.thumbnailUrl ? (
               <img
-                src={streamDownload.thumbnailUrl || stream.thumbnailUrl}
+                src={stream.thumbnailUrl}
                 alt=""
                 aria-hidden
                 className="h-full w-full object-cover opacity-80 transition-opacity group-hover:opacity-60"
               />
-            )}
-            <span className="absolute inset-0 flex items-center justify-center">
-              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-transform group-hover:scale-110">
-                <PlayCircle size={32} aria-hidden />
+            ) : (
+              <span className="flex h-full w-full items-center justify-center bg-surface text-fg-muted">
+                <Video size={32} aria-hidden />
               </span>
-            </span>
-            <span className="absolute left-2 top-2 rounded-full bg-green-600 px-2 py-0.5 text-[11px] font-semibold text-white">
-              Downloaded
+            )}
+            <span className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-transform group-hover:scale-110">
+                {dlStatus.state === 'running' ? (
+                  <Loader2 size={28} aria-hidden className="animate-spin" />
+                ) : (
+                  <Download size={28} aria-hidden />
+                )}
+              </span>
+              <span className="rounded-full bg-black/60 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm">
+                {dlStatus.state === 'running'
+                  ? 'Downloading…'
+                  : 'Download videos'}
+              </span>
             </span>
           </button>
         ) : stream.thumbnailUrl ? (
@@ -451,6 +526,54 @@ export function StreamDetails({
           </div>
         ))}
       </div>
+
+      {/* Re-downloading replaces the local video file, so it sits behind an
+          explicit confirmation. */}
+      <Modal
+        open={confirmRedownload}
+        onClose={() => setConfirmRedownload(false)}
+        title="Re-download this stream?"
+        icon={<RefreshCw size={18} aria-hidden className="text-fg-muted" />}
+      >
+        <p className="text-sm text-fg-muted">
+          The stream&apos;s video is fetched again from{' '}
+          {download ? platformName(download.platform) : 'its platform'} and the
+          current local copy is replaced. The stream&apos;s transcript, chat,
+          and history are untouched.
+        </p>
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setConfirmRedownload(false)}
+            className="rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setConfirmRedownload(false)
+              void startDownload(true)
+            }}
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90"
+          >
+            Re-download
+          </button>
+        </div>
+      </Modal>
+
+      {/* A local-only stream's downloaded copy is its last copy; deleting it
+          removes the stream for good, so it needs an explicit confirmation. */}
+      {stream.local && streamDownload && (
+        <DeleteLocalStreamSection
+          stream={stream}
+          download={streamDownload}
+          onDeleted={() => {
+            refreshDownloads()
+            onBack()
+          }}
+        />
+      )}
         </>
       )}
 
@@ -472,9 +595,10 @@ function StreamTabs({
 }) {
   const tabs: {id: StreamTab; label: string; icon: typeof LayoutGrid}[] = [
     {id: 'overview', label: 'Overview', icon: LayoutGrid},
-    {id: 'video', label: 'Video', icon: PlaySquare},
     {id: 'chat', label: 'Chat', icon: MessageSquare},
+    {id: 'events', label: 'Events', icon: Bell},
     {id: 'transcript', label: 'Transcript', icon: Captions},
+    {id: 'outline', label: 'Outline', icon: NotebookText},
   ]
   return (
     <div
@@ -701,6 +825,106 @@ function EpisodeEditor({
   )
 }
 
+/**
+ * Delete action for a stream that only exists as a local download. The video
+ * file is the last remaining copy, so deletion sits behind a confirmation.
+ */
+function DeleteLocalStreamSection({
+  stream,
+  download,
+  onDeleted,
+}: {
+  stream: main.PastStream
+  download: main.DownloadedVideo
+  onDeleted: () => void
+}) {
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const remove = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      await DeleteLocalStream(download.subfolder)
+      setConfirming(false)
+      onDeleted()
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not delete the past stream.',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section
+      aria-label="Delete past stream"
+      className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-edge bg-surface p-4"
+    >
+      <div className="flex min-w-0 items-start gap-3">
+        <span
+          aria-hidden
+          className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-hover text-fg-muted"
+        >
+          <HardDrive size={16} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-fg">Local copy only</p>
+          <p className="mt-0.5 text-sm text-fg-muted">
+            This stream is no longer available on its platforms; the downloaded
+            video is the only remaining copy.
+          </p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => setConfirming(true)}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-red-600/40 px-3 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-600/10 dark:text-red-400"
+      >
+        <Trash2 size={14} aria-hidden />
+        Delete past stream
+      </button>
+
+      <Modal
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        title="Delete this past stream?"
+        icon={<Trash2 size={18} aria-hidden className="text-fg-muted" />}
+      >
+        <p className="text-sm text-fg-muted">
+          “{stream.title || 'Untitled stream'}” only exists as a local
+          download. Deleting it removes the video file from your computer and
+          the stream from your history — it can't be recovered afterwards.
+        </p>
+        {error && (
+          <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>
+        )}
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setConfirming(false)}
+            className="rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void remove()}
+            disabled={busy}
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {busy ? 'Deleting…' : 'Delete stream'}
+          </button>
+        </div>
+      </Modal>
+    </section>
+  )
+}
+
 /** One condensed, clickable video row for a channel's copy of the stream. */
 function VideoRow({
   broadcast,
@@ -719,6 +943,8 @@ function VideoRow({
     formatDate(broadcast.startedAt),
     broadcast.duration,
     broadcast.viewCount > 0 ? `${formatCompact(broadcast.viewCount)} views` : '',
+    // The platform no longer lists this VOD; the download is the only copy.
+    broadcast.local ? 'Local copy' : '',
   ]
     .filter(Boolean)
     .join(' · ')
@@ -798,14 +1024,22 @@ function BroadcastDetailModal({
             }
           />
         </dl>
-        <button
-          type="button"
-          onClick={() => openExternal(broadcast.url)}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90"
-        >
-          <ExternalLink size={16} aria-hidden />
-          Watch on {name}
-        </button>
+        {broadcast.local ? (
+          // The platform removed this VOD; linking out would 404.
+          <p className="inline-flex items-center justify-center gap-2 rounded-lg bg-surface-hover px-4 py-2 text-sm font-medium text-fg-muted">
+            <HardDrive size={16} aria-hidden />
+            No longer available on {name} — only the local copy remains
+          </p>
+        ) : (
+          <button
+            type="button"
+            onClick={() => openExternal(broadcast.url)}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90"
+          >
+            <ExternalLink size={16} aria-hidden />
+            Watch on {name}
+          </button>
+        )}
       </div>
     </Modal>
   )

@@ -54,7 +54,14 @@ function toLiveEvent(
   }
   switch (subscriptionType) {
     case 'channel.follow':
-      return {...base, type: 'follow', detail: 'followed the channel'}
+      return {
+        ...base,
+        // Deterministic identity shared with the backend's follower sync, so
+        // a follow seen live and later re-listed by the poll stays one event.
+        id: str(event.user_id) ? `follow:${str(event.user_id)}` : id,
+        type: 'follow',
+        detail: 'followed the channel',
+      }
     case 'channel.subscribe': {
       const t = tier()
       return {

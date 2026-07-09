@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"os"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -12,6 +13,12 @@ import (
 var assets embed.FS
 
 func main() {
+	// `jax.exe mcp` is the stdio MCP proxy the Claude Code / Claude Desktop
+	// configs launch — no window, no second app instance (see mcp_proxy.go).
+	if len(os.Args) > 1 && os.Args[1] == "mcp" {
+		os.Exit(runMCPProxy())
+	}
+
 	// Create an instance of the app structure
 	app := NewApp()
 

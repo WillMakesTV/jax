@@ -27,6 +27,7 @@ type ContentSeries struct {
 	// each connected broadcast service.
 	TwitchCategory  ServiceCategory `json:"twitchCategory"`
 	YouTubeCategory ServiceCategory `json:"youtubeCategory"`
+	KickCategory    ServiceCategory `json:"kickCategory"`
 	Tags            []string        `json:"tags"`
 	Notes           string          `json:"notes"` // freeform planning context
 	// TwitchLabels are the Twitch Content Classification Label IDs streams in
@@ -41,9 +42,9 @@ type ContentSeries struct {
 	// series holds it (see SetDefaultContentSeries).
 	IsDefault bool `json:"isDefault"`
 	// TypeID references a SeriesType ("" = untyped); see series_types.go.
-	// (The on-air episode's title/number no longer map to OBS sources here —
-	// they flow through the auto-managed {episode_title}/{episode_number}
-	// smart-source tokens; see frontend lib/smartSources.ts.)
+	// (The on-air episode's title/number don't live here — the app writes
+	// them directly into the OBS text sources mapped in the frontend's
+	// episode-source setting; see frontend lib/smartSources.ts.)
 	TypeID string `json:"typeId"`
 }
 
@@ -80,6 +81,9 @@ func (a *App) SaveContentSeries(series ContentSeries) (ContentSeries, error) {
 	}
 	if _, ok := a.getConn("youtube"); ok && series.YouTubeCategory.ID == "" {
 		return series, fmt.Errorf("choose a YouTube category for this series")
+	}
+	if _, ok := a.getConn("kick"); ok && series.KickCategory.ID == "" {
+		return series, fmt.Errorf("choose a Kick category for this series")
 	}
 	if series.Tags == nil {
 		series.Tags = []string{}

@@ -27,6 +27,7 @@ export function MarkdownField({
   onChange,
   placeholder,
   onSelectionChange,
+  onDone,
 }: {
   id: string
   value: string
@@ -35,6 +36,8 @@ export function MarkdownField({
   /** Reports the textarea's selection range (start === end when collapsed),
    *  so callers can offer actions scoped to the highlighted text. */
   onSelectionChange?: (start: number, end: number) => void
+  /** Called when editing finishes (the Done button) — e.g. to autosave. */
+  onDone?: () => void
 }) {
   const [mode, setMode] = useState<'view' | 'edit'>(
     value.trim() ? 'view' : 'edit',
@@ -171,7 +174,10 @@ export function MarkdownField({
         {value.trim() && (
           <button
             type="button"
-            onClick={() => setMode('view')}
+            onClick={() => {
+              setMode('view')
+              onDone?.()
+            }}
             className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold text-accent transition-colors hover:bg-surface-hover"
           >
             <Check size={12} aria-hidden />

@@ -35,6 +35,14 @@ type ServiceConfig struct {
 	TwitchClientID      string `json:"twitchClientId"`
 	YouTubeClientID     string `json:"youtubeClientId"`
 	YouTubeClientSecret string `json:"youtubeClientSecret"`
+	KickClientID        string `json:"kickClientId"`
+	KickClientSecret    string `json:"kickClientSecret"`
+	FacebookAppID       string `json:"facebookAppId"`
+	FacebookClientToken string `json:"facebookClientToken"`
+	XClientID           string `json:"xClientId"`
+	XClientSecret       string `json:"xClientSecret"`
+	TikTokClientKey     string `json:"tiktokClientKey"`
+	TikTokClientSecret  string `json:"tiktokClientSecret"`
 	ObsHost             string `json:"obsHost"`
 	ObsPort             string `json:"obsPort"`
 	ObsPassword         string `json:"obsPassword"`

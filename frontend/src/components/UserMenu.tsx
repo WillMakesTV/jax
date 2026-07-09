@@ -1,22 +1,21 @@
-import {ChevronDown, Eye, EyeOff, User} from 'lucide-react'
+import {ChevronDown, Link2, Palette, User} from 'lucide-react'
 import {useEffect, useRef, useState} from 'react'
-import type {ViewId} from '../navigation'
 import {useProfile} from '../profile/ProfileProvider'
+import type {ProfileTab} from '../views/Profile'
 import {Avatar} from './Avatar'
 
 interface UserMenuProps {
-  onNavigate: (view: ViewId) => void
+  /** Open the profile page on the given tab. */
+  onOpenProfile: (tab: ProfileTab) => void
 }
 
 /**
  * Top-right user menu. The trigger shows the user's avatar (Gravatar photo or
- * default icon) and name; the dropdown links to the Profile view.
+ * default icon) and name; the dropdown links to the profile page's sections.
  */
-export function UserMenu({onNavigate}: UserMenuProps) {
+export function UserMenu({onOpenProfile}: UserMenuProps) {
   const {profile} = useProfile()
   const [open, setOpen] = useState(false)
-  // The email is masked by default and revealable, like a password.
-  const [showEmail, setShowEmail] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
   // Close on outside click or Escape.
@@ -42,7 +41,21 @@ export function UserMenu({onNavigate}: UserMenuProps) {
   }, [open])
 
   const trimmedName = profile.name.trim()
-  const trimmedEmail = profile.email.trim()
+
+  const item = (tab: ProfileTab, Icon: typeof User, label: string) => (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={() => {
+        setOpen(false)
+        onOpenProfile(tab)
+      }}
+      className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+    >
+      <Icon size={16} aria-hidden />
+      {label}
+    </button>
+  )
 
   return (
     <div ref={containerRef} className="relative">
@@ -69,44 +82,13 @@ export function UserMenu({onNavigate}: UserMenuProps) {
         >
           <div className="flex items-center gap-3 border-b border-edge px-4 py-3">
             <Avatar email={profile.email} name={profile.name} size={40} />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-fg">
-                {trimmedName || 'No name set'}
-              </p>
-              {trimmedEmail && (
-                <p className="flex items-center gap-1 text-xs text-fg-muted">
-                  <span className="truncate">
-                    {showEmail ? trimmedEmail : '••••••••••'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowEmail((s) => !s)}
-                    aria-label={showEmail ? 'Hide email' : 'Show email'}
-                    title={showEmail ? 'Hide email' : 'Show email'}
-                    className="shrink-0 rounded p-0.5 transition-colors hover:bg-surface-hover hover:text-fg"
-                  >
-                    {showEmail ? (
-                      <EyeOff size={12} aria-hidden />
-                    ) : (
-                      <Eye size={12} aria-hidden />
-                    )}
-                  </button>
-                </p>
-              )}
-            </div>
+            <p className="min-w-0 truncate text-sm font-semibold text-fg">
+              {trimmedName || 'No name set'}
+            </p>
           </div>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false)
-              onNavigate('profile')
-            }}
-            className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
-          >
-            <User size={16} aria-hidden />
-            Profile
-          </button>
+          {item('user-info', User, 'User Info')}
+          {item('brand-assets', Palette, 'Brand Assets')}
+          {item('links', Link2, 'Links')}
         </div>
       )}
     </div>

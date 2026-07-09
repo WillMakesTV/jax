@@ -23,7 +23,7 @@ export function Dashboard({onOpenChannel}: DashboardProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Hero: the live-broadcast panel (summary tiles + channel/encoder cards).
+// Hero: the live-broadcast panel (summary tiles + channel cards).
 // ---------------------------------------------------------------------------
 
 function Hero({onOpenChannel}: {onOpenChannel: (platform: string) => void}) {

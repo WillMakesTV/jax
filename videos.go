@@ -100,6 +100,8 @@ func (a *App) allVideos(forceRefresh bool) ([]Video, time.Time, bool, error) {
 		jobs := []job{
 			{"twitch", fetchTwitchVideos},
 			{"youtube", fetchYouTubeVideos},
+			{"kick", fetchKickVideos},
+			{"facebook", a.fetchFacebookVideos},
 		}
 
 		var (
@@ -197,7 +199,9 @@ func (a *App) GetVideos(forceRefresh bool) VideoList {
 // GetVideoDetails returns analytics and comments for one video. Cached for
 // apiCacheTTL per video; forceRefresh bypasses the cache.
 func (a *App) GetVideoDetails(platform, id string, forceRefresh bool) (VideoDetails, error) {
-	if platform != "twitch" && platform != "youtube" {
+	switch platform {
+	case "twitch", "youtube", "kick", "facebook":
+	default:
 		return VideoDetails{}, fmt.Errorf("unknown platform %q", platform)
 	}
 	conn, ok := a.freshConn(platform)
@@ -213,8 +217,13 @@ func (a *App) GetVideoDetails(platform, id string, forceRefresh bool) (VideoDeta
 	}
 
 	fetch := func() (VideoDetails, error) {
-		if platform == "twitch" {
+		switch platform {
+		case "twitch":
 			return fetchTwitchVideoDetails(conn, id)
+		case "kick":
+			return fetchKickVideoDetails(conn, id)
+		case "facebook":
+			return a.fetchFacebookVideoDetails(conn, id)
 		}
 		return fetchYouTubeVideoDetails(conn, id, apiKey)
 	}
@@ -262,6 +271,16 @@ func platformLabel(platform string) string {
 		return "Twitch"
 	case "youtube":
 		return "YouTube"
+	case "kick":
+		return "Kick"
+	case "facebook":
+		return "Facebook"
+	case "instagram":
+		return "Instagram"
+	case "x":
+		return "X"
+	case "tiktok":
+		return "TikTok"
 	}
 	return platform
 }

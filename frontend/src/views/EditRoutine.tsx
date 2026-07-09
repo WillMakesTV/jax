@@ -42,7 +42,7 @@ const STEP_KINDS: {kind: string; label: string}[] = [
   {kind: 'obs-record', label: 'Recording'},
   {kind: 'update-smart-sources', label: 'Update episode info (title/number)'},
   {kind: 'apply-stream-info', label: 'Apply stream info'},
-  {kind: 'streamdeck', label: 'Stream Deck Multi Action'},
+  {kind: 'streamdeck', label: 'Stream Deck button (Multi Action / Hotkey)'},
 ]
 
 /**
@@ -179,8 +179,8 @@ export function EditRoutine({
             : isEnd
               ? 'This routine runs automatically when you press Stop stream: its "before" steps, then the stream stops, then its "after" steps.'
               : 'A sequence of broadcast actions you can run from the Routines tab.'}{' '}
-          A step can also be one of your Stream Deck Multi Actions — Jax
-          replays its steps in place.
+          A step can also be one of your Stream Deck buttons (a Multi Action
+          or a Hotkey) — Jax replays its steps in place.
         </p>
 
         <form
@@ -530,20 +530,21 @@ function StepRow({
 
         {step.kind === 'update-smart-sources' && (
           <span className="min-w-32 flex-1 text-xs text-fg-muted">
-            Writes the planned stream&apos;s episode title and number into the{' '}
-            <span className="font-mono">{'{episode_title}'}</span> /{' '}
-            <span className="font-mono">{'{episode_number}'}</span> tokens and
-            re-renders every smart source; skipped when the stream on the air
-            isn&apos;t a planned one.
+            Writes the planned stream&apos;s episode info straight into the
+            OBS text sources mapped on the series&apos; edit page — the title
+            as-is, the number as e.g.{' '}
+            <span className="font-mono">Episode 8</span>. Skipped when the
+            stream on the air isn&apos;t a planned one.
           </span>
         )}
 
         {step.kind === 'apply-stream-info' && (
           <span className="min-w-32 flex-1 text-xs text-fg-muted">
-            Pushes the planned stream&apos;s title and description to its
-            channels — Twitch right away; YouTube needs the broadcast live, so
-            place this after the stream starts. Skipped when the stream
-            isn&apos;t a planned one.
+            Pushes the planned stream&apos;s info to its channels — Twitch gets
+            the title, category, and tags; YouTube gets the episode title,
+            description, and tags on its live broadcast (or the upcoming one
+            when off the air). Skipped when the stream isn&apos;t a planned
+            one.
           </span>
         )}
 

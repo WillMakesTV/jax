@@ -4,6 +4,7 @@ import {useEffect, useState} from 'react'
 import {useLiveData} from '../live/LiveDataProvider'
 import {END_ROUTINE, runStreamRoutine, START_ROUTINE} from '../obs/routines'
 import {useServices} from '../services/ServicesProvider'
+import {anyChannelConnected} from '../services/services'
 
 /**
  * Top-bar Go Live / Stop Stream CTA. Runs the built-in Start/End Stream
@@ -17,7 +18,7 @@ export function GoLiveButton() {
 
   const obsConnected = statuses.obs.connected
   const channelConnected =
-    statuses.twitch.connected || statuses.youtube.connected
+    anyChannelConnected(statuses)
   const streaming = Boolean(obs?.outputActive)
   const reconnecting = Boolean(obs?.outputReconnecting)
 

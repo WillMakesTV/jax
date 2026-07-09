@@ -4,15 +4,19 @@ import {PageHeader} from '../components/PageHeader'
 import {AiTab} from './settings/AiTab'
 import {PreferencesTab} from './settings/PreferencesTab'
 import {ServicesTab} from './settings/ServicesTab'
+import {SkillsTab} from './settings/SkillsTab'
 import {StreamsTab} from './settings/StreamsTab'
+import {VideosTab} from './settings/VideosTab'
 
-type TabId = 'preferences' | 'services' | 'ai' | 'streams'
+type TabId = 'preferences' | 'services' | 'ai' | 'skills' | 'streams' | 'videos'
 
 const TABS: {id: TabId; label: string}[] = [
   {id: 'preferences', label: 'Preferences'},
   {id: 'services', label: 'Services'},
   {id: 'ai', label: 'AI'},
+  {id: 'skills', label: 'Skills'},
   {id: 'streams', label: 'Streams'},
+  {id: 'videos', label: 'Videos'},
 ]
 
 export function Settings() {
@@ -59,7 +63,9 @@ export function Settings() {
         {tab === 'preferences' && <PreferencesTab />}
         {tab === 'services' && <ServicesTab />}
         {tab === 'ai' && <AiTab />}
+        {tab === 'skills' && <SkillsTab />}
         {tab === 'streams' && <StreamsTab />}
+        {tab === 'videos' && <VideosTab />}
       </div>
     </div>
   )

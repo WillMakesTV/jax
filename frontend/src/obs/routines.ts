@@ -1,15 +1,16 @@
 import {
   ApplyStreamInfo,
+  ApplyStreamInfoForPlan,
   EndStreamSession,
   GetActiveStreamSession,
+  GetPlannedStreams,
+  GetPlanSessions,
   GetRoutines,
   GetStreamdeckMultiActions,
+  PressHotkey,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
-import {
-  SMART_SOURCES_REFRESH_EVENT,
-  updateEpisodeTokens,
-} from '../lib/smartSources'
+import {pushEpisodeText} from '../lib/smartSources'
 
 /**
  * Routine execution. A routine's normalized steps (authored in Jax, or parsed
@@ -60,10 +61,12 @@ export function describeStep(step: main.RoutineStep): string {
           : 'Toggle recording'
     case 'delay':
       return `Wait ${((step.delayMs ?? 0) / 1000).toLocaleString()}s`
+    case 'hotkey':
+      return `Press ${step.description || 'a hotkey'}`
     case 'update-smart-sources':
-      return 'Update episode info (title/number tokens)'
+      return 'Update episode info (mapped text sources)'
     case 'apply-stream-info':
-      return 'Apply stream info (title & description)'
+      return 'Apply stream info (title, description, tags & category)'
     case 'streamdeck':
       return `Stream Deck: “${step.description || 'Multi Action'}”`
     default:
@@ -134,10 +137,23 @@ export async function resolveRoutinePhases(
 async function runStep(
   step: main.RoutineStep,
   obsRequest: ObsRequest,
+  opts: RunRoutineOptions = {},
 ): Promise<string | null> {
   switch (step.kind) {
     case 'delay':
       await sleep(step.delayMs ?? 0)
+      return null
+
+    case 'hotkey':
+      // A Stream Deck Hotkey button: the backend synthesizes the keystroke
+      // system-wide, exactly as pressing the deck button would.
+      await PressHotkey(
+        step.vkey ?? 0,
+        Boolean(step.ctrl),
+        Boolean(step.shift),
+        Boolean(step.alt),
+        Boolean(step.win),
+      )
       return null
 
     case 'obs-scene': {
@@ -214,13 +230,29 @@ async function runStep(
       return null
 
     case 'update-smart-sources':
-      return updateEpisodeSmartSources()
+      return updateEpisodeSmartSources(obsRequest, Boolean(opts.test))
 
     case 'apply-stream-info': {
-      // Push the on-air planned stream's title/description to its channels
-      // (Twitch immediately; YouTube needs the live broadcast to exist, so
-      // this step belongs after the stream starts). The backend no-ops when
-      // no planned stream is on the air.
+      // Push the on-air planned stream's info to its channels: Twitch's
+      // channel info, and YouTube's live broadcast (or, off the air, its
+      // upcoming default/scheduled broadcast — what YouTube Studio edits
+      // offline). The backend no-ops when no planned stream is on the air —
+      // except in a test, which pushes the ready-to-go-live plan's info for
+      // real; both platforms simply apply it to the next stream.
+      if (opts.test) {
+        const session = await GetActiveStreamSession()
+        if (!session.active || !session.planId) {
+          const plan = await nextPlannedStream()
+          if (!plan) {
+            return 'Test: no planned stream is ready to go live, so no stream info was applied.'
+          }
+          const warnings = (await ApplyStreamInfoForPlan(plan.id)) ?? []
+          return [
+            `Test: applied “${plan.title}” stream info to its channels.`,
+            ...warnings,
+          ].join(' · ')
+        }
+      }
       const warnings = (await ApplyStreamInfo()) ?? []
       return warnings.length > 0 ? warnings.join(' · ') : null
     }
@@ -232,21 +264,57 @@ async function runStep(
 
 /**
  * The "Update episode info" step: write the on-air planned stream's episode
- * title and number into the auto-managed episode tokens
- * ({episode_title}/{episode_number}), right now, then ask the app-wide
- * updater to re-render every smart source immediately — everything flows
- * through the one token/template pipeline.
+ * title and "Episode N" directly into the OBS text sources mapped on the
+ * series' edit page — plain text, no tokens or templates involved.
  *
  * Going live with a plan opens its stream session before the Start routine
  * runs, so the step sees the new episode. When no planned stream is on the
- * air, the step is a silent no-op.
+ * air the step is a silent no-op — except in a test, which rehearses with the
+ * planned stream that is ready to go live, exactly what the real go-live
+ * would show.
  */
-async function updateEpisodeSmartSources(): Promise<string | null> {
+async function updateEpisodeSmartSources(
+  obsRequest: ObsRequest,
+  test: boolean,
+): Promise<string | null> {
   const session = await GetActiveStreamSession()
-  if (!session.active || (!session.title && session.episode <= 0)) return null
-  await updateEpisodeTokens(session.title, session.episode)
-  window.dispatchEvent(new Event(SMART_SOURCES_REFRESH_EVENT))
-  return null
+  if (session.active) {
+    if (!session.title && session.episode <= 0) return null
+    await pushEpisodeText(obsRequest, session.title, session.episode)
+    return null
+  }
+  if (!test) return null
+
+  const plan = await nextPlannedStream()
+  if (!plan) {
+    return 'Test: no planned stream is ready to go live, so the episode text sources were left as-is.'
+  }
+  if (!plan.title && plan.episodeNumber <= 0) return null
+  const wrote = await pushEpisodeText(obsRequest, plan.title, plan.episodeNumber)
+  if (!wrote) {
+    return 'Test: no episode text sources are mapped — choose them on the series’ edit page.'
+  }
+  return `Test: episode sources show “${plan.title}”${
+    plan.episodeNumber > 0 ? ` (Episode ${plan.episodeNumber})` : ''
+  } from the upcoming plan.`
+}
+
+/**
+ * The planned stream a test should rehearse with: the newest plan that has
+ * not been broadcast yet — the same card "Go Live with Planned Stream" puts
+ * on top with its Go Live button ready.
+ */
+async function nextPlannedStream(): Promise<main.PlannedStream | null> {
+  try {
+    const [plans, sessions] = await Promise.all([
+      GetPlannedStreams(),
+      GetPlanSessions(),
+    ])
+    const broadcast = new Set((sessions ?? []).map((s) => s.planId))
+    return (plans ?? []).find((p) => !broadcast.has(p.id)) ?? null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -256,11 +324,12 @@ async function updateEpisodeSmartSources(): Promise<string | null> {
 export async function runSteps(
   steps: main.RoutineStep[],
   obsRequest: ObsRequest,
+  opts: RunRoutineOptions = {},
 ): Promise<string[]> {
   const warnings: string[] = []
   for (const step of steps) {
     try {
-      const skipped = await runStep(step, obsRequest)
+      const skipped = await runStep(step, obsRequest, opts)
       if (skipped) warnings.push(skipped)
     } catch (err) {
       warnings.push(
@@ -273,14 +342,26 @@ export async function runSteps(
   return warnings
 }
 
+export interface RunRoutineOptions {
+  /**
+   * Test mode: rehearse the routine without touching the broadcast. Every
+   * step runs as usual except stream start/stop/toggle steps (and the
+   * built-ins' implied stream transition), which are skipped and reported,
+   * and the End routine leaves the stream session open.
+   */
+  test?: boolean
+}
+
 /**
  * Run one routine: its before-steps, then — for the built-in routines — the
  * stream transition, then its after-steps. A broken or missing phase only
- * produces warnings; the built-ins' stream transition itself is guaranteed.
+ * produces warnings; the built-ins' stream transition itself is guaranteed
+ * (unless testing, which never starts or stops the stream).
  */
 export async function runRoutine(
   routine: main.Routine,
   obsRequest: ObsRequest,
+  opts: RunRoutineOptions = {},
 ): Promise<string[]> {
   const warnings: string[] = []
   let phases: RoutinePhases = {before: [], after: [], warnings: []}
@@ -294,14 +375,36 @@ export async function runRoutine(
         : 'The routine could not be loaded.',
     )
   }
-  warnings.push(...(await runSteps(phases.before, obsRequest)))
-  warnings.push(
-    ...(await impliedStreamTransition(routine.trigger, phases.before, obsRequest)),
-  )
-  warnings.push(...(await runSteps(phases.after, obsRequest)))
+  if (opts.test) {
+    const holdStream = (steps: main.RoutineStep[]) =>
+      steps.filter((s) => {
+        if (s.kind !== 'obs-stream') return true
+        warnings.push(`Test: skipped “${describeStep(s)}”.`)
+        return false
+      })
+    phases = {
+      ...phases,
+      before: holdStream(phases.before),
+      after: holdStream(phases.after),
+    }
+  }
+  warnings.push(...(await runSteps(phases.before, obsRequest, opts)))
+  if (opts.test) {
+    if (routine.trigger === START_ROUTINE) {
+      warnings.push('Test: the stream was not started.')
+    } else if (routine.trigger === END_ROUTINE) {
+      warnings.push('Test: the stream was not stopped.')
+    }
+  } else {
+    warnings.push(
+      ...(await impliedStreamTransition(routine.trigger, phases.before, obsRequest)),
+    )
+  }
+  warnings.push(...(await runSteps(phases.after, obsRequest, opts)))
   // Ending the broadcast closes the open stream session (the record a
-  // planned stream's chat and transcript are attached to).
-  if (routine.trigger === END_ROUTINE) {
+  // planned stream's chat and transcript are attached to). A test is not an
+  // ending: whatever is on the air stays attached to its session.
+  if (routine.trigger === END_ROUTINE && !opts.test) {
     await EndStreamSession().catch(() => {})
   }
   return warnings

@@ -23,6 +23,23 @@ import (
 
 const mediaPrefix = "/media/"
 
+// projectFilesPrefix serves project asset files (~/.jax/projects, see
+// projects.go) alongside downloaded media.
+const projectFilesPrefix = "/projectfiles/"
+
+// editsPrefix serves the video-plan edit workspaces (see editor.go). Their
+// root is configured independently of the download folder (Settings →
+// Videos), so it gets its own route.
+const editsPrefix = "/edits/"
+
+// planThumbsPrefix serves generated plan thumbnails (~/.jax/plan_thumbs, see
+// plan_thumbs.go).
+const planThumbsPrefix = "/planthumbs/"
+
+// brandFilesPrefix serves the brand's uploaded assets (~/.jax/brand, see
+// brand.go).
+const brandFilesPrefix = "/brandfiles/"
+
 // startMediaServer binds a loopback listener and serves downloaded media,
 // recording the base URL on the app. Best-effort: on failure media playback is
 // simply unavailable (mediaBaseURL stays empty).
@@ -56,13 +73,43 @@ func (h mediaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	if !strings.HasPrefix(r.URL.Path, mediaPrefix) {
+	var base, rel string
+	switch {
+	case strings.HasPrefix(r.URL.Path, mediaPrefix):
+		base = h.app.resolveDownloadDir()
+		rel = strings.TrimPrefix(r.URL.Path, mediaPrefix)
+	case strings.HasPrefix(r.URL.Path, editsPrefix):
+		base = h.app.resolveEditRoot()
+		rel = strings.TrimPrefix(r.URL.Path, editsPrefix)
+	case strings.HasPrefix(r.URL.Path, projectFilesPrefix):
+		dir, err := projectsDir()
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		base = dir
+		rel = strings.TrimPrefix(r.URL.Path, projectFilesPrefix)
+	case strings.HasPrefix(r.URL.Path, planThumbsPrefix):
+		dir, err := planThumbsDir()
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		base = dir
+		rel = strings.TrimPrefix(r.URL.Path, planThumbsPrefix)
+	case strings.HasPrefix(r.URL.Path, brandFilesPrefix):
+		dir, err := brandDir()
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		base = dir
+		rel = strings.TrimPrefix(r.URL.Path, brandFilesPrefix)
+	default:
 		http.NotFound(w, r)
 		return
 	}
-	rel := strings.TrimPrefix(r.URL.Path, mediaPrefix)
-
-	base := filepath.Clean(h.app.resolveDownloadDir())
+	base = filepath.Clean(base)
 	full := resolveMediaPath(base, rel)
 	if full == "" {
 		// Some hosts deliver the raw (percent-encoded) path; try decoding.

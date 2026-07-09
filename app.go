@@ -29,6 +29,24 @@ type App struct {
 	// chat polls (guarded by mu; see chat.go).
 	ytChatID string
 
+	// kickAuth is the in-flight Kick browser sign-in, nil when none is
+	// pending (guarded by mu; see kick.go).
+	kickAuth *kickAuthState
+
+	// xAuth is the in-flight X browser sign-in, nil when none is pending
+	// (guarded by mu; see x.go).
+	xAuth *xAuthState
+
+	// tiktokAuth is the in-flight TikTok browser sign-in, nil when none is
+	// pending (guarded by mu; see tiktok.go).
+	tiktokAuth *tiktokAuthState
+
+	// Meta live-object memos: the Facebook Page's live video id and the
+	// Instagram account's live media id, "" when offline (guarded by mu;
+	// see meta.go).
+	fbLiveVideoID string
+	igLiveMediaID string
+
 	// YouTube live-status memo (guarded by mu; see live.go). The frontend
 	// polls GetLiveStreams every 10-60s, but YouTube's quota is tight, so the
 	// last result is served between backend refreshes and the active video id
@@ -44,6 +62,11 @@ type App struct {
 	// Video-download sidecar process (guarded by mu; see download.go).
 	downloadCmd *exec.Cmd
 
+	// movingDownloads is set while the download folder is being relocated
+	// (guarded by mu; see move_downloads.go). New downloads and transcriptions
+	// are refused while it is up.
+	movingDownloads bool
+
 	// Downloaded-video transcription queue: queued and running jobs, oldest
 	// first (guarded by mu; see transcribe_video.go).
 	vodJobs []*vodJob
@@ -52,10 +75,20 @@ type App struct {
 	// downloaded videos (guarded by mu; see media.go). Empty until startup.
 	mediaBaseURL string
 
-	// ytSubsSeen tracks which YouTube subscription ids the subscriber poll has
-	// already reported, so only genuinely new subscribers become feed events.
-	// nil until the first poll baselines it (guarded by mu; see subscribers.go).
-	ytSubsSeen map[string]bool
+	// In-progress headless editing session and the plan it belongs to
+	// (guarded by mu; see editor.go). One edit runs at a time.
+	editCmd    *exec.Cmd
+	editPlanID string
+
+	// movingEdits is set while the edit-workspace folder is being relocated
+	// (guarded by mu; see move_edits.go). Workspace preparation and edit
+	// runs are refused while it is up.
+	movingEdits bool
+
+	// MCP server state: the bearer token every request must carry and the
+	// loopback endpoint URL, empty until startup (guarded by mu; see mcp.go).
+	mcpToken string
+	mcpURL   string
 }
 
 // NewApp creates a new App application struct
@@ -98,6 +131,9 @@ func (a *App) startup(ctx context.Context) {
 	// Serve downloaded videos over a loopback HTTP server so large files stream
 	// (with range/seek support) instead of buffering through the webview.
 	a.startMediaServer()
+	// Expose the app's data and workflows to Claude Code / Claude Desktop as
+	// an MCP server (see mcp.go).
+	a.startMCPServer()
 	go func() {
 		if err := a.ensureTranscriber(); err != nil {
 			log.Printf("jax: warm transcriber: %v", err)
@@ -118,6 +154,8 @@ func (a *App) shutdown(ctx context.Context) {
 	a.killTranscriber()
 	a.CancelDownload()
 	a.killVodJobs()
+	a.CancelEditRun()
+	removeMCPRuntime()
 	if a.store != nil {
 		_ = a.store.Close()
 	}

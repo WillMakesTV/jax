@@ -1,6 +1,5 @@
 import clsx from 'clsx'
 import {ChevronLeft, ChevronRight, Radio} from 'lucide-react'
-import {aggregateLive, useLiveData} from '../live/LiveDataProvider'
 import {PRIMARY_NAV, SETTINGS_NAV, type ViewId} from '../navigation'
 import {useProfile} from '../profile/ProfileProvider'
 import {Avatar} from './Avatar'
@@ -28,10 +27,6 @@ export function Sidebar({
   // Gravatar and name replace the default app mark.
   const {profile} = useProfile()
   const personalised = Boolean(profile.name.trim() || profile.email.trim())
-
-  // While on the air the Live Stream item's icon pulses/glows red.
-  const {platforms, obs} = useLiveData()
-  const {anyLive} = aggregateLive(platforms, obs)
 
   return (
     <nav
@@ -93,7 +88,6 @@ export function Sidebar({
             item={item}
             active={activeView === item.id}
             collapsed={collapsed}
-            live={item.id === 'live' && anyLive}
             onSelect={() => onNavigate(item.id)}
           />
         ))}

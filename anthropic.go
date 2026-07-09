@@ -192,15 +192,15 @@ func claudeCodeAccount() (string, bool) {
 	return account, true
 }
 
-// openTerminal opens an interactive terminal running the given program so
-// the user can complete a sign-in there. Best-effort; returns whether a
-// window was launched.
-func openTerminal(program string) bool {
+// openTerminal opens an interactive terminal running the given program (with
+// optional arguments) so the user can complete a sign-in there. Best-effort;
+// returns whether a window was launched.
+func openTerminal(program string, args ...string) bool {
 	if runtime.GOOS != "windows" {
 		return false
 	}
 	// `start` detaches a new console window; the empty string is its title.
-	cmd := exec.Command("cmd", "/c", "start", "", program)
+	cmd := exec.Command("cmd", append([]string{"/c", "start", "", program}, args...)...)
 	hideWindow(cmd)
 	return cmd.Start() == nil
 }

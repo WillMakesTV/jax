@@ -6,6 +6,7 @@ import {useEvents} from '../events/EventsProvider'
 import {GoLiveButton} from '../components/GoLiveButton'
 import {PlannedGoLive} from '../live/PlannedGoLive'
 import {TranscriptPanel} from '../transcript/TranscriptPanel'
+import {main} from '../../wailsjs/go/models'
 import {LiveDashboard} from './LiveDashboard'
 
 /** The Broadcast section's tabs. App owns the state so the status bar can deep-link. */
@@ -16,6 +17,8 @@ interface LiveStreamProps {
   onTabChange: (tab: LiveStreamTab) => void
   /** Open the OBS Studio section. */
   onOpenObs: () => void
+  /** Open a stream plan's broadcast page. */
+  onOpenPlan: (plan: main.PlannedStream) => void
 }
 
 /**
@@ -23,7 +26,7 @@ interface LiveStreamProps {
  * notifications), the aggregated chat, live channel events, and the
  * transcript. Planning and OBS Studio are their own top-level sections.
  */
-export function LiveStream({tab, onTabChange, onOpenObs}: LiveStreamProps) {
+export function LiveStream({tab, onTabChange, onOpenObs, onOpenPlan}: LiveStreamProps) {
   const {unreadCount: unreadChat} = useChat()
   const {unreadCount: unreadEvents} = useEvents()
 
@@ -81,7 +84,7 @@ export function LiveStream({tab, onTabChange, onOpenObs}: LiveStreamProps) {
 
       {tab === 'dashboard' && (
         <>
-          <PlannedGoLive />
+          <PlannedGoLive onOpenPlan={onOpenPlan} />
           <LiveDashboard
             onOpenObs={onOpenObs}
             onOpenChat={() => onTabChange('chat')}

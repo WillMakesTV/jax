@@ -16,11 +16,17 @@ export function ObsStudio({
   tab,
   onTabChange,
   onEditRoutine,
+  onEditSmartSource,
+  onOpenCustomTokens,
 }: {
   tab: ObsTab
   onTabChange: (tab: ObsTab) => void
   /** Open the routine add/edit page; null creates a new routine. */
   onEditRoutine: (routine: main.Routine | null) => void
+  /** Open the smart-source template-editor page. */
+  onEditSmartSource: (name: string) => void
+  /** Open the custom-tokens page. */
+  onOpenCustomTokens: () => void
 }) {
   const tabs: {id: ObsTab; label: string}[] = [
     {id: 'dashboard', label: 'Dashboard'},
@@ -56,7 +62,12 @@ export function ObsStudio({
 
       {tab === 'dashboard' && <ObsPanel />}
       {tab === 'routines' && <RoutinesPanel onEditRoutine={onEditRoutine} />}
-      {tab === 'smart-sources' && <SmartSourcesPanel />}
+      {tab === 'smart-sources' && (
+        <SmartSourcesPanel
+          onEditSource={onEditSmartSource}
+          onOpenCustomTokens={onOpenCustomTokens}
+        />
+      )}
     </div>
   )
 }

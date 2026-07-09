@@ -2,7 +2,7 @@ import {ArrowDown, Bot, MessageSquare, Radio, Send} from 'lucide-react'
 import {useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react'
 import {BrandTile} from '../components/BrandTile'
 import {Modal} from '../components/Modal'
-import {platformName} from '../services/services'
+import {anyChannelConnected, platformName} from '../services/services'
 import {useServices} from '../services/ServicesProvider'
 import {useChat, type ChatItem} from './ChatProvider'
 import {ChatUserModal} from './ChatUserModal'
@@ -74,7 +74,7 @@ export function ChatPanel() {
   }
 
   // Broadcast composer state.
-  const canSend = statuses.twitch.connected || statuses.youtube.connected
+  const canSend = anyChannelConnected(statuses)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
