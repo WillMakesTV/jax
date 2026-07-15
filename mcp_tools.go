@@ -20,7 +20,8 @@ import (
 //   - OBS control and routine execution (the obs-websocket session lives in
 //     the frontend, not the Go backend);
 //   - native dialogs (file pickers) and destructive deletes of media, series,
-//     or projects;
+//     or projects (delete_debug_report is the intentional exception —
+//     deleting a resolved report is the point of the AI debugging workflow);
 //   - AI passthroughs (plan suggestions, description edits) — the MCP client
 //     is already a model; it gets the raw data instead.
 // ---------------------------------------------------------------------------
@@ -705,6 +706,98 @@ func mcpToolCatalog() []mcpTool {
 			description: "Stream routines (Start/End Stream and custom OBS action sequences) with their steps. Read-only — routines run from the app, which owns the OBS connection.",
 			handler: func(a *App, _ json.RawMessage) (any, error) {
 				return a.GetRoutines(), nil
+			},
+		},
+
+		// --- AI debug reports -----------------------------------------------
+		// See skills/ai-debugging.md (the ai-debugging skill). Reports are
+		// filed from the app's debug button; a client works each one and
+		// deletes it once resolved.
+		{
+			name:        "list_debug_reports",
+			description: "All open developer debug reports (bug reports filed from the app), newest first: id, title, description, route (the app view id), global flag, and timestamps. Any result is work to pick up — see the ai-debugging skill.",
+			handler: func(a *App, _ json.RawMessage) (any, error) {
+				return a.ListDebugReports(), nil
+			},
+		},
+		{
+			name:        "count_debug_reports",
+			description: "How many developer debug reports are open. Zero means nothing is known to be broken.",
+			handler: func(a *App, _ json.RawMessage) (any, error) {
+				n, err := a.CountDebugReports()
+				if err != nil {
+					return nil, err
+				}
+				return map[string]any{"count": n}, nil
+			},
+		},
+		{
+			name:        "search_debug_reports",
+			description: "Debug reports whose title or description contains the query (case-insensitive), newest first.",
+			inputSchema: objSchema(map[string]any{
+				"query": prop("string", "Words to look for in report titles and descriptions."),
+			}, "query"),
+			handler: func(a *App, args json.RawMessage) (any, error) {
+				var in struct {
+					Query string `json:"query"`
+				}
+				if err := decodeArgs(args, &in); err != nil {
+					return nil, err
+				}
+				return a.SearchDebugReports(in.Query)
+			},
+		},
+		{
+			name:        "get_debug_report",
+			description: "One debug report by id, as returned by list_debug_reports.",
+			inputSchema: objSchema(map[string]any{
+				"id": prop("integer", "The report id."),
+			}, "id"),
+			handler: func(a *App, args json.RawMessage) (any, error) {
+				var in struct {
+					ID int64 `json:"id"`
+				}
+				if err := decodeArgs(args, &in); err != nil {
+					return nil, err
+				}
+				return a.GetDebugReport(in.ID)
+			},
+		},
+		{
+			name:        "save_debug_report",
+			description: `Create or update a debug report. Omit "id" to file a new report; include it to update an existing one (e.g. to append findings before pausing an investigation). Description is required.`,
+			inputSchema: objSchema(map[string]any{
+				"id":          prop("integer", "Report id when updating; omit to create."),
+				"title":       prop("string", "Short summary line."),
+				"description": prop("string", "Long-form description of the bug: symptoms, expectations, reproduction notes."),
+				"route":       prop("string", "The app view id the bug appears on (e.g. \"dashboard\", \"planning\"). May be blank for global reports."),
+				"global":      prop("boolean", "True when the problem is app-wide rather than tied to one view."),
+			}, "description"),
+			handler: func(a *App, args json.RawMessage) (any, error) {
+				var r DebugReport
+				if err := decodeArgs(args, &r); err != nil {
+					return nil, err
+				}
+				return a.SaveDebugReport(r)
+			},
+		},
+		{
+			name:        "delete_debug_report",
+			description: "Remove a debug report — the resolve step of the AI debugging workflow. Only delete a report after its fix is verified; this is deliberately the one destructive delete exposed over MCP. The reporter is left a read-once notice in the app that the bug was fixed, linking to the report's page.",
+			inputSchema: objSchema(map[string]any{
+				"id": prop("integer", "The report id to delete."),
+			}, "id"),
+			handler: func(a *App, args json.RawMessage) (any, error) {
+				var in struct {
+					ID int64 `json:"id"`
+				}
+				if err := decodeArgs(args, &in); err != nil {
+					return nil, err
+				}
+				if err := a.ResolveDebugReport(in.ID); err != nil {
+					return nil, err
+				}
+				return fmt.Sprintf("debug report %d deleted; the reporter will see a fixed notice", in.ID), nil
 			},
 		},
 	}

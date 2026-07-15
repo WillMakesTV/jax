@@ -12,6 +12,8 @@ import {TranscriptProvider} from './transcript/TranscriptProvider'
 import {VodTranscribeProvider} from './transcript/VodTranscribeProvider'
 import {DownloadProvider} from './downloads/DownloadProvider'
 import {OutlineProvider} from './outline/OutlineProvider'
+import {ClipIdeasProvider} from './clips/ClipIdeasProvider'
+import {EditSessionProvider} from './editor/EditSessionProvider'
 
 const container = document.getElementById('root')
 
@@ -29,7 +31,11 @@ root.render(
                                     <DownloadProvider>
                                         <VodTranscribeProvider>
                                             <OutlineProvider>
-                                                <App/>
+                                                <ClipIdeasProvider>
+                                                    <EditSessionProvider>
+                                                        <App/>
+                                                    </EditSessionProvider>
+                                                </ClipIdeasProvider>
                                             </OutlineProvider>
                                         </VodTranscribeProvider>
                                     </DownloadProvider>

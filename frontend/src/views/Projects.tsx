@@ -1,8 +1,9 @@
 import {FileText, FolderKanban, Paperclip, Plus, Trash2} from 'lucide-react'
-import {useEffect, useState} from 'react'
+import {useCallback, useEffect, useState} from 'react'
 import {DeleteProject, GetProjects} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {PageHeader} from '../components/PageHeader'
+import {useDataChanged} from '../lib/dataChanged'
 
 /**
  * The Projects section: creatable bodies of work (a launch, a build, a
@@ -17,11 +18,15 @@ export function Projects({
 }) {
   const [projects, setProjects] = useState<main.Project[]>([])
 
-  useEffect(() => {
+  const load = useCallback(() => {
     GetProjects()
       .then((p) => setProjects(p ?? []))
       .catch(() => {})
   }, [])
+
+  useEffect(load, [load])
+  // Projects saved elsewhere (e.g. an MCP client) appear without a re-visit.
+  useDataChanged(['projects'], load)
 
   const remove = async (id: string) => {
     try {

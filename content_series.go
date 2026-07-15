@@ -30,6 +30,12 @@ type ContentSeries struct {
 	KickCategory    ServiceCategory `json:"kickCategory"`
 	Tags            []string        `json:"tags"`
 	Notes           string          `json:"notes"` // freeform planning context
+	// Season groups the series' current run ("" = none). It names the
+	// subfolder a video plan's edit workspace lives in, so produced videos are
+	// filed by season rather than piling up in one flat folder (see
+	// editWorkspaceRel in editor.go). A bare number is shown as "Season 1";
+	// anything else is used verbatim.
+	Season string `json:"season"`
 	// TwitchLabels are the Twitch Content Classification Label IDs streams in
 	// this series carry (see twitchContentLabelIDs in planning.go and the
 	// catalogue in frontend lib/contentLabels.ts).
@@ -118,6 +124,10 @@ func (a *App) SaveContentSeries(series ContentSeries) (ContentSeries, error) {
 	if err := a.store.setJSON(keyContentSeries, all); err != nil {
 		return series, err
 	}
+	// The season decides which folder a plan's edit workspace lives in, so a
+	// changed season re-files the workspaces of every plan cut from this
+	// series' streams (see relocateEditWorkspaces).
+	go a.relocateEditWorkspaces()
 	return series, nil
 }
 

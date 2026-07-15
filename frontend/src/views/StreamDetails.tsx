@@ -14,28 +14,47 @@ import {
   Loader2,
   MessageSquare,
   NotebookText,
+  Pencil,
   PlayCircle,
   Radio,
   RefreshCw,
+  Scissors,
   Trash2,
   Video,
+  WandSparkles,
 } from 'lucide-react'
 import clsx from 'clsx'
 import {useEffect, useState} from 'react'
 import {
   DeleteLocalStream,
+  GenerateStreamDescription,
+  GenerateStreamThumbnail,
   GetContentSeries,
   GetPastStreams,
   GetSeriesTypes,
+  GetStreamOutline,
   SetPastStreamSeries,
+  SetStreamDescription,
   SetStreamEpisode,
+  SetStreamThumbnail,
+  SetStreamTitle,
   StartDownload,
+  UpdateYouTubeStreamInfo,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {BrandTile} from '../components/BrandTile'
+import {ClipsPanel} from '../components/ClipsPanel'
 import {Modal} from '../components/Modal'
 import {PageHeader} from '../components/PageHeader'
 import {OutlinePanel} from '../components/OutlinePanel'
+import {
+  PlanThumbnailEditor,
+  zipThumbHistory,
+  type PlanThumb,
+} from '../components/PlanThumbnailEditor'
+import {MarkdownField} from '../components/markdown/MarkdownField'
+import {DescriptionAiActions} from './PlanStream'
+import type {VideoPlanTab} from './VideoPlanDetails'
 import {
   ChatLogPanel,
   EventsLogPanel,
@@ -142,7 +161,26 @@ function resolveDownload(
   return {platform, urls, picks}
 }
 
-export type StreamTab = 'overview' | 'chat' | 'events' | 'transcript' | 'outline'
+/**
+ * The title the platforms give the stream — Twitch's preferred (YouTube live
+ * titles carry decorations), falling back to the first non-empty. Mirrors
+ * pickStreamTitle in past.go; a custom rename overrides it.
+ */
+function pickPlatformTitle(broadcasts: main.PastBroadcast[]): string {
+  const twitch = broadcasts.find(
+    (b) => b.platform === 'twitch' && b.title.trim(),
+  )
+  if (twitch) return twitch.title.trim()
+  return broadcasts.find((b) => b.title.trim())?.title.trim() ?? ''
+}
+
+export type StreamTab =
+  | 'overview'
+  | 'chat'
+  | 'events'
+  | 'transcript'
+  | 'outline'
+  | 'clips'
 
 interface StreamDetailsProps {
   stream: main.PastStream
@@ -151,6 +189,12 @@ interface StreamDetailsProps {
   onBack: () => void
   /** Open a downloaded broadcast's video page (player + chat + transcript). */
   onOpenDownload: (download: main.DownloadedVideo) => void
+  /** Open a video plan made from this stream (the Clips tab), optionally on
+   *  a specific tab (e.g. 'editor' right after a script is chosen). */
+  onOpenVideoPlan: (plan: main.VideoPlan, tab?: VideoPlanTab) => void
+  /** The stream was renamed — reflect it on the navigation entry (and with
+   *  it the top-bar title). customTitle is '' when reset to the platform's. */
+  onRenamed: (title: string, customTitle: string) => void
 }
 
 /**
@@ -164,6 +208,8 @@ export function StreamDetails({
   initialTab,
   onBack,
   onOpenDownload,
+  onOpenVideoPlan,
+  onRenamed,
 }: StreamDetailsProps) {
   const [tab, setTab] = useState<StreamTab>(initialTab ?? 'overview')
   const [detail, setDetail] = useState<main.PastBroadcast | null>(null)
@@ -193,6 +239,132 @@ export function StreamDetails({
   }, [])
   const clusters = clusterBroadcasts(stream.broadcasts, marginMin * 60_000)
   const channelCount = new Set(stream.broadcasts.map((b) => b.platform)).size
+
+  // The stream's effective title, editable in place (a custom rename
+  // overrides the platform title; clearing it falls back). Local state so
+  // edits reflect without refetching the whole past-streams list.
+  const [title, setTitle] = useState(stream.title)
+  const [customTitle, setCustomTitle] = useState(stream.customTitle ?? '')
+  const platformTitle = pickPlatformTitle(stream.broadcasts)
+  // Without a rename the stream carries its concluded plan's title (the plan
+  // moves onto the stream at conclude), falling back to the platform's.
+  const planTitle = stream.plan?.title?.trim() ?? ''
+  const fallbackTitle = planTitle || platformTitle
+  const [renaming, setRenaming] = useState(false)
+  const [titleDraft, setTitleDraft] = useState('')
+  const [savingTitle, setSavingTitle] = useState(false)
+  const [titleError, setTitleError] = useState('')
+  useEffect(() => {
+    setTitle(stream.title)
+    setCustomTitle(stream.customTitle ?? '')
+  }, [stream])
+  const streamName = title || `Stream ${formatDate(stream.startedAt)}`
+
+  const openRename = () => {
+    setTitleDraft(title)
+    setTitleError('')
+    setRenaming(true)
+  }
+  // Save the rename; an empty (or fallback-matching) value clears the
+  // override so the plan/platform title shows again.
+  const saveTitle = async (next: string) => {
+    const trimmed = next.trim()
+    const clearing = trimmed === '' || trimmed === fallbackTitle
+    setSavingTitle(true)
+    setTitleError('')
+    try {
+      await SetStreamTitle(stream.startedAt, clearing ? '' : trimmed)
+      const effective = clearing
+        ? fallbackTitle || `Stream ${formatDate(stream.startedAt)}`
+        : trimmed
+      setTitle(clearing ? fallbackTitle : trimmed)
+      setCustomTitle(clearing ? '' : trimmed)
+      onRenamed(effective, clearing ? '' : trimmed)
+      setRenaming(false)
+    } catch (err) {
+      setTitleError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'The title could not be saved.',
+      )
+    } finally {
+      setSavingTitle(false)
+    }
+  }
+
+  // Custom (generated/uploaded) thumbnail: local state so edits reflect
+  // without refetching the whole past-streams list. The platform image is
+  // derived from the broadcasts rather than stream.thumbnailUrl because the
+  // backend overrides the latter with the custom one.
+  const [customThumb, setCustomThumb] = useState<main.StreamThumbInfo | null>(
+    stream.customThumb ?? null,
+  )
+  const [editingThumb, setEditingThumb] = useState(false)
+  const platformThumbUrl =
+    stream.broadcasts.find((b) => b.thumbnailUrl)?.thumbnailUrl ?? ''
+  const thumbUrl = (customThumb?.file && customThumb.url) || platformThumbUrl
+
+  // Whether an outline exists — it is the creative brief for generated
+  // thumbnails, so the CTA only appears once there is one. Re-checked on tab
+  // switches so generating an outline immediately unlocks the CTA.
+  const [hasOutline, setHasOutline] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    GetStreamOutline(stream.startedAt)
+      .then((o) => {
+        if (!cancelled) setHasOutline(Boolean(o.generatedAt))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [stream.startedAt, tab])
+
+  const applyThumb = async (t: PlanThumb) => {
+    const info = await SetStreamThumbnail(stream.startedAt, t.file)
+    setCustomThumb(
+      info.file || (info.historyFiles?.length ?? 0) > 0 ? info : null,
+    )
+    setYtNote('')
+    setYtError('')
+  }
+
+  // One "Update YouTube" action: title (live prefix stripped — the broadcast
+  // is over), description, and custom thumbnail land on the VOD together.
+  const ytUrls = stream.broadcasts
+    .filter((b) => b.platform === 'youtube')
+    .map((b) => b.url)
+  const [updatingYt, setUpdatingYt] = useState(false)
+  const [ytNote, setYtNote] = useState('')
+  const [ytError, setYtError] = useState('')
+
+  const updateYouTube = async () => {
+    setUpdatingYt(true)
+    setYtNote('')
+    setYtError('')
+    try {
+      const res = await UpdateYouTubeStreamInfo(stream.startedAt, ytUrls)
+      if (res.thumbnailPushed) setCustomThumb(res.thumb)
+      const wrote = [
+        'title',
+        ...(res.descriptionPushed ? ['description'] : []),
+        ...(res.thumbnailPushed ? ['thumbnail'] : []),
+      ]
+      setYtNote(
+        `YouTube updated: ${wrote.join(', ')}.${
+          res.warning ? ` ${res.warning}` : ''
+        }`,
+      )
+    } catch (err) {
+      setYtError(
+        err instanceof Error && err.message
+          ? err.message
+          : String(err) || 'The YouTube video could not be updated.',
+      )
+    } finally {
+      setUpdatingYt(false)
+    }
+  }
   // Total runtime: one representative duration per broadcast segment, summed.
   const totalDurationSecs = clusters.reduce(
     (sum, c) => sum + (c.find((b) => b.durationSecs > 0)?.durationSecs ?? 0),
@@ -223,7 +395,7 @@ export function StreamDetails({
     if (!download) return
     dlStatus.markStarting(stream.startedAt)
     try {
-      const name = stream.title || `Stream ${formatDate(stream.startedAt)}`
+      const name = streamName
       // Per-stream subfolder: timestamp + stream title + source channel name.
       // A re-download reuses the existing download's subfolder so everything
       // keyed on it (transcripts, broadcast snapshots) stays attached.
@@ -248,9 +420,10 @@ export function StreamDetails({
         startedAt,
         durationSecs: picks.reduce((s, b) => s + (b.durationSecs || 0), 0),
         viewCount: picks.reduce((s, b) => s + (b.viewCount || 0), 0),
+        // Platform URLs only — a custom thumbnail is served by the local
+        // media server, whose address doesn't survive restarts.
         thumbnailUrl:
-          picks.find((b) => b.thumbnailUrl)?.thumbnailUrl ||
-          stream.thumbnailUrl,
+          picks.find((b) => b.thumbnailUrl)?.thumbnailUrl || platformThumbUrl,
         urls: download.urls,
       }
       await StartDownload(
@@ -277,14 +450,123 @@ export function StreamDetails({
         className="mb-4 inline-flex w-fit items-center gap-1.5 text-sm text-fg-muted transition-colors hover:text-fg"
       >
         <ArrowLeft size={16} aria-hidden />
-        Back to Past Streams
+        Back to Broadcasting
       </button>
 
       <PageHeader
         description={`${clusters.length} broadcast${
           clusters.length === 1 ? '' : 's'
-        } across ${channelCount} channel${channelCount === 1 ? '' : 's'}.`}
+        } across ${channelCount} channel${channelCount === 1 ? '' : 's'}.${
+          customTitle ? ' Renamed — the platforms keep their own title.' : ''
+        }`}
+        actions={
+          <div className="flex flex-col items-end gap-1.5">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={openRename}
+                title="Rename this stream everywhere it appears in the app. The platforms' own titles are untouched until you Update YouTube."
+                className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-3 py-1.5 text-xs font-semibold text-fg transition-colors hover:bg-surface-hover"
+              >
+                <Pencil size={13} aria-hidden />
+                Rename
+              </button>
+              {ytUrls.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void updateYouTube()}
+                  disabled={updatingYt}
+                  title="Write this stream's title, description, and thumbnail onto its YouTube video in one action. The live prefix comes off the title — the broadcast is over."
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-3 py-1.5 text-xs font-semibold text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+                >
+                  {updatingYt ? (
+                    <Loader2 size={13} aria-hidden className="animate-spin" />
+                  ) : (
+                    <BrandTile platform="youtube" size={13} />
+                  )}
+                  {updatingYt ? 'Updating…' : 'Update YouTube'}
+                </button>
+              )}
+            </div>
+            {ytNote && (
+              <p className="inline-flex items-center gap-1.5 text-xs text-fg-muted">
+                <Check size={13} aria-hidden />
+                {ytNote}
+              </p>
+            )}
+            {ytError && (
+              <p className="max-w-sm text-right text-xs text-red-600 dark:text-red-400">
+                {ytError}
+              </p>
+            )}
+          </div>
+        }
       />
+
+      {/* Rename workbench: the custom title shows everywhere in the app and
+          overrides the platform title; clearing it falls back. */}
+      <Modal
+        open={renaming}
+        onClose={() => setRenaming(false)}
+        title="Rename stream"
+        icon={<Pencil size={18} aria-hidden className="text-fg-muted" />}
+      >
+        <p className="text-sm text-fg-muted">
+          The new title is used everywhere this stream appears in the app —
+          the platforms&apos; own video titles are not changed.
+        </p>
+        <input
+          value={titleDraft}
+          onChange={(e) => setTitleDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              void saveTitle(titleDraft)
+            }
+          }}
+          placeholder={fallbackTitle || 'Stream title'}
+          autoFocus
+          className="mt-4 w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+        />
+        {customTitle && fallbackTitle && (
+          <p className="mt-2 text-xs text-fg-muted">
+            {planTitle ? 'Planned title' : 'Platform title'}: “{fallbackTitle}”
+          </p>
+        )}
+        {titleError && (
+          <p className="mt-3 text-sm text-red-600 dark:text-red-400">
+            {titleError}
+          </p>
+        )}
+        <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
+          {customTitle && (
+            <button
+              type="button"
+              onClick={() => void saveTitle('')}
+              disabled={savingTitle}
+              className="mr-auto rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
+            >
+              {planTitle ? 'Use planned title' : 'Use platform title'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setRenaming(false)}
+            disabled={savingTitle}
+            className="rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void saveTitle(titleDraft)}
+            disabled={savingTitle || !titleDraft.trim()}
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {savingTitle ? 'Saving…' : 'Save title'}
+          </button>
+        </div>
+      </Modal>
 
       <StreamTabs tab={tab} onChange={setTab} />
 
@@ -313,7 +595,14 @@ export function StreamDetails({
         <OutlinePanel
           startedAt={stream.startedAt}
           durationSecs={chatDurationSecs}
-          title={stream.title || `Stream ${formatDate(stream.startedAt)}`}
+          title={streamName}
+        />
+      )}
+      {tab === 'clips' && (
+        <ClipsPanel
+          stream={stream}
+          streamName={streamName}
+          onOpenVideoPlan={onOpenVideoPlan}
         />
       )}
 
@@ -326,53 +615,29 @@ export function StreamDetails({
       />
       <EpisodeEditor stream={stream} seriesId={seriesId} />
 
-      {/* The concluded plan's description and custom data live on with the
-          stream (see conclude.go). */}
-      {stream.plan &&
-        (stream.plan.description || (stream.plan.tags ?? []).length > 0) && (
-          <section
-            aria-label="Episode details from the concluded plan"
-            className="mb-6 rounded-xl border border-edge bg-surface p-4"
-          >
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-fg-muted">
-              Episode details
-            </h2>
-            {stream.plan.description && (
-              <p className="whitespace-pre-wrap text-sm text-fg">
-                {stream.plan.description}
-              </p>
-            )}
-            {(stream.plan.tags ?? []).length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {(stream.plan.tags ?? []).map((t) => (
-                  <span
-                    key={t}
-                    className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent"
-                  >
-                    {t}
-                  </span>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-
       {/* Summary: thumbnail + aggregate tiles. */}
       <section
         aria-label="Stream summary"
         className="flex flex-col gap-4 lg:flex-row"
       >
+        <div className="flex w-full max-w-md shrink-0 flex-col gap-2">
         {streamDownload ? (
-          <div className="flex w-full max-w-md flex-col gap-2">
+          <>
             <button
               type="button"
               onClick={() => onOpenDownload(streamDownload)}
               aria-label="Play downloaded video"
               className="group relative aspect-video w-full overflow-hidden rounded-xl border border-edge bg-black"
             >
-              {(streamDownload.thumbnailUrl || stream.thumbnailUrl) && (
+              {((customThumb?.file && customThumb.url) ||
+                streamDownload.thumbnailUrl ||
+                platformThumbUrl) && (
                 <img
-                  src={streamDownload.thumbnailUrl || stream.thumbnailUrl}
+                  src={
+                    (customThumb?.file && customThumb.url) ||
+                    streamDownload.thumbnailUrl ||
+                    platformThumbUrl
+                  }
                   alt=""
                   aria-hidden
                   className="h-full w-full object-cover opacity-80 transition-opacity group-hover:opacity-60"
@@ -407,7 +672,7 @@ export function StreamDetails({
                   : `Re-download from ${platformName(download.platform)}`}
               </button>
             )}
-          </div>
+          </>
         ) : download ? (
           // Not downloaded yet: the thumbnail itself is the download CTA.
           // Once downloaded it becomes the play button above.
@@ -418,11 +683,11 @@ export function StreamDetails({
             title={`Download every broadcast's VOD${
               download.urls.length > 1 ? 's (stitched together)' : ''
             }`}
-            className="group relative aspect-video w-full max-w-md overflow-hidden rounded-xl border border-edge bg-black"
+            className="group relative aspect-video w-full overflow-hidden rounded-xl border border-edge bg-black"
           >
-            {stream.thumbnailUrl ? (
+            {thumbUrl ? (
               <img
-                src={stream.thumbnailUrl}
+                src={thumbUrl}
                 alt=""
                 aria-hidden
                 className="h-full w-full object-cover opacity-80 transition-opacity group-hover:opacity-60"
@@ -447,17 +712,39 @@ export function StreamDetails({
               </span>
             </span>
           </button>
-        ) : stream.thumbnailUrl ? (
+        ) : thumbUrl ? (
           <img
-            src={stream.thumbnailUrl}
-            alt={`${stream.title || 'Stream'} thumbnail`}
-            className="aspect-video w-full max-w-md rounded-xl border border-edge object-cover"
+            src={thumbUrl}
+            alt={`${streamName} thumbnail`}
+            className="aspect-video w-full rounded-xl border border-edge object-cover"
           />
         ) : (
-          <div className="flex aspect-video w-full max-w-md items-center justify-center rounded-xl border border-edge bg-surface text-fg-muted">
+          <div className="flex aspect-video w-full items-center justify-center rounded-xl border border-edge bg-surface text-fg-muted">
             <Video size={32} aria-hidden />
           </div>
         )}
+
+        {/* Custom thumbnail tools: generate with AI (briefed from the
+            outline), upload a hand-made image, or fall back to the
+            platform's own thumbnail. A custom image shows everywhere the
+            stream's thumbnail appears. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setEditingThumb(true)}
+            className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+          >
+            <WandSparkles size={13} aria-hidden />
+            {customThumb?.file
+              ? 'Edit thumbnail'
+              : thumbUrl
+                ? 'Customize thumbnail'
+                : hasOutline
+                  ? 'Generate thumbnail with AI'
+                  : 'Add thumbnail'}
+          </button>
+        </div>
+        </div>
 
         <div className="grid flex-1 grid-cols-2 content-start gap-4">
           <SummaryTile
@@ -489,10 +776,23 @@ export function StreamDetails({
         </div>
       </section>
 
+      {/* Description: the concluded plan's text by default, editable and
+          AI-generatable per stream (see stream_desc.go). The header's
+          "Update YouTube" writes it onto the VOD together with the title
+          and thumbnail. */}
+      <div className="mt-6">
+        <StreamDescriptionSection
+          stream={stream}
+          streamName={streamName}
+          seriesId={seriesId}
+          hasOutline={hasOutline}
+        />
+      </div>
+
       {/* Videos grouped by broadcast segment. A single simulcast is one group
           (rendered without a header); multi-sitting streams show one header
           per broadcast so the same broadcast across channels sits together. */}
-      <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wide text-fg-muted">
+      <h2 className="mb-3 mt-2 text-sm font-semibold uppercase tracking-wide text-fg-muted">
         Videos
       </h2>
       <div className="flex flex-col gap-6">
@@ -526,6 +826,48 @@ export function StreamDetails({
           </div>
         ))}
       </div>
+
+      {/* Custom thumbnail workbench, briefed from the stream's outline. */}
+      <Modal
+        open={editingThumb}
+        onClose={() => setEditingThumb(false)}
+        title="Stream thumbnail"
+        maxWidthClass="max-w-lg"
+      >
+        <p className="mb-3 text-sm text-fg-muted">
+          Generate one from the stream&apos;s title and its AI outline
+          (following your brand assets and the &ldquo;Stream thumbnails&rdquo;
+          skill) or upload your own — either counts as a custom thumbnail and
+          shows everywhere this stream appears.
+          {platformThumbUrl
+            ? ' Without a custom one, the platform’s own thumbnail is used.'
+            : ''}
+          {!hasOutline
+            ? ' Generating needs the stream’s outline — build it on the Outline tab first.'
+            : ''}
+        </p>
+        <PlanThumbnailEditor
+          planTitle={streamName}
+          planDescription=""
+          file={customThumb?.file ?? ''}
+          url={customThumb?.file ? customThumb.url : ''}
+          history={zipThumbHistory(
+            customThumb?.historyFiles,
+            customThumb?.historyUrls,
+          )}
+          onGenerate={(feedback, currentFile) =>
+            GenerateStreamThumbnail(
+              stream.startedAt,
+              streamName,
+              feedback,
+              currentFile,
+            )
+          }
+          generateTip="Generated from the stream's title, its AI outline, and your brand assets (Profile → Brand Assets). The style guide lives in Settings → Skills → Stream thumbnails."
+          removeLabel={platformThumbUrl ? 'Use platform thumbnail' : undefined}
+          onApply={applyThumb}
+        />
+      </Modal>
 
       {/* Re-downloading replaces the local video file, so it sits behind an
           explicit confirmation. */}
@@ -562,15 +904,16 @@ export function StreamDetails({
         </div>
       </Modal>
 
-      {/* A local-only stream's downloaded copy is its last copy; deleting it
-          removes the stream for good, so it needs an explicit confirmation. */}
-      {stream.local && streamDownload && (
-        <DeleteLocalStreamSection
+      {/* Any downloaded stream can drop its local copy. For a local-only
+          stream that copy is the last one — deleting removes the stream for
+          good; otherwise the stream stays listed on its platforms. */}
+      {streamDownload && (
+        <DeleteDownloadSection
           stream={stream}
           download={streamDownload}
           onDeleted={() => {
             refreshDownloads()
-            onBack()
+            if (stream.local) onBack()
           }}
         />
       )}
@@ -582,6 +925,152 @@ export function StreamDetails({
         onClose={() => setDetail(null)}
       />
     </div>
+  )
+}
+
+/**
+ * The stream's description card. Shows the effective description (custom
+ * text, else the concluded plan's), editable in the markdown field, with the
+ * shared request-edits helper and an AI draft grounded in the stream's
+ * outline. Edits persist as the stream's custom description; clearing the
+ * text falls back to the plan's.
+ */
+function StreamDescriptionSection({
+  stream,
+  streamName,
+  seriesId,
+  hasOutline,
+}: {
+  stream: main.PastStream
+  streamName: string
+  seriesId: string
+  hasOutline: boolean
+}) {
+  const {statuses} = useServices()
+  const aiConnected =
+    (statuses['anthropic']?.connected ?? false) ||
+    (statuses['openai']?.connected ?? false)
+
+  const [description, setDescription] = useState(stream.description ?? '')
+  const [selection, setSelection] = useState<[number, number]>([0, 0])
+  const [generating, setGenerating] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
+
+  const save = async (next: string) => {
+    setError('')
+    try {
+      await SetStreamDescription(stream.startedAt, next.trim())
+      setSaved(true)
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not save the description.',
+      )
+    }
+  }
+
+  const generate = async () => {
+    setGenerating(true)
+    setError('')
+    try {
+      const text = await GenerateStreamDescription(
+        stream.startedAt,
+        streamName,
+        seriesId,
+        stream.episodeNumber,
+      )
+      setDescription(text)
+      setSelection([0, 0])
+      await save(text)
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : String(err) || 'Could not generate a description.',
+      )
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  return (
+    <section
+      aria-label="Stream description"
+      className="mb-6 rounded-xl border border-edge bg-surface p-4"
+    >
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+          Description
+          {saved && (
+            <span className="ml-2 inline-flex items-center gap-1 text-xs font-normal normal-case tracking-normal text-fg-muted">
+              <Check size={12} aria-hidden />
+              Saved
+            </span>
+          )}
+        </h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void generate()}
+            disabled={!aiConnected || !hasOutline || generating}
+            title={
+              !aiConnected
+                ? 'Connect an AI service in Settings → AI to draft descriptions.'
+                : !hasOutline
+                  ? "Needs the stream's outline — generate one on the Outline tab first."
+                  : "Drafted for YouTube search from the stream's outline and its series context."
+            }
+            className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1 text-xs font-semibold text-fg transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {generating ? (
+              <Loader2 size={12} aria-hidden className="animate-spin" />
+            ) : (
+              <WandSparkles size={12} aria-hidden />
+            )}
+            {description.trim() ? 'Regenerate with AI' : 'Generate with AI'}
+          </button>
+        </div>
+      </div>
+
+      <MarkdownField
+        id="stream-description"
+        value={description}
+        onChange={(v) => {
+          setDescription(v)
+          setSaved(false)
+        }}
+        placeholder="What happened on this stream?"
+        onSelectionChange={(start, end) => setSelection([start, end])}
+        onDone={() => void save(description)}
+      />
+      <DescriptionAiActions
+        description={description}
+        selection={selection}
+        onDescription={(next) => {
+          setDescription(next)
+          setSelection([0, 0])
+          void save(next)
+        }}
+      />
+
+      {(stream.plan?.tags ?? []).length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {(stream.plan?.tags ?? []).map((t) => (
+            <span
+              key={t}
+              className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent"
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+      {error && (
+        <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </section>
   )
 }
 
@@ -599,6 +1088,7 @@ function StreamTabs({
     {id: 'events', label: 'Events', icon: Bell},
     {id: 'transcript', label: 'Transcript', icon: Captions},
     {id: 'outline', label: 'Outline', icon: NotebookText},
+    {id: 'clips', label: 'Clips', icon: Scissors},
   ]
   return (
     <div
@@ -695,9 +1185,10 @@ function StreamSeriesSelect({
 
 /**
  * Episode number + short description for streams in an episodic series.
- * Hidden unless the assigned series' type is episodic. Numbers initialise by
- * date on the backend (oldest stream = episode one); both fields are editable
- * here, persisted per broadcast like the series assignment.
+ * Hidden unless the assigned series' type is episodic. The number arrives
+ * from the stream's planned broadcast (adopted at go-live — the plan's
+ * episode and the past stream's are one and the same); both fields are
+ * editable here, persisted per broadcast like the series assignment.
  */
 function EpisodeEditor({
   stream,
@@ -736,9 +1227,9 @@ function EpisodeEditor({
     }
   }, [seriesId])
 
-  // Read the current assignment fresh: default initialisation happens inside
-  // GetPastStreams, so the navigation prop can predate it (or the series was
-  // just assigned on this page).
+  // Read the current assignment fresh: the plan's episode adopts onto the
+  // stream inside GetPastStreams, so the navigation prop can predate it (or
+  // the series was just assigned on this page).
   useEffect(() => {
     if (!episodic) return
     let cancelled = false
@@ -826,10 +1317,14 @@ function EpisodeEditor({
 }
 
 /**
- * Delete action for a stream that only exists as a local download. The video
- * file is the last remaining copy, so deletion sits behind a confirmation.
+ * Delete action for a stream's downloaded copy. For a local-only stream the
+ * video file is the last remaining copy, so deleting removes the stream from
+ * the history for good; for a stream the platforms still list, only the
+ * local files go (the stream stays and can be downloaded again). Stored
+ * chat, transcript, and outline survive either way. Both paths sit behind an
+ * explicit confirmation.
  */
-function DeleteLocalStreamSection({
+function DeleteDownloadSection({
   stream,
   download,
   onDeleted,
@@ -838,6 +1333,7 @@ function DeleteLocalStreamSection({
   download: main.DownloadedVideo
   onDeleted: () => void
 }) {
+  const lastCopy = stream.local
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -853,7 +1349,7 @@ function DeleteLocalStreamSection({
       setError(
         err instanceof Error && err.message
           ? err.message
-          : 'Could not delete the past stream.',
+          : 'Could not delete the download.',
       )
     } finally {
       setBusy(false)
@@ -862,7 +1358,7 @@ function DeleteLocalStreamSection({
 
   return (
     <section
-      aria-label="Delete past stream"
+      aria-label="Delete downloaded video"
       className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-edge bg-surface p-4"
     >
       <div className="flex min-w-0 items-start gap-3">
@@ -873,10 +1369,13 @@ function DeleteLocalStreamSection({
           <HardDrive size={16} />
         </span>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-fg">Local copy only</p>
+          <p className="text-sm font-semibold text-fg">
+            {lastCopy ? 'Local copy only' : 'Downloaded video'}
+          </p>
           <p className="mt-0.5 text-sm text-fg-muted">
-            This stream is no longer available on its platforms; the downloaded
-            video is the only remaining copy.
+            {lastCopy
+              ? 'This stream is no longer available on its platforms; the downloaded video is the only remaining copy.'
+              : 'A local copy of this stream is on disk. Deleting it frees the space — the stream stays listed on its platforms and can be downloaded again.'}
           </p>
         </div>
       </div>
@@ -886,19 +1385,19 @@ function DeleteLocalStreamSection({
         className="inline-flex items-center gap-1.5 rounded-lg border border-red-600/40 px-3 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-600/10 dark:text-red-400"
       >
         <Trash2 size={14} aria-hidden />
-        Delete past stream
+        {lastCopy ? 'Delete past stream' : 'Delete download'}
       </button>
 
       <Modal
         open={confirming}
         onClose={() => setConfirming(false)}
-        title="Delete this past stream?"
+        title={lastCopy ? 'Delete this past stream?' : 'Delete this download?'}
         icon={<Trash2 size={18} aria-hidden className="text-fg-muted" />}
       >
         <p className="text-sm text-fg-muted">
-          “{stream.title || 'Untitled stream'}” only exists as a local
-          download. Deleting it removes the video file from your computer and
-          the stream from your history — it can't be recovered afterwards.
+          {lastCopy
+            ? `“${stream.title || 'Untitled stream'}” only exists as a local download. Deleting it removes the video file from your computer and the stream from your history — it can't be recovered afterwards.`
+            : `The downloaded video files for “${stream.title || 'Untitled stream'}” are removed from your computer. The stream itself stays listed, and its stored chat, transcript, and outline are kept.`}
         </p>
         {error && (
           <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>
@@ -917,7 +1416,7 @@ function DeleteLocalStreamSection({
             disabled={busy}
             className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {busy ? 'Deleting…' : 'Delete stream'}
+            {busy ? 'Deleting…' : lastCopy ? 'Delete stream' : 'Delete download'}
           </button>
         </div>
       </Modal>

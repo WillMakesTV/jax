@@ -29,15 +29,41 @@ var appSkillDefs = []struct {
 	{"app-overview", "Jax at a glance", "What the app does, its main areas, and the ground rules for working over MCP."},
 	{"plan-streams", "Planning streams", "Create and maintain stream plans: titles, run-of-show descriptions, tags, and series/episode assignment."},
 	{"stream-thumbnails", "Stream thumbnails", "The creative brief behind generated plan thumbnails: composition, text, and style rules the image model follows."},
+	{"stream-descriptions", "Stream descriptions", "The writing guide behind AI-drafted descriptions: one voice, two modes — planned streams announce what's coming, past streams are optimized for YouTube search."},
 	{"brand-assets", "Brand assets", "What the uploaded brand files are, the naming/description conventions that make them usable, and how features apply them."},
 	{"content-series", "Content series & episodes", "Define recurring shows, keep episode numbering consistent, and assign streams to series."},
 	{"go-live", "Going live", "The broadcast-day flow: applying a plan, monitoring while live, and concluding the episode."},
 	{"past-streams", "Reviewing past streams", "Work the stream archive: transcripts, chat logs, and AI outlines for recaps and clip hunting."},
 	{"download-transcribe", "Downloads & transcription", "Pull VODs to disk and re-transcribe them locally for cleaner transcripts."},
 	{"videos", "Videos & video plans", "Browse the channels' catalogue, review performance, and prepare video plans for the editor."},
-	{"video-edit-directions", "Video edit session directions", "Turn a video plan, its source-stream context, and the producer's notes into the brief handed to the automated edit session."},
+	{"video-edit-directions", "Video edit script", "Turn a video plan, its source-stream context, and the producer's notes into the outline/script the edit session executes — including the short- and long-form runtime targets."},
+	{"video-script-ideas", "Video script ideas", "How the three candidate scripts pitched on a past stream's Clips tab are written — distinct angles, hooks, runtime targets — refined automatically by which pitch the producer picks."},
+	{"video-edit-session", "Video edit sessions", "The ground rules the automated editing session works to: source material, the first cut, revision passes, the cuts manifest, and rendering discipline."},
+	{"video-edit-timeline", "Video edit timeline", "The manual timeline pass over a rendered video: the segment model, expanding a segment into the footage on either side of it, and reprocessing the cut."},
+	{"video-edits-short", "Short-form editing preferences", "Standing corrections for short-form videos — grown from the edits you request, so the next short needs fewer of them."},
+	{"video-edits-long", "Long-form editing preferences", "Standing corrections for long-form videos — grown from the edits you request, so the next video needs fewer of them."},
+	{"video-descriptions", "Published video descriptions", "The writing guide for produced videos published to YouTube — hook-first search copy with the original full-length broadcast link above the brand links."},
+	{"video-publish-prep", "Preparing videos to publish", "How the Publish tab's title, description, tags, and category are drafted — all at once, one field at a time, or revised from the producer's feedback."},
 	{"projects", "Projects & docs", "Use projects as the writing and reference space: doc trees, conventions, and what stays app-only."},
 	{"obs-setup", "OBS, routines & smart sources", "How Jax drives OBS: routines around going live, and token-templated smart sources."},
+	{skillAIDebugging, "AI Debugging", "Work the debug-report queue over MCP: find open reports, reproduce, fix, verify, then delete the resolved report."},
+}
+
+// skillAIDebugging is the optional developer skill, listed only while the
+// Settings → Development toggle (keyDevDebugSkillEnabled) is on.
+const skillAIDebugging = "ai-debugging"
+
+// devDebugSkillEnabled reports whether the AI Debugging skill is switched on.
+func (a *App) devDebugSkillEnabled() bool {
+	if a.store == nil {
+		return false
+	}
+	v, err := a.store.getSetting(keyDevDebugSkillEnabled)
+	if err != nil {
+		log.Printf("jax: dev debug skill setting: %v", err)
+		return false
+	}
+	return v == "true"
 }
 
 // AppSkill is an Application Skill as served to the frontend and MCP:
@@ -74,8 +100,12 @@ func (a *App) skillOverrides() map[string]string {
 // ListAppSkills returns every Application Skill with its effective content.
 func (a *App) ListAppSkills() ([]AppSkill, error) {
 	overrides := a.skillOverrides()
+	devDebug := a.devDebugSkillEnabled()
 	out := make([]AppSkill, 0, len(appSkillDefs))
 	for _, def := range appSkillDefs {
+		if def.ID == skillAIDebugging && !devDebug {
+			continue
+		}
 		content, overridden := overrides[def.ID]
 		if !overridden {
 			var err error

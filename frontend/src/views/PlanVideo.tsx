@@ -16,13 +16,7 @@ import {
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {EpisodeThumb} from '../components/EpisodeThumb'
-import {
-  PlanThumbnailEditor,
-  zipThumbHistory,
-} from '../components/PlanThumbnailEditor'
-import {MarkdownField} from '../components/markdown/MarkdownField'
 import {formatDate} from '../lib/format'
-import {DescriptionAiActions} from './PlanStream'
 
 const field =
   'w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent'
@@ -67,13 +61,7 @@ export function PlanVideo({
 }) {
   const [title, setTitle] = useState(plan?.title ?? '')
   const [format, setFormat] = useState<string>(plan?.format || 'long')
-  const [description, setDescription] = useState(plan?.description ?? '')
-  const [descSelection, setDescSelection] = useState<[number, number]>([0, 0])
   const [tags, setTags] = useState((plan?.tags ?? []).join(', '))
-  // Thumbnail: generated or uploaded via the shared editor; the file is
-  // staged here and attached to the plan on save.
-  const [thumbFile, setThumbFile] = useState(plan?.thumbnailFile ?? '')
-  const [thumbUrl, setThumbUrl] = useState(plan?.thumbnailUrl ?? '')
   // The past streams this video draws from (source footage).
   const [sources, setSources] = useState<main.VideoPlanStream[]>(
     (plan?.streams ?? []).map((s) => ({...s})),
@@ -140,14 +128,17 @@ export function PlanVideo({
         main.VideoPlan.createFrom({
           id: plan?.id ?? '',
           title: title.trim(),
-          description,
           format,
           tags: tags
             .split(',')
             .map((t) => t.trim())
             .filter(Boolean),
           streams: sources,
-          thumbnailFile: thumbFile,
+          // The description and thumbnail are the Publish tab's, not this
+          // form's — passed straight through, because a save here must never
+          // wipe the ones publishing has already drafted.
+          description: plan?.description ?? '',
+          thumbnailFile: plan?.thumbnailFile ?? '',
           createdAt: plan?.createdAt ?? '',
         }),
       )
@@ -250,49 +241,10 @@ export function PlanVideo({
           </div>
         </div>
 
-        <div>
-          <span className={labelCls}>
-            Thumbnail{' '}
-            <span className="font-normal text-fg-muted">(optional)</span>
-          </span>
-          <div className="max-w-md">
-            <PlanThumbnailEditor
-              planTitle={title}
-              planDescription={description}
-              file={thumbFile}
-              url={thumbUrl}
-              history={zipThumbHistory(
-                plan?.thumbnailHistory,
-                plan?.thumbnailHistoryUrls,
-              )}
-              onApply={async (t) => {
-                setThumbFile(t.file)
-                setThumbUrl(t.url)
-              }}
-            />
-          </div>
-        </div>
-
-        <div>
-          <label htmlFor="video-plan-description" className={labelCls}>
-            Description
-          </label>
-          <MarkdownField
-            id="video-plan-description"
-            value={description}
-            onChange={setDescription}
-            placeholder="What is this video about? Outline, beats, references…"
-            onSelectionChange={(start, end) => setDescSelection([start, end])}
-          />
-          <DescriptionAiActions
-            description={description}
-            selection={descSelection}
-            onDescription={(next) => {
-              setDescription(next)
-              setDescSelection([0, 0])
-            }}
-          />
-        </div>
+        {/* No description or thumbnail here: both belong to publishing, and
+            are drafted (with AI) on the plan's Publish tab against the video
+            that actually got made — not against the idea of it. Asking for them
+            up front means writing them twice. */}
 
         <div>
           <div className="mb-1.5 flex items-baseline justify-between gap-3">

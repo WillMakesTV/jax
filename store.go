@@ -26,12 +26,27 @@ const (
 	// keyAppSkillOverrides holds the id → markdown map of user-edited
 	// Application Skills; ids absent from the map use the embedded default.
 	keyAppSkillOverrides = "app_skill_overrides"
+	// keyDevDebugSkillEnabled ("true"/"") gates the optional ai-debugging
+	// Application Skill; shared with the frontend's SETTING_KEYS.
+	keyDevDebugSkillEnabled = "dev_ai_debug_skill_enabled"
 )
 
 // Store wraps the SQLite database that persists all app data. The database
 // lives at ~/.jax/jax.db so it is shared across builds and survives reinstalls.
 type Store struct {
 	db *sql.DB
+	// onChange, when set, is called with the storage key after every settings
+	// write — how the app tells open pages their data moved underneath them
+	// (see startup's "data:changed" emit). Called from whatever goroutine
+	// wrote, so the hook must be safe to call concurrently.
+	onChange func(key string)
+}
+
+// changed reports a write to key through the onChange hook (nil-safe).
+func (s *Store) changed(key string) {
+	if s.onChange != nil {
+		s.onChange(key)
+	}
 }
 
 // dataDir returns the ~/.jax directory, creating it (0700) if necessary.
@@ -119,6 +134,20 @@ CREATE TABLE IF NOT EXISTS api_cache (
 	value      TEXT NOT NULL,
 	fetched_at INTEGER NOT NULL
 );
+-- One row per platform per day: the audience numbers as they stood. The
+-- primary key is what makes the day idempotent — reading the Dashboard ten
+-- times in a day overwrites the day's row rather than piling up ten points on
+-- the growth chart (see metrics.go).
+CREATE TABLE IF NOT EXISTS channel_metrics (
+	day        TEXT NOT NULL,
+	platform   TEXT NOT NULL,
+	audience   INTEGER NOT NULL DEFAULT 0,
+	supporters INTEGER NOT NULL DEFAULT 0,
+	likes      INTEGER NOT NULL DEFAULT 0,
+	content    INTEGER NOT NULL DEFAULT 0,
+	views      INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (day, platform)
+);
 CREATE TABLE IF NOT EXISTS transcript_sessions (
 	id         INTEGER PRIMARY KEY AUTOINCREMENT,
 	started_at TEXT NOT NULL,
@@ -186,7 +215,26 @@ CREATE TABLE IF NOT EXISTS live_events (
 	read     INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (platform, id)
 );
-CREATE INDEX IF NOT EXISTS idx_live_events_at ON live_events(at);`
+CREATE INDEX IF NOT EXISTS idx_live_events_at ON live_events(at);
+-- Developer debug reports filed from the in-app debug button; an AI client
+-- works them over MCP and deletes each once resolved (see ai_debug.go).
+CREATE TABLE IF NOT EXISTS dev_ai_debug (
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	title       TEXT NOT NULL DEFAULT '',
+	description TEXT NOT NULL DEFAULT '',
+	route       TEXT NOT NULL DEFAULT '',
+	global      INTEGER NOT NULL DEFAULT 0,
+	created_at  TEXT NOT NULL,
+	updated_at  TEXT NOT NULL
+);
+-- Read-once "your bug was fixed" notices, left behind when a debug report is
+-- resolved over MCP; the status bar shows them and a click dismisses.
+CREATE TABLE IF NOT EXISTS dev_ai_debug_fixed (
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	title       TEXT NOT NULL DEFAULT '',
+	route       TEXT NOT NULL DEFAULT '',
+	resolved_at TEXT NOT NULL
+);`
 	_, err := s.db.Exec(schema)
 	return err
 }
@@ -212,6 +260,9 @@ func (s *Store) setSetting(key, value string) error {
 		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
 		key, value,
 	)
+	if err == nil {
+		s.changed(key)
+	}
 	return err
 }
 
@@ -265,6 +316,50 @@ func (s *Store) getCacheEntry(key string) (raw string, fetchedAt time.Time, ok b
 func (s *Store) deleteCacheEntry(key string) error {
 	_, err := s.db.Exec(`DELETE FROM api_cache WHERE key = ?`, key)
 	return err
+}
+
+// recordChannelMetrics files one platform's numbers for a day, replacing any
+// earlier reading from the same day — the last read of a day is the one that
+// stands (see metrics.go).
+func (s *Store) recordChannelMetrics(day string, m ChannelMetrics) error {
+	_, err := s.db.Exec(
+		`INSERT INTO channel_metrics (day, platform, audience, supporters, likes, content, views)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(day, platform) DO UPDATE SET
+		   audience   = excluded.audience,
+		   supporters = excluded.supporters,
+		   likes      = excluded.likes,
+		   content    = excluded.content,
+		   views      = excluded.views`,
+		day, m.Platform, m.Audience, m.Supporters, m.Likes, m.Content, m.Views,
+	)
+	return err
+}
+
+// channelMetricsSince reads every recorded day from `from` (inclusive),
+// grouped by day.
+func (s *Store) channelMetricsSince(from string) (map[string][]ChannelMetrics, error) {
+	rows, err := s.db.Query(
+		`SELECT day, platform, audience, supporters, likes, content, views
+		   FROM channel_metrics
+		  WHERE day >= ?
+		  ORDER BY day ASC`, from)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string][]ChannelMetrics{}
+	for rows.Next() {
+		var day string
+		var m ChannelMetrics
+		if err := rows.Scan(&day, &m.Platform, &m.Audience, &m.Supporters,
+			&m.Likes, &m.Content, &m.Views); err != nil {
+			return nil, err
+		}
+		out[day] = append(out[day], m)
+	}
+	return out, rows.Err()
 }
 
 // setCacheEntry upserts a cached payload for key, stamped now.

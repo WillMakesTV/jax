@@ -222,7 +222,7 @@ func twitchHeaders(conn serviceConn) map[string]string {
 // (title/category, followers, subscribers, language, delay, labels, …) so the
 // live poll only spends its per-tick calls on the actual live check. The _v2
 // suffix invalidates caches written before the analytics fields were added.
-const keyTwitchChannelInfo = "twitch_channel_info_v3"
+const keyTwitchChannelInfo = "twitch_channel_info_v4"
 
 // twitchChannelInfo is the cached channel-level metadata and analytics.
 type twitchChannelInfo struct {
@@ -236,6 +236,12 @@ type twitchChannelInfo struct {
 	Followers   string `json:"followers"`   // formatted count; "" when unavailable
 	Subscribers string `json:"subscribers"` // formatted; needs channel:read:subscriptions
 	SubPoints   string `json:"subPoints"`
+	// The same counts as numbers. The formatted strings above are for display
+	// and cannot be added up ("12.3K" + "1.2M" is not arithmetic), so the raw
+	// values are kept alongside them for the aggregate hero and the daily
+	// history (see metrics.go).
+	FollowersN   int64 `json:"followersN"`
+	SubscribersN int64 `json:"subscribersN"`
 	Avatar      string `json:"avatar"` // profile_image_url
 	Banner      string `json:"banner"` // offline_image_url
 }
@@ -356,6 +362,7 @@ func (a *App) fetchTwitchLive(conn serviceConn) LiveStream {
 		}
 		if _, err := getJSON(twitchFollowersURL+"?broadcaster_id="+conn.userID+"&first=1", headers, &followers); err == nil {
 			out.Followers = fmtCount(followers.Total)
+			out.FollowersN = followers.Total
 		}
 		// Subscriber count + points (needs channel:read:subscriptions).
 		var subs struct {
@@ -365,6 +372,7 @@ func (a *App) fetchTwitchLive(conn serviceConn) LiveStream {
 		if _, err := getJSON(twitchSubCheckURL+"?broadcaster_id="+conn.userID+"&first=1", headers, &subs); err == nil {
 			out.Subscribers = fmtCount(subs.Total)
 			out.SubPoints = fmtCount(subs.Points)
+			out.SubscribersN = subs.Total
 		}
 		// Channel branding (profile image + offline/banner image).
 		var users struct {
@@ -433,7 +441,7 @@ const (
 	ytLiveMetricsMin  = 15 * time.Second
 	// keyYTChannelInfo persistently caches channel-level stats (subscriber /
 	// view counts), which change too slowly to justify a call per poll.
-	keyYTChannelInfo = "yt_channel_info_v2"
+	keyYTChannelInfo = "yt_channel_info_v3"
 )
 
 // ytChannelInfo is the slow-moving channel metadata cached for apiCacheTTL.
@@ -443,6 +451,11 @@ type ytChannelInfo struct {
 	Avatar  string       `json:"avatar"` // channel profile image
 	Banner  string       `json:"banner"` // channel banner (brandingSettings)
 	Details []DetailItem `json:"details"`
+	// The raw counts behind Details, for the aggregate hero and the daily
+	// history (see metrics.go) — Details carries them formatted for display.
+	SubscribersN int64 `json:"subscribersN"`
+	ViewsN       int64 `json:"viewsN"`
+	VideosN      int64 `json:"videosN"`
 }
 
 // fetchYouTubeLiveThrottled serves the memoised result between refreshes and
@@ -549,10 +562,13 @@ func (a *App) fetchYouTubeLive(conn serviceConn) LiveStream {
 			} else if ch.ID != "" {
 				out.URL = "https://youtube.com/channel/" + ch.ID
 			}
+			out.SubscribersN = atoi64(ch.Statistics.SubscriberCount)
+			out.ViewsN = atoi64(ch.Statistics.ViewCount)
+			out.VideosN = atoi64(ch.Statistics.VideoCount)
 			out.Details = []DetailItem{
-				{"Subscribers", fmtCount(atoi64(ch.Statistics.SubscriberCount))},
-				{"Total channel views", fmtCount(atoi64(ch.Statistics.ViewCount))},
-				{"Videos", fmtCount(atoi64(ch.Statistics.VideoCount))},
+				{"Subscribers", fmtCount(out.SubscribersN)},
+				{"Total channel views", fmtCount(out.ViewsN)},
+				{"Videos", fmtCount(out.VideosN)},
 			}
 		}
 		return out, nil

@@ -1,8 +1,16 @@
-import {ArrowLeft, Captions, MessageSquare, PlaySquare} from 'lucide-react'
+import {
+  ArrowLeft,
+  Captions,
+  MessageSquare,
+  PlaySquare,
+  Trash2,
+} from 'lucide-react'
 import clsx from 'clsx'
 import {useState} from 'react'
+import {DeleteLocalStream} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {BrandTile} from '../components/BrandTile'
+import {Modal} from '../components/Modal'
 import {
   ChatLogPanel,
   TranscriptPanel,
@@ -25,6 +33,27 @@ export function DownloadVideo({
   onBack: () => void
 }) {
   const [tab, setTab] = useState<VideoTab>('video')
+
+  // Deleting removes the local files (and, for a stream the platforms no
+  // longer list, the stream itself); chat and transcript stay stored.
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+  const remove = async () => {
+    setDeleting(true)
+    setDeleteError('')
+    try {
+      await DeleteLocalStream(download.subfolder)
+      onBack()
+    } catch (err) {
+      setDeleteError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not delete the download.',
+      )
+      setDeleting(false)
+    }
+  }
 
   const tabs: {id: VideoTab; label: string; icon: typeof PlaySquare}[] = [
     {id: 'video', label: 'Video', icon: PlaySquare},
@@ -55,6 +84,16 @@ export function DownloadVideo({
           <BrandTile platform={download.platform} size={16} />
           {[download.channelName, meta].filter(Boolean).join(' · ')}
         </p>
+        <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setConfirmDelete(true)}
+          title="Delete the downloaded video files from this computer."
+          className="inline-flex items-center gap-1.5 rounded-lg border border-red-600/40 px-3 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-600/10 dark:text-red-400"
+        >
+          <Trash2 size={14} aria-hidden />
+          Delete download
+        </button>
         <div
           role="tablist"
           aria-label="Video sections"
@@ -79,7 +118,45 @@ export function DownloadVideo({
             </button>
           ))}
         </div>
+        </div>
       </div>
+
+      <Modal
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        title="Delete this download?"
+        icon={<Trash2 size={18} aria-hidden className="text-fg-muted" />}
+      >
+        <p className="text-sm text-fg-muted">
+          The downloaded video files for “{download.title || 'this broadcast'}”
+          are removed from your computer. If its platforms no longer list the
+          broadcast, the stream leaves your history too; stored chat and
+          transcript are kept either way.
+        </p>
+        {deleteError && (
+          <p className="mt-3 text-sm text-red-600 dark:text-red-400">
+            {deleteError}
+          </p>
+        )}
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setConfirmDelete(false)}
+            disabled={deleting}
+            className="rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void remove()}
+            disabled={deleting}
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {deleting ? 'Deleting…' : 'Delete download'}
+          </button>
+        </div>
+      </Modal>
 
       {tab === 'video' && (
         <div className="overflow-hidden rounded-2xl border border-edge bg-black">

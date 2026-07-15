@@ -62,15 +62,21 @@ func (a *App) beginPlannedSession(plan PlannedStream) {
 }
 
 // EndStreamSession closes any open stream session. The frontend calls this
-// once the End Stream routine has stopped the broadcast.
+// once the End Stream routine has stopped the broadcast. Stopping is also
+// what kicks off the post-stream wrap-up pipeline (download → transcribe →
+// outline → thumbnail → description → clip scripts; see poststream.go),
+// anchored on the session that was open — or, for a stream without one, on
+// the stop time.
 func (a *App) EndStreamSession() {
 	if a.store == nil {
 		return
 	}
+	session := a.GetActiveStreamSession()
 	now := time.Now().UTC().Format(time.RFC3339)
 	if err := a.store.endOpenStreamSessions(now); err != nil {
 		log.Printf("jax: end stream session: %v", err)
 	}
+	a.maybeStartPostStream(session)
 }
 
 // ActiveStreamSession is the stream session currently on the air (Active

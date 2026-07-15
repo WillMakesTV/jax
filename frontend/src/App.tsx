@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useMemo, useState} from 'react'
-import {GetDownloads, GetPastStreams} from '../wailsjs/go/main/App'
+import {GetDownloads, GetPastStreams, GetVideoPlans} from '../wailsjs/go/main/App'
 import {main} from '../wailsjs/go/models'
 import {WindowSetTitle} from '../wailsjs/runtime/runtime'
 import {Sidebar} from './components/Sidebar'
@@ -30,7 +30,6 @@ import {StreamDetails, type StreamTab} from './views/StreamDetails'
 import {Videos} from './views/Videos'
 import {VideoDetails} from './views/VideoDetails'
 import {VideoPlanDetails, type VideoPlanTab} from './views/VideoPlanDetails'
-import {EditDirections} from './views/EditDirections'
 import {Settings} from './views/Settings'
 import {Profile, type ProfileTab} from './views/Profile'
 
@@ -183,6 +182,22 @@ function App() {
       navigate({view: 'stream-details', stream, streamTab: null}),
     [navigate],
   )
+  // A rename on the stream-details page updates the current nav entry in
+  // place (no new history entry), so the top-bar title follows immediately.
+  const renameDetailStream = useCallback(
+    (title: string, customTitle: string) =>
+      setNav(({stack, i}) => {
+        const cur = stack[i]
+        if (!cur.stream) return {stack, i}
+        const next = [...stack]
+        next[i] = {
+          ...cur,
+          stream: main.PastStream.createFrom({...cur.stream, title, customTitle}),
+        }
+        return {stack: next, i}
+      }),
+    [],
+  )
   const openVideoDetails = useCallback(
     (video: main.Video) => navigate({view: 'video-details', video}),
     [navigate],
@@ -226,16 +241,11 @@ function App() {
       navigate({view: 'video-plan', videoPlan, videoPlanTab: null}),
     [navigate],
   )
-  // The Editor tab's "Start edit session" leads to the directions page (the
-  // AI note builder); starting the session lands on the plan's Editor tab.
-  const openEditDirections = useCallback(
-    (videoPlan: main.VideoPlan) =>
-      navigate({view: 'edit-directions', videoPlan}),
-    [navigate],
-  )
-  const openVideoPlanEditor = useCallback(
-    (videoPlan: main.VideoPlan) =>
-      navigate({view: 'video-plan', videoPlan, videoPlanTab: 'editor'}),
+  // The Clips tab opens a plan on a specific tab (the Editor, right after a
+  // script is chosen).
+  const openVideoPlanOnTab = useCallback(
+    (videoPlan: main.VideoPlan, videoPlanTab?: VideoPlanTab) =>
+      navigate({view: 'video-plan', videoPlan, videoPlanTab: videoPlanTab ?? null}),
     [navigate],
   )
   // The user menu links straight to a profile section.
@@ -330,6 +340,61 @@ function App() {
     [navigate],
   )
 
+  // A bug-fixed notice links back to the view its report was filed on.
+  // Detail views need a subject the notice doesn't carry, so each falls back
+  // to the section that leads to it.
+  const openFixedRoute = useCallback(
+    (route: string) => {
+      const fallbacks: Record<string, ViewId> = {
+        'stream-details': 'planning',
+        'live-details': 'live',
+        'channel-details': 'dashboard',
+        'video-details': 'videos',
+        'download-video': 'videos',
+        'video-plan': 'videos',
+        'plan-video': 'videos',
+        'plan-stream': 'planning',
+        'edit-series': 'planning',
+        'edit-routine': 'obs',
+        'edit-smart-source': 'obs',
+        'custom-tokens': 'settings',
+        'broadcast-plan': 'live',
+        'project-details': 'projects',
+      }
+      const topLevel: ViewId[] = [
+        'dashboard',
+        'live',
+        'planning',
+        'projects',
+        'obs',
+        'videos',
+        'settings',
+        'profile',
+      ]
+      const target =
+        fallbacks[route] ??
+        (topLevel.includes(route as ViewId) ? (route as ViewId) : 'dashboard')
+      setView(target)
+    },
+    [setView],
+  )
+
+  // Status-bar edit-session chip: jump to the Editor tab of the video plan
+  // with the active (or just-finished) edit session.
+  const openEditingVideoPlan = useCallback(
+    async (planId: string) => {
+      try {
+        const plans = await GetVideoPlans()
+        const videoPlan = (plans ?? []).find((p) => p.id === planId)
+        if (!videoPlan) return
+        navigate({view: 'video-plan', videoPlan, videoPlanTab: 'editor'})
+      } catch {
+        // Lookup failed; stay where we are.
+      }
+    },
+    [navigate],
+  )
+
   // Mouse buttons 4/5 (back/forward) navigate history.
   useEffect(() => {
     const onMouseUp = (e: MouseEvent) => {
@@ -396,8 +461,6 @@ function App() {
           : 'Plan a video'
       case 'video-plan':
         return cur.videoPlan?.title || 'Video plan'
-      case 'edit-directions':
-        return 'Session directions'
       case 'project-details':
         return cur.project ? cur.project.title || 'Project' : 'New project'
       case 'edit-series':
@@ -458,8 +521,7 @@ function App() {
                 ? 'obs'
                 : view === 'video-details' ||
                     view === 'plan-video' ||
-                    view === 'video-plan' ||
-                    view === 'edit-directions'
+                    view === 'video-plan'
                   ? 'videos'
                   : view === 'channel-details'
                     ? 'dashboard'
@@ -472,6 +534,7 @@ function App() {
         <main className="flex flex-1 flex-col overflow-hidden">
           <TopBar
             title={routeTitle}
+            view={view}
             canBack={canBack}
             canForward={canForward}
             onBack={back}
@@ -562,6 +625,8 @@ function App() {
                 initialTab={cur.streamTab ?? undefined}
                 onBack={backToPastStreams}
                 onOpenDownload={openDownloadVideo}
+                onOpenVideoPlan={openVideoPlanOnTab}
+                onRenamed={renameDetailStream}
               />
             )}
             {view === 'download-video' && detailDownload && (
@@ -588,16 +653,7 @@ function App() {
                 onEdit={openPlanVideo}
                 onOpenStream={openStreamDetails}
                 onOpenDownload={openDownloadVideo}
-                onComposeDirections={openEditDirections}
-              />
-            )}
-            {view === 'edit-directions' && cur.videoPlan && (
-              <EditDirections
-                plan={cur.videoPlan}
-                onBack={() => back()}
-                onStarted={() =>
-                  cur.videoPlan && openVideoPlanEditor(cur.videoPlan)
-                }
+                onDeleted={backToVideos}
               />
             )}
             {view === 'plan-video' && (
@@ -632,6 +688,12 @@ function App() {
           void openTranscribingStream(subfolder)
         }
         onOpenOutline={(startedAt) => void openStreamByStart(startedAt, 'outline')}
+        onOpenClipIdeas={(startedAt) => void openStreamByStart(startedAt, 'clips')}
+        onOpenEditSession={(planId) => void openEditingVideoPlan(planId)}
+        onOpenPostStream={(startedAt) =>
+          void openStreamByStart(startedAt, null)
+        }
+        onOpenFixNotice={(n) => openFixedRoute(n.route)}
       />
     </div>
   )

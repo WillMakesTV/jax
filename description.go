@@ -25,6 +25,21 @@ import (
 // How many previous episodes of the series feed the prompt.
 const descriptionEpisodeLookback = 5
 
+// descriptionSkillID is the Application Skill holding the user-editable
+// writing guide for descriptions — one voice, with separate rules for
+// planned streams and past streams (see skills/stream-descriptions.md).
+const descriptionSkillID = "stream-descriptions"
+
+// descriptionStyleGuide renders the writing-guide section appended to every
+// description prompt ("" if the skill can't be read).
+func (a *App) descriptionStyleGuide() string {
+	skill, err := a.getAppSkill(descriptionSkillID)
+	if err != nil || strings.TrimSpace(skill.Content) == "" {
+		return ""
+	}
+	return "\n\n# Description style guide\n" + skill.Content
+}
+
 // descriptionTools are the app MCP tools a Claude-account description run may
 // call — read access to the series, past streams, and their transcripts and
 // outlines, so drafts and edits are grounded in what actually happened
@@ -46,7 +61,7 @@ Respond with ONLY a JSON object — no markdown fences, no commentary — in exa
 
 Rules:
 - "title": a concise stream title. No episode number — the app composes that in. When the input carries a working title, refine that topic rather than replacing it.
-- "description": plain markdown — 2-4 short paragraphs or a brief intro plus a bulleted list of the items planned for this stream. Continue naturally from where the previous episodes left off: pick up loose threads, unfinished work, and questions the outlines surface, and propose the concrete next items to cover. Written in the streamer's voice to their audience; don't mention "episodes", "outlines", or this prompt.
+- "description": plain markdown — 2-4 short paragraphs or a brief intro plus a bulleted list of the items planned for this stream. Continue naturally from where the previous episodes left off: pick up loose threads, unfinished work, and questions the outlines surface, and propose the concrete next items to cover. Written in the streamer's voice to their audience; don't mention "episodes", "outlines", or this prompt. When the input carries a "# Description style guide" section, follow it — this is a PLANNED stream, so its "Planned streams" rules apply.
 - "tags": 5-10 short lowercase tags for this stream (single words or short phrases).
 - When the input includes a "# Brand links" section, close the description with a short links line (e.g. a "Follow along" list) using the relevant ones — URLs verbatim, only from that list, never invented.`
 
@@ -88,7 +103,7 @@ type PlanSuggestion struct {
 // being planned, from the series context and the previous episodes' outlines.
 func (a *App) GeneratePlanSuggestion(title, seriesID string, episodeNumber int) (PlanSuggestion, error) {
 	var s PlanSuggestion
-	input := a.descriptionContext(title, seriesID, episodeNumber)
+	input := a.descriptionContext(title, seriesID, episodeNumber) + a.descriptionStyleGuide()
 	text, err := a.askAIText(
 		generateSuggestionInstructions, input,
 		a.claudeMCPArgs(descriptionTools)...,
@@ -144,6 +159,7 @@ func (a *App) EditPlanDescription(description, selection, instruction string) (s
 		b.WriteString("\n\n")
 		b.WriteString(links)
 	}
+	b.WriteString(a.descriptionStyleGuide())
 	b.WriteString("\n\n# Instruction\n")
 	b.WriteString(instruction)
 
@@ -166,6 +182,24 @@ func (a *App) descriptionContext(title, seriesID string, episodeNumber int) stri
 		fmt.Fprintf(&b, "Episode: %d\n", episodeNumber)
 	}
 
+	b.WriteString(a.seriesEpisodesContext(seriesID, ""))
+
+	// The brand's outward links (Profile → Links) always ride along, so the
+	// drafted description can point the audience at the real socials/site.
+	if links := a.brandLinksText(); links != "" {
+		b.WriteString("\n")
+		b.WriteString(links)
+	}
+	return b.String()
+}
+
+// seriesEpisodesContext renders the series block and its most recent episodes
+// (titles, episode descriptions, stored outlines) for a description prompt.
+// skipStartedAt excludes one stream (the past stream being described, which
+// would otherwise list itself among the previous episodes). "" when the plan
+// has no series.
+func (a *App) seriesEpisodesContext(seriesID, skipStartedAt string) string {
+	var b strings.Builder
 	if seriesID != "" {
 		for _, s := range a.GetContentSeries() {
 			if s.ID != seriesID {
@@ -188,7 +222,7 @@ func (a *App) descriptionContext(title, seriesID string, episodeNumber int) stri
 		// The most recent episodes, oldest first so the arc reads forward.
 		episodes := []PastStream{}
 		for _, s := range a.GetPastStreams(false) {
-			if s.SeriesID == seriesID {
+			if s.SeriesID == seriesID && s.StartedAt != skipStartedAt {
 				episodes = append(episodes, s)
 			}
 		}
@@ -216,13 +250,6 @@ func (a *App) descriptionContext(title, seriesID string, episodeNumber int) stri
 			}
 			b.WriteString(a.storedOutlineText(ep.StartedAt))
 		}
-	}
-
-	// The brand's outward links (Profile → Links) always ride along, so the
-	// drafted description can point the audience at the real socials/site.
-	if links := a.brandLinksText(); links != "" {
-		b.WriteString("\n")
-		b.WriteString(links)
 	}
 	return b.String()
 }

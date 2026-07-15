@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"sync"
 	"time"
+
+	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct
@@ -59,8 +61,10 @@ type App struct {
 	transcribeCmd   *exec.Cmd
 	transcribeStdin io.WriteCloser
 
-	// Video-download sidecar process (guarded by mu; see download.go).
+	// Video-download sidecar process and the subfolder it is writing into
+	// (guarded by mu; see download.go).
 	downloadCmd *exec.Cmd
+	downloadSub string
 
 	// movingDownloads is set while the download folder is being relocated
 	// (guarded by mu; see move_downloads.go). New downloads and transcriptions
@@ -70,6 +74,15 @@ type App struct {
 	// Downloaded-video transcription queue: queued and running jobs, oldest
 	// first (guarded by mu; see transcribe_video.go).
 	vodJobs []*vodJob
+
+	// Post-stream wrap-up pipeline (guarded by mu; see poststream.go):
+	// its status, the running pipeline's cancel channel (nil when idle), and
+	// the channels a pipeline waits on for the download's and a
+	// transcription's completion.
+	postStream       PostStreamStatus
+	postStreamCancel chan struct{}
+	downloadWaiter   chan string
+	vodWaiters       map[string]chan string
 
 	// mediaBaseURL is the loopback URL of the local media server that streams
 	// downloaded videos (guarded by mu; see media.go). Empty until startup.
@@ -84,6 +97,14 @@ type App struct {
 	// (guarded by mu; see move_edits.go). Workspace preparation and edit
 	// runs are refused while it is up.
 	movingEdits bool
+
+	// publishingPlan is the video plan whose rendered output is uploading to
+	// YouTube (guarded by mu; see video_publish.go). One publish at a time.
+	publishingPlan string
+
+	// exportingPlan is the video plan whose manual timeline cut is rendering
+	// through ffmpeg (guarded by mu; see timeline.go). One export at a time.
+	exportingPlan string
 
 	// MCP server state: the bearer token every request must carry and the
 	// loopback endpoint URL, empty until startup (guarded by mu; see mcp.go).
@@ -128,6 +149,17 @@ func NewApp() *App {
 // background so its Whisper model is already loaded when a stream starts.
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	// Let open pages hear about data written behind their back (an MCP client
+	// planning a stream, a background job landing a result): every settings
+	// write surfaces as a "data:changed" event carrying the storage key, and
+	// pages re-fetch what they render (see frontend/src/lib/dataChanged.ts).
+	if a.store != nil {
+		a.store.onChange = func(key string) {
+			if a.ctx != nil {
+				wruntime.EventsEmit(a.ctx, "data:changed", key)
+			}
+		}
+	}
 	// Serve downloaded videos over a loopback HTTP server so large files stream
 	// (with range/seek support) instead of buffering through the webview.
 	a.startMediaServer()
@@ -144,6 +176,13 @@ func (a *App) startup(ctx context.Context) {
 	go a.refreshAppIcon()
 	// Pick the transcription queue back up where the last session left off.
 	go a.restoreTranscribeQueue()
+	// File each plan's edit workspace under its season (see editor.go) —
+	// including the flat folders created before seasons existed.
+	go a.relocateEditWorkspaces()
+	// Keep the daily audience history alive even in a long-running session
+	// (see metrics.go). Growth can only ever be shown for days that were
+	// actually recorded, so a missed day is a hole in the chart forever.
+	go a.snapshotMetricsDaily()
 	// Re-hide the window from screen capture if the preference is on.
 	go a.restoreCaptureExclusion()
 }

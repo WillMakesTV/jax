@@ -6,6 +6,7 @@ import {
   Megaphone,
   Pencil,
   Radio,
+  RotateCcw,
   Square,
   Tag,
 } from 'lucide-react'
@@ -17,6 +18,7 @@ import {
   GetContentSeries,
   GetPlanInfoStatus,
   GetPlanSessions,
+  ResetPlannedStream,
   SavePlannedStream,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
@@ -42,8 +44,10 @@ import {useLiveData} from '../live/LiveDataProvider'
  *   - Update Stream Info: pushes the same info without going live (Twitch's
  *     channel info and YouTube's upcoming broadcast simply apply to the next
  *     stream), so the setup can be tested and verified off the air.
- *   - Conclude episode (once broadcast and off the air): attaches the plan's
- *     details to the finished stream and removes the plan.
+ *   - Conclude episode (available once the plan has gone live): attaches the
+ *     plan's details to the finished stream and removes the plan.
+ *   - Reset broadcast (same condition): a false start — forgets the plan was
+ *     ever broadcast and keeps it for a future stream.
  */
 export function BroadcastPlan({
   plan,
@@ -68,9 +72,10 @@ export function BroadcastPlan({
     null,
   )
   const [busy, setBusy] = useState<
-    '' | 'golive' | 'stop' | 'apply' | 'conclude'
+    '' | 'golive' | 'stop' | 'apply' | 'conclude' | 'reset'
   >('')
   const [confirmConclude, setConfirmConclude] = useState(false)
+  const [confirmReset, setConfirmReset] = useState(false)
   const [note, setNote] = useState('')
 
   // The plan's thumbnail, editable in place (hover the image for the CTA):
@@ -150,9 +155,10 @@ export function BroadcastPlan({
   // OBS streams. The page's primary action is then Stop Stream.
   const liveWithThisPlan =
     streaming && Boolean(session && session.endedAt === '')
-  // Concludable once broadcast and that broadcast is over (its session ended,
-  // or still open — stopped from OBS itself — while nothing is on the air).
-  const canConclude = Boolean(session && (session.endedAt !== '' || !streaming))
+  // Concludable from the moment the plan has gone live (it has a stream
+  // session) — usually used once the broadcast is over, but concluding while
+  // still on the air just closes the session early; the confirm guards it.
+  const canConclude = Boolean(session)
 
   const goLive = async () => {
     setBusy('golive')
@@ -285,6 +291,27 @@ export function BroadcastPlan({
     }
   }
 
+  // Reset forgets the plan was ever broadcast — a false start: its sessions
+  // and go-live assignments are cleared, and the plan stays for a future
+  // stream.
+  const resetStream = async () => {
+    setBusy('reset')
+    setNote('')
+    try {
+      await ResetPlannedStream(plan.id)
+      setSession(null)
+    } catch (err) {
+      setNote(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not reset the broadcast.',
+      )
+    } finally {
+      setBusy('')
+      setConfirmReset(false)
+    }
+  }
+
   return (
     <div className="flex flex-col">
       <button
@@ -337,17 +364,52 @@ export function BroadcastPlan({
                     Cancel
                   </button>
                 </>
+              ) : confirmReset ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void resetStream()}
+                    disabled={busy !== ''}
+                    className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    {busy === 'reset' ? 'Resetting…' : 'Confirm reset'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmReset(false)}
+                    disabled={busy !== ''}
+                    className="rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => setConfirmConclude(true)}
-                  disabled={busy !== ''}
-                  title="Wrap this episode up: keep its details on the past stream and remove the plan."
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-semibold text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
-                >
-                  <CheckCircle2 size={14} aria-hidden />
-                  Conclude episode
-                </button>
+                <>
+                  {/* A matched (session-less) broadcast has nothing to
+                      reset; only Conclude applies. */}
+                  {!session?.matched && (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmReset(true)}
+                      disabled={busy !== ''}
+                      title="False start? Forget this broadcast — sessions and go-live assignments are cleared, the plan stays for a future stream."
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
+                    >
+                      <RotateCcw size={14} aria-hidden />
+                      Reset broadcast
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setConfirmConclude(true)}
+                    disabled={busy !== ''}
+                    title="Wrap this episode up: keep its details on the past stream and remove the plan."
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-semibold text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
+                  >
+                    <CheckCircle2 size={14} aria-hidden />
+                    Conclude episode
+                  </button>
+                </>
               ))}
             {/* One primary action at a time: on the air with this plan offers
                 "Stop Stream"; out-of-date info offers only "Update Stream

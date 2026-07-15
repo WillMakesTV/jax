@@ -66,6 +66,15 @@ type serviceConn struct {
 // setService records a live connection and persists it so it survives restarts.
 func (a *App) setService(name string, conn serviceConn) {
 	a.mu.Lock()
+	// The maps are normally built at construction; an App assembled some other
+	// way (a test, a future entry point) must not panic its way through a
+	// connection.
+	if a.conns == nil {
+		a.conns = map[string]serviceConn{}
+	}
+	if a.statuses == nil {
+		a.statuses = map[string]ServiceStatus{}
+	}
 	a.conns[name] = conn
 	a.statuses[name] = ServiceStatus{Name: name, Connected: true, Account: conn.account}
 	a.mu.Unlock()

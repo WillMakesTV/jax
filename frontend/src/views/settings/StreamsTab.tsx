@@ -463,7 +463,11 @@ function DownloadsSection() {
             Save a local copy of your past broadcasts. Choose where the files
             land, or leave it to default to a{' '}
             <span className="font-mono text-xs">jax</span> folder in your Videos
-            directory.
+            directory. While this is on, stopping a stream also wraps it up
+            automatically: the finished VODs are downloaded, the transcript is
+            re-produced from the video, and — with an AI service connected —
+            the stream&apos;s outline, thumbnail, and description are
+            generated.
           </p>
         </div>
         {/* Toggle switch. */}

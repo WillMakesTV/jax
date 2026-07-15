@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -57,6 +58,27 @@ func TestThumbnailHistoryOnSave(t *testing.T) {
 }
 
 // Live round-trip through Codex's image_generation tool. Costs real ChatGPT
+// A short's thumbnail is the cover of a vertical video seen full-screen on a
+// phone; a long-form video's is the usual 16:9 card. The plan's format is what
+// decides, so the two never come back in the wrong frame.
+func TestThumbShapeFollowsThePlanFormat(t *testing.T) {
+	short := thumbShapeForFormat("short")
+	if short.size != openaiImageSizePortrait {
+		t.Errorf("a short's thumbnail is %s, want the portrait %s", short.size, openaiImageSizePortrait)
+	}
+	if !strings.Contains(short.note, "9:16") {
+		t.Error("the short-form brief never tells the model the frame is 9:16")
+	}
+
+	for _, format := range []string{"long", "", "something-else"} {
+		shape := thumbShapeForFormat(format)
+		if shape.size != openaiImageSizeLandscape {
+			t.Errorf("format %q gave %s, want the landscape %s",
+				format, shape.size, openaiImageSizeLandscape)
+		}
+	}
+}
+
 // subscription usage and needs a signed-in Codex, so it only runs when
 // explicitly asked for: JAX_LIVE_CODEX=1 go test -run TestGenerateThumbViaCodexLive
 func TestGenerateThumbViaCodexLive(t *testing.T) {
@@ -65,7 +87,7 @@ func TestGenerateThumbViaCodexLive(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	png, err := generateThumbViaCodex(ctx, "A simple flat illustration of a blue square on a white background.", nil, nil)
+	png, err := generateThumbViaCodex(ctx, "A simple flat illustration of a blue square on a white background.", nil, nil, landscapeThumb)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}

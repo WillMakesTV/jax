@@ -199,6 +199,7 @@ func (a *App) CancelTranscribeDownload(subfolder string) {
 			log.Printf("jax: drop transcribe job: %v", err)
 		}
 	}
+	a.notifyVodExit(subfolder, "The transcription was cancelled.")
 	a.emitTranscribeQueue()
 	a.pumpTranscribeQueue()
 }
@@ -305,6 +306,7 @@ func (a *App) pumpTranscribeQueue() {
 			if a.ctx != nil {
 				wruntime.EventsEmit(a.ctx, "vodtranscribe:exit", next.sub, err.Error())
 			}
+			a.notifyVodExit(next.sub, err.Error())
 		}
 		a.emitTranscribeQueue()
 	}
@@ -512,6 +514,8 @@ func (a *App) startVodJob(job *vodJob) error {
 				wruntime.EventsEmit(a.ctx, "vodtranscribe:exit", job.sub, detail)
 				a.emitTranscribeQueue()
 			}
+			// The post-stream pipeline may be waiting on this transcription.
+			a.notifyVodExit(job.sub, detail)
 		}
 		a.pumpTranscribeQueue()
 	}()

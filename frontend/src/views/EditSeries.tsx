@@ -66,6 +66,7 @@ export function EditSeries({
   const [ytMadeForKids, setYtMadeForKids] = useState(
     series?.youtubeMadeForKids ?? false,
   )
+  const [season, setSeason] = useState(series?.season ?? '')
   const [notes, setNotes] = useState(series?.notes ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -151,6 +152,7 @@ export function EditSeries({
             .split(',')
             .map((t) => t.trim())
             .filter(Boolean),
+          season: season.trim(),
           notes: notes.trim(),
           createdAt: series?.createdAt ?? '',
           isDefault: series?.isDefault ?? false,
@@ -423,6 +425,26 @@ export function EditSeries({
               placeholder="ai, coding, twitch, youtube"
               className={field}
             />
+          </div>
+
+          <div>
+            <label htmlFor="series-season" className={labelCls}>
+              Season{' '}
+              <span className="font-normal text-fg-muted">(optional)</span>
+            </label>
+            <input
+              id="series-season"
+              value={season}
+              onChange={(e) => setSeason(e.target.value)}
+              placeholder="1"
+              className={field}
+            />
+            <p className="mt-1 text-xs text-fg-muted">
+              Videos cut from this series&apos; streams are filed under this
+              season in the edit workspace folder, instead of piling up in one
+              flat directory. A bare number reads as “Season 1”; anything else
+              is used as written. Changing it re-files the existing videos.
+            </p>
           </div>
 
           <div>

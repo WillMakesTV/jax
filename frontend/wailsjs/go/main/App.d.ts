@@ -8,6 +8,8 @@ export function AddProjectAssets(arg1:string):Promise<main.Project>;
 
 export function AddTranscriptLine(arg1:number,arg2:number,arg3:number,arg4:string):Promise<void>;
 
+export function ApplyChangesToSkill(arg1:string):Promise<main.AppSkill>;
+
 export function ApplyPlannedStream(arg1:string):Promise<Array<string>>;
 
 export function ApplyStreamInfo():Promise<Array<string>>;
@@ -22,11 +24,19 @@ export function CancelEditRun():Promise<void>;
 
 export function CancelKickAuth():Promise<void>;
 
+export function CancelPostStream():Promise<void>;
+
 export function CancelTikTokAuth():Promise<void>;
+
+export function CancelTranscribeDownload(arg1:string):Promise<void>;
 
 export function CancelXAuth():Promise<void>;
 
-export function CancelTranscribeDownload(arg1:string):Promise<void>;
+export function ChooseClipIdea(arg1:string,arg2:string,arg3:string,arg4:number):Promise<main.VideoPlan>;
+
+export function ClipIdeasInProgress(arg1:string,arg2:string):Promise<boolean>;
+
+export function CompleteVideoPlan(arg1:string):Promise<main.VideoPlan>;
 
 export function ConcludePlannedStream(arg1:string):Promise<void>;
 
@@ -40,6 +50,8 @@ export function ConnectOpenAIAPIKey(arg1:string):Promise<main.ServiceStatus>;
 
 export function ConnectOpenAIAccount():Promise<main.ServiceStatus>;
 
+export function CountDebugReports():Promise<number>;
+
 export function DefaultDownloadDir():Promise<string>;
 
 export function DefaultEditWorkspaceDir():Promise<string>;
@@ -49,6 +61,8 @@ export function DeleteBrandAsset(arg1:string):Promise<Array<main.BrandAsset>>;
 export function DeleteBrandLink(arg1:string):Promise<Array<main.BrandLink>>;
 
 export function DeleteContentSeries(arg1:string):Promise<void>;
+
+export function DeleteDebugReport(arg1:number):Promise<void>;
 
 export function DeleteLocalStream(arg1:string):Promise<void>;
 
@@ -68,19 +82,35 @@ export function DeleteVideoPlan(arg1:string):Promise<void>;
 
 export function DisconnectService(arg1:string):Promise<void>;
 
+export function DismissFixNotice(arg1:number):Promise<void>;
+
 export function EditPlanDescription(arg1:string,arg2:string,arg3:string):Promise<string>;
 
 export function EndStreamSession():Promise<void>;
+
+export function ExportPlanTimeline(arg1:string,arg2:main.PlanTimeline):Promise<main.EditWorkspaceInfo>;
+
+export function GenerateClipIdeas(arg1:string,arg2:string,arg3:string):Promise<main.ClipIdeaSet>;
 
 export function GenerateDownloadThumbnail(arg1:string):Promise<string>;
 
 export function GenerateEditDirections(arg1:string,arg2:string,arg3:string):Promise<string>;
 
+export function GenerateEditScript(arg1:string,arg2:string):Promise<string>;
+
 export function GeneratePlanSuggestion(arg1:string,arg2:string,arg3:number):Promise<main.PlanSuggestion>;
 
 export function GeneratePlanThumbnail(arg1:string,arg2:string,arg3:string,arg4:string):Promise<main.PlanThumbnail>;
 
+export function GenerateStreamDescription(arg1:string,arg2:string,arg3:string,arg4:number):Promise<string>;
+
 export function GenerateStreamOutline(arg1:string,arg2:number):Promise<main.StreamOutline>;
+
+export function GenerateStreamThumbnail(arg1:string,arg2:string,arg3:string,arg4:string):Promise<main.PlanThumbnail>;
+
+export function GenerateVideoPlanThumbnail(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string):Promise<main.PlanThumbnail>;
+
+export function GenerateVideoPublishFields(arg1:string,arg2:main.VideoPublishDraft,arg3:Array<string>,arg4:string):Promise<main.VideoPublishSuggestion>;
 
 export function GetActiveStreamSession():Promise<main.ActiveStreamSession>;
 
@@ -88,11 +118,7 @@ export function GetBrandAssets():Promise<Array<main.BrandAsset>>;
 
 export function GetBrandLinks():Promise<Array<main.BrandLink>>;
 
-export function GetFacebookLiveChat():Promise<main.LiveChatPage>;
-
-export function GetInstagramLiveChat():Promise<main.LiveChatPage>;
-
-export function GetKickChatIDs():Promise<main.KickChatIDs>;
+export function GetChannelMetrics():Promise<Array<main.ChannelMetrics>>;
 
 export function GetChannelSources():Promise<Array<main.ChannelSource>>;
 
@@ -104,13 +130,27 @@ export function GetChatHistory(arg1:number):Promise<Array<main.StoredChatMessage
 
 export function GetChatUserInfo(arg1:string,arg2:string,arg3:string):Promise<main.ChatUserInfo>;
 
+export function GetClipIdeas(arg1:string,arg2:string):Promise<main.ClipIdeaSet>;
+
 export function GetContentSeries():Promise<Array<main.ContentSeries>>;
 
+export function GetDebugReport(arg1:number):Promise<main.DebugReport>;
+
 export function GetDownloads():Promise<Array<main.DownloadedVideo>>;
+
+export function GetEditScript(arg1:string):Promise<string>;
+
+export function GetEditVersions(arg1:string):Promise<Array<main.EditVersion>>;
 
 export function GetEditWorkspace(arg1:string):Promise<main.EditWorkspaceInfo>;
 
 export function GetEditorTools():Promise<main.EditorTools>;
+
+export function GetFacebookLiveChat():Promise<main.LiveChatPage>;
+
+export function GetInstagramLiveChat():Promise<main.LiveChatPage>;
+
+export function GetKickChatIDs():Promise<main.KickChatIDs>;
 
 export function GetLiveEventHistory(arg1:number):Promise<Array<main.StoredLiveEvent>>;
 
@@ -124,13 +164,27 @@ export function GetLiveStreams():Promise<Array<main.LiveStream>>;
 
 export function GetMCPStatus():Promise<main.MCPStatus>;
 
+export function GetMetricsHistory(arg1:number):Promise<Array<main.MetricsDay>>;
+
+export function GetMetricsSnapshot(arg1:number):Promise<main.MetricsSnapshot>;
+
 export function GetPastStreams(arg1:boolean):Promise<Array<main.PastStream>>;
+
+export function GetPlanChanges(arg1:string):Promise<main.PlanChanges>;
+
+export function GetPlanCuts(arg1:string):Promise<main.PlanTimeline>;
 
 export function GetPlanInfoStatus(arg1:string):Promise<Array<main.PlanChannelInfo>>;
 
 export function GetPlanSessions():Promise<Array<main.PlanSessionInfo>>;
 
+export function GetPlanTimeline(arg1:string):Promise<main.PlanTimeline>;
+
 export function GetPlannedStreams():Promise<Array<main.PlannedStream>>;
+
+export function GetPlatformHistory(arg1:string,arg2:number):Promise<Array<main.MetricsDay>>;
+
+export function GetPostStreamStatus():Promise<main.PostStreamStatus>;
 
 export function GetProfile():Promise<main.Profile>;
 
@@ -152,6 +206,10 @@ export function GetStreamdeckMultiActions():Promise<Array<main.StreamdeckMultiAc
 
 export function GetStreams():Promise<Array<main.Stream>>;
 
+export function GetTikTokPublish(arg1:string):Promise<main.TikTokPublishRecord>;
+
+export function GetTrackedVideos():Promise<Array<main.TrackedVideo>>;
+
 export function GetTranscribeJobs():Promise<Array<main.TranscribeJob>>;
 
 export function GetTranscriptForStream(arg1:string):Promise<Array<main.TranscriptLineRec>>;
@@ -159,6 +217,8 @@ export function GetTranscriptForStream(arg1:string):Promise<Array<main.Transcrip
 export function GetVideoDetails(arg1:string,arg2:string,arg3:boolean):Promise<main.VideoDetails>;
 
 export function GetVideoPlans():Promise<Array<main.VideoPlan>>;
+
+export function GetVideoPublish(arg1:string):Promise<main.VideoPublishState>;
 
 export function GetVideos(arg1:boolean):Promise<main.VideoList>;
 
@@ -168,15 +228,17 @@ export function GetYouTubeLiveChat(arg1:string):Promise<main.LiveChatPage>;
 
 export function GroupPastStreams(arg1:Array<string>):Promise<void>;
 
+export function InstallEditorTools():Promise<main.EditorTools>;
+
 export function KickRedirectURI():Promise<string>;
-
-export function TikTokRedirectURI():Promise<string>;
-
-export function XRedirectURI():Promise<string>;
 
 export function ListAppSkills():Promise<Array<main.AppSkill>>;
 
+export function ListDebugReports():Promise<Array<main.DebugReport>>;
+
 export function ListFacebookPages():Promise<Array<main.FBPageInfo>>;
+
+export function ListFixNotices():Promise<Array<main.FixNotice>>;
 
 export function MarkAllChatRead():Promise<void>;
 
@@ -196,23 +258,31 @@ export function PollKickAuth():Promise<main.AuthPollResult>;
 
 export function PollTikTokAuth():Promise<main.AuthPollResult>;
 
-export function PollXAuth():Promise<main.AuthPollResult>;
-
 export function PollTwitchDeviceAuth(arg1:string,arg2:string,arg3:string):Promise<main.AuthPollResult>;
+
+export function PollXAuth():Promise<main.AuthPollResult>;
 
 export function PollYouTubeDeviceAuth(arg1:string,arg2:string,arg3:string):Promise<main.AuthPollResult>;
 
+export function PrepareEditWorkspace(arg1:string):Promise<main.EditWorkspaceInfo>;
+
 export function PressHotkey(arg1:number,arg2:boolean,arg3:boolean,arg4:boolean,arg5:boolean):Promise<void>;
+
+export function PublishPlanVideo(arg1:string,arg2:string,arg3:string,arg4:string,arg5:Array<string>,arg6:string,arg7:string):Promise<main.VideoPublishRecord>;
+
+export function PublishPlanVideoToTikTok(arg1:string,arg2:string,arg3:string,arg4:string):Promise<main.TikTokPublishRecord>;
 
 export function RecycleMCPToken():Promise<main.MCPStatus>;
 
 export function RefreshChannelInfo():Promise<void>;
 
+export function ReopenVideoPlan(arg1:string):Promise<main.VideoPlan>;
+
 export function ResetAppSkill(arg1:string):Promise<main.AppSkill>;
 
 export function ResetPlannedStream(arg1:string):Promise<void>;
 
-export function UploadPlanThumbnail():Promise<main.PlanThumbnail>;
+export function RestoreEditVersion(arg1:string,arg2:string):Promise<main.EditWorkspaceInfo>;
 
 export function SaveAppSkill(arg1:string,arg2:string):Promise<main.AppSkill>;
 
@@ -224,7 +294,13 @@ export function SaveChatMessages(arg1:Array<main.StoredChatMessage>):Promise<voi
 
 export function SaveContentSeries(arg1:main.ContentSeries):Promise<main.ContentSeries>;
 
+export function SaveDebugReport(arg1:main.DebugReport):Promise<main.DebugReport>;
+
+export function SaveEditScript(arg1:string,arg2:string):Promise<void>;
+
 export function SaveLiveEvents(arg1:Array<main.StoredLiveEvent>):Promise<void>;
+
+export function SavePlanTimeline(arg1:string,arg2:main.PlanTimeline):Promise<void>;
 
 export function SavePlannedStream(arg1:main.PlannedStream):Promise<main.PlannedStream>;
 
@@ -242,11 +318,11 @@ export function SaveServiceConfig(arg1:main.ServiceConfig):Promise<void>;
 
 export function SaveStreams(arg1:Array<main.Stream>):Promise<void>;
 
-export function InstallEditorTools():Promise<main.EditorTools>;
-
-export function PrepareEditWorkspace(arg1:string):Promise<main.EditWorkspaceInfo>;
-
 export function SaveVideoPlan(arg1:main.VideoPlan):Promise<main.VideoPlan>;
+
+export function SaveVideoPublishDraft(arg1:string,arg2:main.VideoPublishDraft):Promise<void>;
+
+export function SearchDebugReports(arg1:string):Promise<Array<main.DebugReport>>;
 
 export function SearchKickCategories(arg1:string):Promise<Array<main.ServiceCategory>>;
 
@@ -268,7 +344,15 @@ export function SetPastStreamSeries(arg1:Array<string>,arg2:string):Promise<void
 
 export function SetSetting(arg1:string,arg2:string):Promise<void>;
 
+export function SetStreamDescription(arg1:string,arg2:string):Promise<void>;
+
 export function SetStreamEpisode(arg1:Array<string>,arg2:number,arg3:string):Promise<void>;
+
+export function SetStreamThumbnail(arg1:string,arg2:string):Promise<main.StreamThumbInfo>;
+
+export function SetStreamTitle(arg1:string,arg2:string):Promise<void>;
+
+export function SetVideoPlanShares(arg1:string,arg2:Array<string>):Promise<main.TrackedVideo>;
 
 export function SetupClaudeMCP():Promise<main.MCPStatus>;
 
@@ -276,17 +360,17 @@ export function StartDownload(arg1:string,arg2:string,arg3:string,arg4:boolean,a
 
 export function StartEditRun(arg1:string,arg2:string):Promise<void>;
 
-export function StartTranscription(arg1:string):Promise<void>;
-
 export function StartFacebookDeviceAuth(arg1:string,arg2:string):Promise<main.DeviceCodeInfo>;
 
 export function StartKickAuth(arg1:string,arg2:string):Promise<string>;
 
 export function StartTikTokAuth(arg1:string,arg2:string):Promise<string>;
 
-export function StartXAuth(arg1:string,arg2:string):Promise<string>;
+export function StartTranscription(arg1:string):Promise<void>;
 
 export function StartTwitchDeviceAuth(arg1:string,arg2:string):Promise<main.DeviceCodeInfo>;
+
+export function StartXAuth(arg1:string,arg2:string):Promise<string>;
 
 export function StartYouTubeDeviceAuth(arg1:string):Promise<main.DeviceCodeInfo>;
 
@@ -294,7 +378,11 @@ export function StopTranscription():Promise<void>;
 
 export function SubscribeTwitchEvents(arg1:string):Promise<Array<string>>;
 
+export function SummarizePlanChanges(arg1:string):Promise<main.PlanChanges>;
+
 export function SyncPlatformEvents():Promise<Array<main.StoredLiveEvent>>;
+
+export function TikTokRedirectURI():Promise<string>;
 
 export function TranscribeDownload(arg1:string):Promise<void>;
 
@@ -304,4 +392,14 @@ export function UpdateBrandAsset(arg1:string,arg2:string):Promise<Array<main.Bra
 
 export function UpdateProjectAsset(arg1:string,arg2:string,arg3:string):Promise<main.Project>;
 
+export function UpdateYouTubeDescription(arg1:string,arg2:string,arg3:Array<string>):Promise<void>;
+
+export function UpdateYouTubeStreamInfo(arg1:string,arg2:Array<string>):Promise<main.YouTubePushResult>;
+
+export function UpdateYouTubeThumbnail(arg1:string,arg2:Array<string>):Promise<main.StreamThumbInfo>;
+
+export function UploadPlanThumbnail():Promise<main.PlanThumbnail>;
+
 export function UsedEpisodeNumbers(arg1:string):Promise<Array<number>>;
+
+export function XRedirectURI():Promise<string>;

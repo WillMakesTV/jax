@@ -31,7 +31,6 @@ export type ViewId =
   | 'plan-stream'
   | 'plan-video'
   | 'video-plan'
-  | 'edit-directions'
   | 'edit-series'
   | 'edit-routine'
   | 'edit-smart-source'
@@ -54,10 +53,14 @@ export interface NavItemConfig {
  */
 export const PRIMARY_NAV: NavItemConfig[] = [
   {id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard},
+  // Planning then Videos: the order the work actually runs in — a stream is
+  // planned and broadcast, and the videos are cut from it afterwards.
   {id: 'planning', label: 'Planning', icon: CalendarClock},
-  {id: 'projects', label: 'Projects', icon: FolderKanban},
-  {id: 'obs', label: 'OBS Studio', icon: MonitorPlay},
   {id: 'videos', label: 'Videos', icon: Clapperboard},
+  {id: 'obs', label: 'OBS Studio', icon: MonitorPlay},
+  // Projects is the writing/reference space rather than part of the pipeline,
+  // so it sits at the end.
+  {id: 'projects', label: 'Projects', icon: FolderKanban},
 ]
 
 /** Navigation item pinned to the bottom of the sidebar. */

@@ -143,6 +143,7 @@ func (a *App) StartDownload(name, subfolder, manifestJSON string, fresh bool, ur
 
 	a.mu.Lock()
 	a.downloadCmd = cmd
+	a.downloadSub = strings.TrimSpace(subfolder)
 	a.mu.Unlock()
 
 	// Forward each JSON progress line to the frontend.
@@ -175,15 +176,20 @@ func (a *App) StartDownload(name, subfolder, manifestJSON string, fresh bool, ur
 		current := a.downloadCmd == cmd
 		if current {
 			a.downloadCmd = nil
+			a.downloadSub = ""
 		}
 		a.mu.Unlock()
 
-		if current && a.ctx != nil {
+		if current {
 			detail := ""
 			if waitErr != nil {
 				detail = firstNonEmpty(tail, waitErr.Error())
 			}
-			wruntime.EventsEmit(a.ctx, "download:exit", detail)
+			if a.ctx != nil {
+				wruntime.EventsEmit(a.ctx, "download:exit", detail)
+			}
+			// The post-stream pipeline may be waiting on this download.
+			a.notifyDownloadExit(detail)
 		}
 	}()
 
@@ -478,8 +484,12 @@ func (a *App) CancelDownload() {
 	a.mu.Lock()
 	cmd := a.downloadCmd
 	a.downloadCmd = nil
+	a.downloadSub = ""
 	a.mu.Unlock()
 	if cmd != nil && cmd.Process != nil {
 		_ = cmd.Process.Kill()
+		// The exit goroutine no longer reports for a cancelled download; a
+		// waiting post-stream pipeline must hear the cancellation from here.
+		a.notifyDownloadExit("The download was cancelled.")
 	}
 }

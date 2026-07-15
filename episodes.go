@@ -12,10 +12,11 @@ import (
 // When a past stream belongs to a content series whose series type is
 // episodic, the stream carries an episode number and a short description.
 // Assignments persist per broadcast key (the same identity series assignments
-// use, so they survive refetches); streams without one are initialised
-// sequentially by broadcast date — the series' oldest stream is episode one —
-// continuing after the highest number already assigned. The details page can
-// then edit both fields per stream.
+// use, so they survive refetches). A number only ever comes from the stream's
+// planned broadcast — registered at go-live and adopted onto the finished
+// VODs (see past.go) — or from an edit on the stream's details page: the
+// planned episode and the past stream's are one and the same, never invented
+// here.
 // ---------------------------------------------------------------------------
 
 // StreamEpisode is a past stream's place in an episodic series.
@@ -43,7 +44,7 @@ func (a *App) streamEpisodes() map[string]StreamEpisode {
 
 // SetStreamEpisode assigns an episode number and short description to the
 // past stream identified by its broadcast keys ("platform|url"). A number
-// below 1 clears the assignment (it re-initialises on the next load).
+// below 1 clears the assignment (the stream then shows no episode).
 func (a *App) SetStreamEpisode(keys []string, number int, description string) error {
 	if a.store == nil {
 		return fmt.Errorf("storage is unavailable")
@@ -59,85 +60,25 @@ func (a *App) SetStreamEpisode(keys []string, number int, description string) er
 	return a.store.setJSON(keyStreamEpisodes, m)
 }
 
-// episodicSeriesIDs returns the ids of content series whose type is episodic.
-func (a *App) episodicSeriesIDs() map[string]bool {
-	episodicTypes := map[string]bool{}
-	for _, t := range a.GetSeriesTypes() {
-		if t.Episodic {
-			episodicTypes[t.ID] = true
-		}
-	}
-	ids := map[string]bool{}
-	if len(episodicTypes) == 0 {
-		return ids
-	}
-	for _, s := range a.GetContentSeries() {
-		if episodicTypes[s.TypeID] {
-			ids[s.ID] = true
-		}
-	}
-	return ids
-}
-
-// applyStreamEpisodes decorates episodic-series streams with their episode
-// data, first initialising any unnumbered streams by date so every stream of
-// an episodic series always shows a number.
+// applyStreamEpisodes decorates streams with their stored episode data.
+// Numbers are never invented here: streams used to be auto-numbered by date
+// on first sight, but that handed out numbers the planning flow had already
+// spoken for — a past stream would show an episode separate from its plan's,
+// and the duplicates inflated the series' numbering. A stream without an
+// assignment simply shows no episode until its plan's adopts or the user
+// sets one.
 func (a *App) applyStreamEpisodes(out []PastStream) {
-	episodic := a.episodicSeriesIDs()
-	if len(episodic) == 0 {
+	stored := a.streamEpisodes()
+	if len(stored) == 0 {
 		return
 	}
-	stored := a.streamEpisodes()
-
-	episodeOf := func(s PastStream) (StreamEpisode, bool) {
-		for _, b := range s.Broadcasts {
+	for i := range out {
+		for _, b := range out[i].Broadcasts {
 			if e, ok := stored[broadcastKey(b)]; ok {
-				return e, true
+				out[i].EpisodeNumber = e.Number
+				out[i].EpisodeDescription = e.Description
+				break
 			}
-		}
-		return StreamEpisode{}, false
-	}
-
-	// Index each episodic series' streams, oldest first, so initialisation
-	// numbers them in broadcast order (episode one = the first stream).
-	bySeries := map[string][]int{}
-	for i, s := range out {
-		if s.SeriesID != "" && episodic[s.SeriesID] {
-			bySeries[s.SeriesID] = append(bySeries[s.SeriesID], i)
-		}
-	}
-
-	changed := false
-	for _, idxs := range bySeries {
-		sort.Slice(idxs, func(x, y int) bool {
-			return out[idxs[x]].StartedAt < out[idxs[y]].StartedAt
-		})
-		// New assignments continue after the highest number already given
-		// (user edits win; a fresh series starts at one).
-		next := 1
-		for _, i := range idxs {
-			if e, ok := episodeOf(out[i]); ok && e.Number >= next {
-				next = e.Number + 1
-			}
-		}
-		for _, i := range idxs {
-			e, ok := episodeOf(out[i])
-			if !ok {
-				e = StreamEpisode{Number: next}
-				next++
-				for _, b := range out[i].Broadcasts {
-					stored[broadcastKey(b)] = e
-				}
-				changed = true
-			}
-			out[i].EpisodeNumber = e.Number
-			out[i].EpisodeDescription = e.Description
-		}
-	}
-
-	if changed && a.store != nil {
-		if err := a.store.setJSON(keyStreamEpisodes, stored); err != nil {
-			log.Printf("jax: save stream episodes: %v", err)
 		}
 	}
 }

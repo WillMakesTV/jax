@@ -370,13 +370,16 @@ func fetchKickSlug(token string) string {
 // the official users endpoint plus the analytics only the site API carries
 // (follower count, verification). The _v2 suffix invalidates caches written
 // before the analytics fields were added.
-const keyKickChannelInfo = "kick_channel_info_v2"
+const keyKickChannelInfo = "kick_channel_info_v3"
 
 // kickChannelBranding is the cached channel-level block.
 type kickChannelBranding struct {
 	Avatar    string `json:"avatar"`
 	Followers string `json:"followers"` // formatted count; "" when unavailable
 	Verified  bool   `json:"verified"`
+	// The raw follower count, for the aggregate hero and the daily history
+	// (see metrics.go); Followers above is formatted for display.
+	FollowersN int64 `json:"followersN"`
 }
 
 // fetchKickChannelInfo assembles the cached block: the avatar from the
@@ -396,6 +399,7 @@ func fetchKickChannelInfo(conn serviceConn) kickChannelBranding {
 		return out
 	}
 	out.Followers = fmtCount(r.FollowersCount)
+	out.FollowersN = r.FollowersCount
 	out.Verified = r.Verified
 	return out
 }
@@ -645,6 +649,17 @@ func fetchKickVODs(conn serviceConn) ([]PastBroadcast, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The broadcast currently on the air is already represented by the live
+	// card, but Kick's site API lists its still-recording VOD too — a
+	// duplicate of the same stream. Its start time marks which VOD to skip;
+	// the start+duration heuristic below can't be trusted alone, since Kick
+	// reports a still-recording VOD's duration as zero or stale.
+	var liveStart time.Time
+	if ch, _, err := fetchKickChannel(conn); err == nil && ch.Stream.IsLive {
+		if t, err := time.Parse(time.RFC3339, kickTimeToRFC3339(ch.Stream.StartTime)); err == nil {
+			liveStart = t
+		}
+	}
 	out := make([]PastBroadcast, 0, len(items))
 	for _, v := range items {
 		if v.Video.UUID == "" {
@@ -652,10 +667,14 @@ func fetchKickVODs(conn serviceConn) ([]PastBroadcast, error) {
 		}
 		secs := int(v.Duration / 1000)
 		started := kickTimeToRFC3339(v.StartTime)
-		// A VOD still recording belongs on the live card, not the archive;
-		// skip entries whose start+duration reaches (near) now.
-		if t, err := time.Parse(time.RFC3339, started); err == nil && secs > 0 {
-			if time.Since(t.Add(time.Duration(secs)*time.Second)) < time.Minute {
+		if t, err := time.Parse(time.RFC3339, started); err == nil {
+			// The running broadcast's own VOD (a minute of clock slack).
+			if !liveStart.IsZero() && !t.Before(liveStart.Add(-time.Minute)) {
+				continue
+			}
+			// A VOD still recording belongs on the live card, not the
+			// archive; skip entries whose start+duration reaches (near) now.
+			if secs > 0 && time.Since(t.Add(time.Duration(secs)*time.Second)) < time.Minute {
 				continue
 			}
 		}

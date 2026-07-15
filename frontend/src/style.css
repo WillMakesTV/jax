@@ -28,6 +28,11 @@
   --bp-fg-muted: #4b5563;
   --bp-accent: #4338ca;
   --bp-accent-fg: #ffffff;
+  /* Large filled panels (the Dashboard hero). Follows the accent in light
+     mode; dark mode dims it to a deep indigo — the bright dark-mode accent
+     is tuned for small controls and glares at panel size. */
+  --bp-hero: #4338ca;
+  --bp-hero-fg: #ffffff;
   --bp-focus: #4338ca;
 }
 
@@ -40,6 +45,9 @@
   --bp-fg-muted: #adadb8;
   --bp-accent: #a5b4fc;
   --bp-accent-fg: #0d0d0d;
+  /* hero-fg #f5f5f5 on hero #312e81 ~10.9:1. */
+  --bp-hero: #312e81;
+  --bp-hero-fg: #f5f5f5;
   --bp-focus: #a5b4fc;
 }
 
@@ -52,6 +60,8 @@
   --color-fg-muted: var(--bp-fg-muted);
   --color-accent: var(--bp-accent);
   --color-accent-fg: var(--bp-accent-fg);
+  --color-hero: var(--bp-hero);
+  --color-hero-fg: var(--bp-hero-fg);
   --color-focus: var(--bp-focus);
 
   --font-sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial,

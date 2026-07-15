@@ -79,7 +79,7 @@ export function LiveStreamDetails({onBack}: LiveStreamDetailsProps) {
         className="mb-4 inline-flex w-fit items-center gap-1.5 text-sm text-fg-muted transition-colors hover:text-fg"
       >
         <ArrowLeft size={16} aria-hidden />
-        Back to Past Streams
+        Back to Broadcasting
       </button>
 
       {live.length === 0 ? (
@@ -94,7 +94,7 @@ export function LiveStreamDetails({onBack}: LiveStreamDetailsProps) {
             The stream has ended
           </p>
           <p className="mt-1 max-w-sm text-sm text-fg-muted">
-            Once its VODs are processed it will appear under Past streams.
+            Once its VODs are processed it will appear under Broadcasting.
           </p>
         </div>
       ) : (

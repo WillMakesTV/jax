@@ -95,6 +95,15 @@ interface TranscriptContextValue {
   start: () => Promise<void>
   stop: () => void
   clear: () => void
+  /** True while a dictation (see dictate) holds the microphone. */
+  dictating: boolean
+  /**
+   * Borrow the transcriber for dictation: utterances go to onText instead of
+   * the stream transcript (nothing is persisted). Rejects while a live
+   * capture is running — the sidecar records one device at a time.
+   */
+  dictate: (onText: (text: string) => void) => Promise<void>
+  stopDictation: () => void
 }
 
 const TranscriptContext = createContext<TranscriptContextValue | undefined>(
@@ -133,6 +142,11 @@ export function TranscriptProvider({children}: {children: ReactNode}) {
 
   // The stream start whose stored transcript has been restored into the tab.
   const seededFor = useRef('')
+
+  // While set, the sidecar is on loan to a dictation: utterances go to this
+  // callback instead of the transcript (and are never persisted).
+  const dictation = useRef<((text: string) => void) | null>(null)
+  const [dictating, setDictating] = useState(false)
 
   const appendText = useCallback((text: string, at: number, endAt: number) => {
     const trimmed = text.trim()
@@ -179,6 +193,12 @@ export function TranscriptProvider({children}: {children: ReactNode}) {
         return
       }
       if (msg.text && msg.start && msg.end) {
+        // A dictation owns the capture: its utterances belong to whatever
+        // field is being dictated into, not to the stream transcript.
+        if (dictation.current) {
+          dictation.current(msg.text)
+          return
+        }
         const at = Math.round(msg.start * 1000)
         const endAt = Math.round(msg.end * 1000)
         appendText(msg.text, at, endAt)
@@ -204,6 +224,11 @@ export function TranscriptProvider({children}: {children: ReactNode}) {
   const start = useCallback(async () => {
     setError('')
     userPaused.current = false // an explicit start re-arms the automation
+    // An explicit stream capture takes the microphone back from a dictation.
+    if (dictation.current) {
+      dictation.current = null
+      setDictating(false)
+    }
     if (!obsConnected) {
       setError('Connect OBS first — the transcript follows its enabled microphone.')
       return
@@ -283,6 +308,40 @@ export function TranscriptProvider({children}: {children: ReactNode}) {
     setPhase('idle')
   }, [])
 
+  const stopDictation = useCallback(() => {
+    if (!dictation.current) return
+    dictation.current = null
+    setDictating(false)
+    void StopTranscription()
+  }, [])
+
+  /**
+   * Borrow the transcriber for a dictation. Uses the OBS mic's device when
+   * one is enabled, otherwise the first capture device on the machine.
+   */
+  const dictate = useCallback(
+    async (onText: (text: string) => void) => {
+      if (capturing) {
+        throw new Error(
+          'The transcriber is busy captioning the live stream — stop it on the Broadcast page first.',
+        )
+      }
+      let label = ''
+      const enabled = mics.find((m) => !m.muted)
+      if (obsConnected && enabled) {
+        try {
+          label = await obsMicDeviceLabel(obsRequest, enabled.name)
+        } catch {
+          // Fall through to the default device.
+        }
+      }
+      await StartTranscription(label)
+      dictation.current = onText
+      setDictating(true)
+    },
+    [capturing, mics, obsConnected, obsRequest],
+  )
+
   /** Manual stop: also pauses auto-start until the live/mic conditions reset. */
   const stop = useCallback(() => {
     userPaused.current = true
@@ -299,7 +358,9 @@ export function TranscriptProvider({children}: {children: ReactNode}) {
   const prevShould = useRef(false)
   useEffect(() => {
     if (shouldCapture && !prevShould.current) {
-      if (!userPaused.current && !capturing) void start()
+      // A dictation in progress keeps the mic; the automation stands down
+      // for this transition rather than yanking it mid-sentence.
+      if (!userPaused.current && !capturing && !dictation.current) void start()
     } else if (!shouldCapture && prevShould.current) {
       userPaused.current = false // conditions reset; re-arm for next time
       if (capturing) stopCapture()
@@ -310,8 +371,32 @@ export function TranscriptProvider({children}: {children: ReactNode}) {
   const clear = useCallback(() => setLines([]), [])
 
   const value = useMemo<TranscriptContextValue>(
-    () => ({lines, capturing, phase, deviceLabel, error, start, stop, clear}),
-    [lines, capturing, phase, deviceLabel, error, start, stop, clear],
+    () => ({
+      lines,
+      capturing,
+      phase,
+      deviceLabel,
+      error,
+      start,
+      stop,
+      clear,
+      dictating,
+      dictate,
+      stopDictation,
+    }),
+    [
+      lines,
+      capturing,
+      phase,
+      deviceLabel,
+      error,
+      start,
+      stop,
+      clear,
+      dictating,
+      dictate,
+      stopDictation,
+    ],
   )
 
   return (

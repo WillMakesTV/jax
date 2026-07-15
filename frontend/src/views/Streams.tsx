@@ -17,17 +17,25 @@ import {
   DeletePlannedStream,
   GetContentSeries,
   GetPastStreams,
+  GetPlanSessions,
   GetPlannedStreams,
   GroupPastStreams,
   UngroupPastStreams,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {BrandTile} from '../components/BrandTile'
+import {PlanStreamedActions} from '../components/PlanStreamedActions'
 import {DownloadThumb} from '../components/DownloadThumb'
 import {Modal} from '../components/Modal'
 import {useDownloads} from '../downloads/useDownloads'
 import {openExternal} from '../lib/browser'
-import {formatCompact, formatDate, formatDurationMs} from '../lib/format'
+import {useDataChanged} from '../lib/dataChanged'
+import {
+  formatCompact,
+  formatDate,
+  formatDurationMs,
+  truncateText,
+} from '../lib/format'
 import {useLiveData} from '../live/LiveDataProvider'
 import {SERVICES, platformName} from '../services/services'
 
@@ -147,7 +155,7 @@ export function PastStreamsSection({
   const lastStream = past[0]
 
   return (
-    <section aria-label="Past streams">
+    <section aria-label="Broadcasting">
       {/* Aggregate stat cards. */}
       {showSummary && past.length > 0 && (
         <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-3">
@@ -172,7 +180,7 @@ export function PastStreamsSection({
       <div className="mb-3 flex min-h-8 items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
-            Past streams
+            Broadcasting
           </h2>
           {/* Past broadcasts are served from the 1-hour API cache; this
               forces a fresh fetch. */}
@@ -564,10 +572,16 @@ export function PlanningSection({
   const [plans, setPlans] = useState<main.PlannedStream[]>([])
   // Series titles for the plan cards' series tags, keyed by series id.
   const [seriesTitles, setSeriesTitles] = useState<Record<string, string>>({})
+  // Each plan's latest broadcast session — how a card knows the plan has
+  // already been streamed and can offer Conclude / Reset.
+  const [sessions, setSessions] = useState<main.PlanSessionInfo[]>([])
   // The plan awaiting delete confirmation.
   const [toDelete, setToDelete] = useState<main.PlannedStream | null>(null)
 
-  useEffect(() => {
+  const {obs} = useLiveData()
+  const streaming = Boolean(obs?.outputActive)
+
+  const load = useCallback(() => {
     GetPlannedStreams()
       .then((p) => setPlans(p ?? []))
       .catch(() => {})
@@ -578,7 +592,17 @@ export function PlanningSection({
         ),
       )
       .catch(() => {})
+    GetPlanSessions()
+      .then((s) => setSessions(s ?? []))
+      .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    load()
+  }, [load, streaming])
+  // New or edited plans (an MCP client planning a stream, a generated
+  // thumbnail landing) appear without leaving the page.
+  useDataChanged(['planned_streams', 'content_series'], load)
 
   const remove = async (id: string) => {
     try {
@@ -634,8 +658,15 @@ export function PlanningSection({
               key={plan.id}
               plan={plan}
               seriesTitle={seriesTitles[plan.seriesId] ?? ''}
+              session={sessions.find((s) => s.planId === plan.id) ?? null}
               onOpen={() => onOpenPlan(plan)}
               onDelete={() => setToDelete(plan)}
+              onConcluded={() =>
+                setPlans((prev) => prev.filter((p) => p.id !== plan.id))
+              }
+              onReset={() =>
+                setSessions((prev) => prev.filter((s) => s.planId !== plan.id))
+              }
             />
           ))}
         </ul>
@@ -679,14 +710,23 @@ export function PlanningSection({
 function PlanCard({
   plan,
   seriesTitle,
+  session,
   onOpen,
   onDelete,
+  onConcluded,
+  onReset,
 }: {
   plan: main.PlannedStream
   /** Title of the plan's linked content series ('' when none). */
   seriesTitle: string
+  /** The plan's latest broadcast session, when it has gone live. */
+  session: main.PlanSessionInfo | null
   onOpen: () => void
   onDelete: () => void
+  /** The plan was concluded (it no longer exists). */
+  onConcluded: () => void
+  /** The plan's broadcast was forgotten; the plan remains. */
+  onReset: () => void
 }) {
   // Series + episode read as the card's own label — an eyebrow line above
   // the title rather than generic pills.
@@ -700,6 +740,23 @@ function PlanCard({
   return (
     <li className="flex flex-col rounded-xl border border-edge bg-surface p-4">
       <div className="flex items-start justify-between gap-3">
+        {/* The plan's generated thumbnail (from its thumbnail workbench),
+            when it has one — small, inline with the plan's metadata. */}
+        {plan.thumbnailUrl && (
+          <button
+            type="button"
+            onClick={onOpen}
+            aria-label={`Open the plan for ${plan.title}`}
+            className="shrink-0 overflow-hidden rounded-md border border-edge"
+          >
+            <img
+              src={plan.thumbnailUrl}
+              alt=""
+              aria-hidden
+              className="aspect-video w-24 object-cover transition-opacity hover:opacity-90"
+            />
+          </button>
+        )}
         <button
           type="button"
           onClick={onOpen}
@@ -723,13 +780,14 @@ function PlanCard({
           <Trash2 size={14} aria-hidden />
         </button>
       </div>
+      {/* The description sits on its own line below the header row. */}
       {plan.description && (
         <button
           type="button"
           onClick={onOpen}
-          className="mt-1 text-left text-sm text-fg-muted"
+          className="mt-2 text-left text-sm text-fg-muted"
         >
-          <span className="line-clamp-3">{plan.description}</span>
+          {truncateText(plan.description, 150)}
         </button>
       )}
       {/* Channels sit on their own row below the plan's text. */}
@@ -746,6 +804,13 @@ function PlanCard({
           ))}
         </div>
       )}
+      {/* Already gone live? The card wraps the episode up in place. */}
+      <PlanStreamedActions
+        planId={plan.id}
+        session={session}
+        onConcluded={onConcluded}
+        onReset={onReset}
+      />
     </li>
   )
 }

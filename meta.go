@@ -47,7 +47,12 @@ const (
 	// Pages managed through a Business/Meta Business Suite portfolio (which
 	// /me/accounts omits without it). Dev-mode apps grant these to the app's
 	// own admins without App Review.
-	fbScopes = "public_profile,business_management,pages_show_list,pages_read_engagement,pages_manage_engagement,pages_manage_posts,pages_read_user_content,publish_video,instagram_basic,instagram_manage_comments"
+	// instagram_manage_insights is what turns Instagram Reels from a like count
+	// into a real view count — nothing else on the Graph API exposes views for
+	// a Reel (see fetchInstagramReelViews in shorts.go). Adding it means
+	// reconnecting Facebook: Meta grants the scopes asked for at consent, not
+	// the ones the app later wishes it had.
+	fbScopes = "public_profile,business_management,pages_show_list,pages_read_engagement,pages_manage_engagement,pages_manage_posts,pages_read_user_content,publish_video,instagram_basic,instagram_manage_comments,instagram_manage_insights"
 )
 
 // metaHeaders authenticates a Graph API call with the connection's token.
@@ -364,7 +369,7 @@ func (a *App) ConnectInstagram() (ServiceStatus, error) {
 // ---------------------------------------------------------------------------
 
 // keyFBChannelInfo caches the slow-moving Page-level data.
-const keyFBChannelInfo = "facebook_channel_info_v1"
+const keyFBChannelInfo = "facebook_channel_info_v2"
 
 type fbChannelInfo struct {
 	Link      string `json:"link"`
@@ -372,6 +377,10 @@ type fbChannelInfo struct {
 	Likes     string `json:"likes"`
 	Avatar    string `json:"avatar"`
 	Banner    string `json:"banner"`
+	// The raw counts, for the aggregate hero and the daily history (see
+	// metrics.go); the strings above are formatted for display.
+	FollowersN int64 `json:"followersN"`
+	LikesN     int64 `json:"likesN"`
 }
 
 // fbPermalink absolutizes Graph's relative permalink_url values.
@@ -464,6 +473,8 @@ func (a *App) fetchFacebookLive(conn serviceConn) LiveStream {
 		out.Link = page.Link
 		out.Followers = fmtCount(page.FollowersCount)
 		out.Likes = fmtCount(page.FanCount)
+		out.FollowersN = page.FollowersCount
+		out.LikesN = page.FanCount
 		out.Avatar = page.Picture.Data.URL
 		out.Banner = page.Cover.Source
 		return out, nil
@@ -486,12 +497,16 @@ func (a *App) fetchFacebookLive(conn serviceConn) LiveStream {
 }
 
 // keyIGChannelInfo caches the slow-moving Instagram account data.
-const keyIGChannelInfo = "instagram_channel_info_v1"
+const keyIGChannelInfo = "instagram_channel_info_v2"
 
 type igChannelInfo struct {
 	Followers string `json:"followers"`
 	Posts     string `json:"posts"`
 	Avatar    string `json:"avatar"`
+	// The raw counts, for the aggregate hero and the daily history (see
+	// metrics.go); the strings above are formatted for display.
+	FollowersN int64 `json:"followersN"`
+	PostsN     int64 `json:"postsN"`
 }
 
 // igLiveNow returns the account's live media id ("" when not live),
@@ -541,9 +556,12 @@ func (a *App) fetchInstagramLive(conn serviceConn) LiveStream {
 	}
 	if mediaID != "" {
 		ls.Live = true
-		ls.Details = append(ls.Details, DetailItem{
-			"Viewer count", "Not exposed by Instagram's API",
-		})
+		ls.Details = append(ls.Details,
+			DetailItem{"Viewer count", "Not exposed by Instagram's API"},
+			// Stopping the encoder leaves an Instagram Live open, and the API
+			// offers no end-broadcast call — only the user can close it.
+			DetailItem{"Still live?", "Stopping OBS does not end an Instagram Live — end it from the Instagram app or the Live Producer page"},
+		)
 	}
 
 	info, _, _, err := cachedJSON(a, keyIGChannelInfo, apiCacheTTL, false, func() (igChannelInfo, error) {
@@ -560,6 +578,8 @@ func (a *App) fetchInstagramLive(conn serviceConn) LiveStream {
 		}
 		out.Followers = fmtCount(user.FollowersCount)
 		out.Posts = fmtCount(user.MediaCount)
+		out.FollowersN = user.FollowersCount
+		out.PostsN = user.MediaCount
 		out.Avatar = user.ProfilePictureURL
 		return out, nil
 	})

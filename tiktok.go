@@ -50,8 +50,24 @@ const (
 	tiktokUserInfoURL    = "https://open.tiktokapis.com/v2/user/info/"
 	tiktokCreatorInfoURL = "https://open.tiktokapis.com/v2/post/publish/creator_info/query/"
 	tiktokVideoInitURL   = "https://open.tiktokapis.com/v2/post/publish/video/init/"
+	tiktokVideoListURL   = "https://open.tiktokapis.com/v2/video/list/"
+	tiktokPublishStatus  = "https://open.tiktokapis.com/v2/post/publish/status/fetch/"
 
-	tiktokScopes = "user.info.basic,user.info.stats,video.publish"
+	// The user-info scopes are split three ways, and asking for a field under
+	// the wrong one is a scope_not_authorized error, not a missing field:
+	//
+	//   user.info.basic   open_id, avatar_url, display_name
+	//   user.info.profile username, profile_deep_link, bio, is_verified
+	//   user.info.stats   follower_count, likes_count, video_count
+	//
+	// (TikTok moved username and profile_deep_link out of .basic in early 2024;
+	// an app still asking for them under .basic alone is refused outright.)
+	//
+	// video.list reads the creator's own posts for the Videos page;
+	// video.publish posts on their behalf. Each is granted independently, so
+	// every call below asks only for what one scope covers and degrades when a
+	// scope was not granted — see fetchTikTokProfile and friends.
+	tiktokScopes = "user.info.basic,user.info.profile,user.info.stats,video.list,video.publish"
 
 	tiktokRedirectPort = 53519
 	tiktokRedirectPath = "/tiktok/callback"
@@ -197,6 +213,7 @@ func (a *App) handleTikTokCallback(auth *tiktokAuthState, w http.ResponseWriter,
 		RefreshToken     string `json:"refresh_token"`
 		ExpiresIn        int    `json:"expires_in"`
 		OpenID           string `json:"open_id"`
+		Scope            string `json:"scope"`
 		Error            string `json:"error"`
 		ErrorDescription string `json:"error_description"`
 	}
@@ -204,6 +221,20 @@ func (a *App) handleTikTokCallback(auth *tiktokAuthState, w http.ResponseWriter,
 		msg := firstNonEmpty(t.ErrorDescription, t.Error, fmt.Sprintf("token exchange failed (%d)", status))
 		finish(AuthPollResult{Status: "error", Message: msg}, "TikTok sign-in failed")
 		return
+	}
+	// TikTok grants what the app is approved for, not what was asked for — a
+	// scope still awaiting review is simply dropped, silently. Recording what
+	// came back is the only way to explain a feature that then doesn't work.
+	if t.Scope != "" && t.Scope != tiktokScopes {
+		log.Printf("jax: tiktok granted scopes %q (asked for %q)", t.Scope, tiktokScopes)
+	}
+
+	// A reconnect is usually someone fixing their TikTok app's scopes; the
+	// hour-old card would hide the fix until it expired.
+	if a.store != nil {
+		if err := a.store.deleteCacheEntry(keyTikTokChannelInfo); err != nil {
+			log.Printf("jax: clear tiktok channel cache: %v", err)
+		}
 	}
 
 	name := fetchTikTokDisplayName(t.AccessToken)
@@ -317,15 +348,227 @@ func fetchTikTokDisplayName(token string) string {
 // ---------------------------------------------------------------------------
 
 // keyTikTokChannelInfo caches the slow-moving account stats.
-const keyTikTokChannelInfo = "tiktok_channel_info_v1"
+const keyTikTokChannelInfo = "tiktok_channel_info_v3"
 
 type tiktokChannelInfo struct {
 	Username  string `json:"username"`
 	Avatar    string `json:"avatar"`
 	Followers string `json:"followers"`
-	Likes     string `json:"likes"`
-	Videos    string `json:"videos"`
-	Link      string `json:"link"`
+	Likes  string `json:"likes"`
+	Videos string `json:"videos"`
+	Link   string `json:"link"`
+	// Handle is the @name, derived from the profile web link (no scope carries
+	// it directly); a posted video's URL is built from it.
+	Handle string `json:"handle"`
+	// Views is the total across the account's videos — TikTok has no lifetime
+	// view figure, so it is summed from the video list (see fetchTikTokViews).
+	// ViewsOver records how many videos that sum actually covered.
+	Views     string `json:"views"`
+	ViewsOver int64  `json:"viewsOver"`
+	// The raw counts, for the aggregate hero and the daily history (see
+	// metrics.go); the strings above are formatted for display.
+	FollowersN int64 `json:"followersN"`
+	LikesN     int64 `json:"likesN"`
+	VideosN    int64 `json:"videosN"`
+	ViewsN     int64 `json:"viewsN"`
+}
+
+// tiktokFailure turns a TikTok API failure into something the producer can
+// actually act on.
+//
+// A 401 from TikTok is not always an expired token: it answers 401 just the
+// same when the app was never granted the scope in the first place — the
+// commonest state while a TikTok app is still being set up. Telling someone to
+// reconnect when reconnecting cannot possibly help is worse than telling them
+// nothing, so the scope case is named before the expiry case (a scope error
+// carries a 401 too, and would otherwise be swallowed by it).
+func tiktokFailure(err error) string {
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "scope_not_authorized"),
+		strings.Contains(msg, "scope_permission_missed"):
+		return "TikTok hasn't granted this app the scopes it needs. On developers.tiktok.com, add user.info.basic, user.info.profile, user.info.stats, video.list and video.publish to the app, then reconnect."
+	case strings.Contains(msg, "access_token_invalid"),
+		strings.Contains(msg, "access_token_expired"),
+		strings.Contains(msg, "(401)"):
+		return errReauth
+	case strings.Contains(msg, "rate_limit"):
+		return "TikTok is rate-limiting the app — try again in a few minutes."
+	}
+	return "Could not reach the TikTok API."
+}
+
+// tiktokUserFields queries user/info for the named fields.
+func tiktokUserFields(conn serviceConn, fields string, out any) error {
+	_, err := getJSON(tiktokUserInfoURL+"?fields="+fields,
+		map[string]string{"Authorization": "Bearer " + conn.token}, out)
+	return err
+}
+
+// fetchTikTokProfile reads the account's identity — and nothing but what
+// user.info.basic covers. display_name and avatar_url are the only identity
+// fields that scope still carries: username and profile_deep_link moved to
+// user.info.profile, and asking for them here would fail the whole call.
+func fetchTikTokProfile(conn serviceConn) (tiktokChannelInfo, error) {
+	var out tiktokChannelInfo
+	var r struct {
+		Data struct {
+			User struct {
+				DisplayName string `json:"display_name"`
+				AvatarURL   string `json:"avatar_url"`
+			} `json:"user"`
+		} `json:"data"`
+		Error tiktokError `json:"error"`
+	}
+	if err := tiktokUserFields(conn, "display_name,avatar_url", &r); err != nil {
+		return out, err
+	}
+	if !r.Error.ok() {
+		return out, fmt.Errorf("%s: %s", r.Error.Code, r.Error.Message)
+	}
+	out.Username = r.Data.User.DisplayName
+	out.Avatar = r.Data.User.AvatarURL
+	return out, nil
+}
+
+// fetchTikTokLinks reads the profile links (user.info.profile).
+//
+// Deliberately does NOT ask for `username`: TikTok's own scope description for
+// user.info.profile lists profile_web_link, profile_deep_link, bio_description
+// and is_verified — and nothing else. Asking for a field a scope doesn't cover
+// fails the whole call, so the @handle is derived from the web link instead of
+// requested (see tiktokHandleFrom).
+//
+// Kept apart from the identity call because it is a different scope, and a
+// scope that wasn't granted must cost only the fields it covers — not the card.
+func fetchTikTokLinks(conn serviceConn) (webLink, deepLink string, err error) {
+	var r struct {
+		Data struct {
+			User struct {
+				ProfileWebLink  string `json:"profile_web_link"`
+				ProfileDeepLink string `json:"profile_deep_link"`
+			} `json:"user"`
+		} `json:"data"`
+		Error tiktokError `json:"error"`
+	}
+	if err := tiktokUserFields(conn, "profile_web_link,profile_deep_link", &r); err != nil {
+		return "", "", err
+	}
+	if !r.Error.ok() {
+		return "", "", fmt.Errorf("%s: %s", r.Error.Code, r.Error.Message)
+	}
+	return r.Data.User.ProfileWebLink, r.Data.User.ProfileDeepLink, nil
+}
+
+// tiktokHandle returns the connected account's @handle from the cached channel
+// info ("" when user.info.profile was never granted, so the link it comes from
+// was never read).
+func (a *App) tiktokHandle() string {
+	var info tiktokChannelInfo
+	if a.readCache(keyTikTokChannelInfo, &info) {
+		return info.Handle
+	}
+	return ""
+}
+
+// tiktokHandleFrom pulls the @handle out of a profile web link
+// ("https://www.tiktok.com/@someone" → "someone"). It is the only way to learn
+// the handle without a scope that carries it, and the handle is what a posted
+// video's URL is built from.
+func tiktokHandleFrom(webLink string) string {
+	if i := strings.LastIndex(webLink, "/@"); i >= 0 {
+		handle := webLink[i+2:]
+		if j := strings.IndexAny(handle, "/?#"); j >= 0 {
+			handle = handle[:j]
+		}
+		return handle
+	}
+	return ""
+}
+
+// tiktokViewsPageCap bounds the walk below. 20 videos a page, so this covers a
+// 400-video back catalogue — deep enough for a real creator, shallow enough
+// that the Dashboard never spends a minute on TikTok's pagination.
+const tiktokViewsPageCap = 20
+
+// fetchTikTokViews totals the account's video views (video.list).
+//
+// TikTok exposes no lifetime view count anywhere — user.info.stats gives
+// followers, likes and a video count, but not views. The only way to the number
+// is to add up every video's own view_count, so this walks the video list and
+// sums it. Returns the total and how many videos it covered, because a total
+// that silently stopped at the page cap would be a lie told with a straight
+// face: the UI says "across N videos" rather than claiming a lifetime figure it
+// didn't actually reach.
+func fetchTikTokViews(conn serviceConn) (views int64, videos int64, err error) {
+	endpoint := tiktokVideoListURL + "?fields=id,view_count"
+	cursor := int64(0)
+
+	for page := 0; page < tiktokViewsPageCap; page++ {
+		var r struct {
+			Data struct {
+				Videos []struct {
+					ViewCount int64 `json:"view_count"`
+				} `json:"videos"`
+				Cursor  int64 `json:"cursor"`
+				HasMore bool  `json:"has_more"`
+			} `json:"data"`
+			Error tiktokError `json:"error"`
+		}
+		body := map[string]any{"max_count": 20}
+		if cursor > 0 {
+			body["cursor"] = cursor
+		}
+		if _, err := postJSON(endpoint,
+			map[string]string{"Authorization": "Bearer " + conn.token},
+			body, &r); err != nil {
+			return 0, 0, err
+		}
+		if !r.Error.ok() {
+			return 0, 0, fmt.Errorf("%s: %s", r.Error.Code, r.Error.Message)
+		}
+
+		for _, v := range r.Data.Videos {
+			views += v.ViewCount
+			videos++
+		}
+		if !r.Data.HasMore || len(r.Data.Videos) == 0 {
+			break
+		}
+		cursor = r.Data.Cursor
+	}
+	return views, videos, nil
+}
+
+// fetchTikTokStats reads the follower/likes/video counts (user.info.stats).
+// Kept apart from the profile on purpose: this is the scope most likely to be
+// missing, and losing the counts must not cost the whole card.
+func fetchTikTokStats(conn serviceConn) (tiktokChannelInfo, error) {
+	var out tiktokChannelInfo
+	var r struct {
+		Data struct {
+			User struct {
+				FollowerCount int64 `json:"follower_count"`
+				LikesCount    int64 `json:"likes_count"`
+				VideoCount    int64 `json:"video_count"`
+			} `json:"user"`
+		} `json:"data"`
+		Error tiktokError `json:"error"`
+	}
+	if err := tiktokUserFields(conn, "follower_count,likes_count,video_count", &r); err != nil {
+		return out, err
+	}
+	if !r.Error.ok() {
+		return out, fmt.Errorf("%s: %s", r.Error.Code, r.Error.Message)
+	}
+	u := r.Data.User
+	out.Followers = fmtCount(u.FollowerCount)
+	out.Likes = fmtCount(u.LikesCount)
+	out.Videos = fmtCount(u.VideoCount)
+	out.FollowersN = u.FollowerCount
+	out.LikesN = u.LikesCount
+	out.VideosN = u.VideoCount
+	return out, nil
 }
 
 // fetchTikTokLive fills the Dashboard card. TikTok exposes no live-video
@@ -338,43 +581,43 @@ func (a *App) fetchTikTokLive(conn serviceConn) LiveStream {
 	}
 
 	info, _, _, err := cachedJSON(a, keyTikTokChannelInfo, apiCacheTTL, false, func() (tiktokChannelInfo, error) {
-		out := tiktokChannelInfo{}
-		var r struct {
-			Data struct {
-				User struct {
-					Username       string `json:"username"`
-					AvatarURL      string `json:"avatar_url"`
-					ProfileDeepURL string `json:"profile_deep_link"`
-					FollowerCount  int64  `json:"follower_count"`
-					LikesCount     int64  `json:"likes_count"`
-					VideoCount     int64  `json:"video_count"`
-				} `json:"user"`
-			} `json:"data"`
-			Error tiktokError `json:"error"`
-		}
-		endpoint := tiktokUserInfoURL + "?fields=username,avatar_url,profile_deep_link,follower_count,likes_count,video_count"
-		if _, err := getJSON(endpoint, map[string]string{"Authorization": "Bearer " + conn.token}, &r); err != nil {
+		// TikTok splits this data across three scopes, each granted
+		// independently. One request covering all of them is all-or-nothing:
+		// a single ungranted field fails the whole call, and the card dies —
+		// name, avatar and all — over a follower count that was never more
+		// than a nice-to-have. So each scope gets its own call, and only the
+		// identity (user.info.basic, the one scope every TikTok app has) is
+		// allowed to fail the card.
+		out, err := fetchTikTokProfile(conn)
+		if err != nil {
 			return out, err
 		}
-		if !r.Error.ok() {
-			return out, fmt.Errorf("tiktok: %s", firstNonEmpty(r.Error.Message, r.Error.Code))
+		if webLink, deepLink, err := fetchTikTokLinks(conn); err != nil {
+			log.Printf("jax: tiktok profile link unavailable (user.info.profile not granted?): %v", err)
+		} else {
+			out.Link = firstNonEmpty(webLink, deepLink)
+			out.Handle = tiktokHandleFrom(webLink)
 		}
-		u := r.Data.User
-		out.Username = u.Username
-		out.Avatar = u.AvatarURL
-		out.Followers = fmtCount(u.FollowerCount)
-		out.Likes = fmtCount(u.LikesCount)
-		out.Videos = fmtCount(u.VideoCount)
-		out.Link = firstNonEmpty(u.ProfileDeepURL, "https://tiktok.com/@"+u.Username)
+		if stats, err := fetchTikTokStats(conn); err != nil {
+			log.Printf("jax: tiktok stats unavailable (user.info.stats not granted?): %v", err)
+		} else {
+			out.Followers, out.Likes, out.Videos = stats.Followers, stats.Likes, stats.Videos
+			out.FollowersN, out.LikesN, out.VideosN = stats.FollowersN, stats.LikesN, stats.VideosN
+		}
+		// Views have to be added up from the videos themselves (video.list) —
+		// TikTok publishes no lifetime total.
+		if views, over, err := fetchTikTokViews(conn); err != nil {
+			log.Printf("jax: tiktok views unavailable (video.list not granted?): %v", err)
+		} else {
+			out.ViewsN = views
+			out.Views = fmtCount(views)
+			out.ViewsOver = over
+		}
 		return out, nil
 	})
 	if err != nil {
 		log.Printf("jax: tiktok profile: %v", err)
-		if strings.Contains(err.Error(), "(401)") || strings.Contains(err.Error(), "access_token_invalid") {
-			ls.Error = errReauth
-		} else {
-			ls.Error = "Could not reach the TikTok API."
-		}
+		ls.Error = tiktokFailure(err)
 		return ls
 	}
 	ls.ChannelLogin = info.Username
@@ -389,6 +632,16 @@ func (a *App) fetchTikTokLive(conn serviceConn) LiveStream {
 	}
 	if info.Videos != "" {
 		ls.Details = append(ls.Details, DetailItem{"Videos", info.Videos})
+	}
+	if info.Views != "" {
+		// Say what the total actually covers: TikTok gives no lifetime figure,
+		// so this is the sum over the videos the list reached, and pretending
+		// otherwise would be a quiet lie.
+		label := "Views"
+		if info.ViewsOver > 0 {
+			label = fmt.Sprintf("Views (across %d videos)", info.ViewsOver)
+		}
+		ls.Details = append(ls.Details, DetailItem{label, info.Views})
 	}
 	return ls
 }
@@ -480,6 +733,67 @@ func tiktokPrivacyLevel(conn serviceConn) (string, error) {
 		return r.Data.PrivacyLevelOptions[0], nil
 	}
 	return "", fmt.Errorf("tiktok offered no privacy levels — the account may not be able to post right now")
+}
+
+// fetchTikTokVideos lists the creator's own posts for the Videos page. TikTok
+// is short-form by definition, so every post lands in the Shorts & Reels tab.
+//
+// The list needs the video.list scope. A connection made before the app asked
+// for it will be refused here — the error says so, and reconnecting TikTok in
+// Settings → Services fixes it. It is reported rather than swallowed, because
+// "no videos" and "you need to reconnect" are very different things.
+func (a *App) fetchTikTokVideos(conn serviceConn) ([]Video, error) {
+	var r struct {
+		Data struct {
+			Videos []struct {
+				ID            string `json:"id"`
+				Title         string `json:"title"`
+				Description   string `json:"video_description"`
+				Duration      int    `json:"duration"`
+				CoverImageURL string `json:"cover_image_url"`
+				ShareURL      string `json:"share_url"`
+				CreateTime    int64  `json:"create_time"` // unix seconds
+				ViewCount     int64  `json:"view_count"`
+			} `json:"videos"`
+		} `json:"data"`
+		Error tiktokError `json:"error"`
+	}
+	endpoint := tiktokVideoListURL +
+		"?fields=id,title,video_description,duration,cover_image_url,share_url,create_time,view_count"
+	if _, err := postJSON(endpoint,
+		map[string]string{"Authorization": "Bearer " + conn.token},
+		map[string]any{"max_count": 20}, &r); err != nil {
+		return nil, fmt.Errorf("%s", tiktokFailure(err))
+	}
+	if !r.Error.ok() {
+		return nil, fmt.Errorf("%s", tiktokFailure(
+			fmt.Errorf("%s: %s", r.Error.Code, r.Error.Message)))
+	}
+
+	out := make([]Video, 0, len(r.Data.Videos))
+	for _, v := range r.Data.Videos {
+		published := ""
+		if v.CreateTime > 0 {
+			published = time.Unix(v.CreateTime, 0).UTC().Format(time.RFC3339)
+		}
+		out = append(out, Video{
+			Platform:     "tiktok",
+			ID:           v.ID,
+			Title:        firstNonEmpty(v.Title, firstLine(v.Description)),
+			Description:  v.Description,
+			URL:          v.ShareURL,
+			ThumbnailURL: v.CoverImageURL,
+			PublishedAt:  published,
+			Duration:     formatSecsCompact(v.Duration),
+			DurationSecs: v.Duration,
+			ViewCount:    v.ViewCount,
+			Kind:         "TikTok",
+			Status:       "public",
+			ChannelName:  conn.account,
+			IsShort:      true,
+		})
+	}
+	return out, nil
 }
 
 // applyPlanToTikTok posts the plan's go-live announcement video — once per

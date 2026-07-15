@@ -1,42 +1,68 @@
 import {
   ArrowLeft,
+  CheckCircle2,
   Clapperboard,
+  ExternalLink,
   Film,
-  LayoutGrid,
+  Link2,
+  Loader2,
   Pencil,
   Play,
   Radio,
+  RefreshCw,
+  RotateCcw,
   Scissors,
-  Tag,
+  Trash2,
+  Upload,
+  UploadCloud,
   Zap,
 } from 'lucide-react'
 import clsx from 'clsx'
 import {useEffect, useState} from 'react'
-import {GetPastStreams, GetVideoPlans} from '../../wailsjs/go/main/App'
+import {
+  CompleteVideoPlan,
+  DeleteVideoPlan,
+  GetPastStreams,
+  GetTrackedVideos,
+  GetVideoPlans,
+  GetVideos,
+  ReopenVideoPlan,
+} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {DownloadThumb} from '../components/DownloadThumb'
 import {EpisodeThumb} from '../components/EpisodeThumb'
-import {Markdown} from '../components/markdown/Markdown'
 import {Modal} from '../components/Modal'
+import {PlatformPill} from '../components/PlatformPill'
+import {TrackedSharesModal} from '../components/TrackedSharesModal'
 import {useDownloads} from '../downloads/useDownloads'
-import {formatDate, formatDurationMs} from '../lib/format'
+import {openExternal} from '../lib/browser'
+import {formatCompact, formatDate, formatDurationMs} from '../lib/format'
 import {VideoPlanEditor} from './VideoPlanEditor'
+import {VideoPlanPublish} from './VideoPlanPublish'
 
-export type VideoPlanTab = 'dashboard' | 'content' | 'editor'
+export type VideoPlanTab = 'content' | 'editor' | 'publish'
 
-const TABS: {id: VideoPlanTab; label: string; icon: typeof LayoutGrid}[] = [
-  {id: 'dashboard', label: 'Video Plan Dashboard', icon: LayoutGrid},
+const TABS: {id: VideoPlanTab; label: string; icon: typeof Clapperboard}[] = [
   {id: 'content', label: 'Content', icon: Clapperboard},
   {id: 'editor', label: 'Editor', icon: Scissors},
+  {id: 'publish', label: 'Publish', icon: Upload},
 ]
+
+/** A share URL reduced to its host, which is all the row needs to say. */
+const shareHost = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return url
+  }
+}
 
 /**
  * A video plan's view page, opened from the planned-video cards on the Videos
- * page, in tabs: the Video Plan Dashboard (the plan in full — format,
- * description, tags, and the source streams it draws from as a thumbnail
- * grid) and Content (the downloaded videos of those source streams — the
- * actual footage on disk to edit from). An Edit action leads to the edit
- * form.
+ * page, in three tabs that follow the video from raw footage to published:
+ * Content (the source streams and their downloaded footage), Editor (the AI
+ * edit session, the rendered video, and the manual timeline), and Publish (the
+ * thumbnail, the title/description/tags/category, and the upload).
  */
 export function VideoPlanDetails({
   plan: initial,
@@ -45,11 +71,11 @@ export function VideoPlanDetails({
   onEdit,
   onOpenStream,
   onOpenDownload,
-  onComposeDirections,
+  onDeleted,
 }: {
   plan: main.VideoPlan
-  /** Tab to land on; navigation (e.g. returning from the directions page
-   *  after starting a session) sets it. */
+  /** Tab to land on; navigation (e.g. the status bar's edit-session chip)
+   *  sets it. */
   initialTab?: VideoPlanTab
   onBack: () => void
   /** Open the edit form for this plan. */
@@ -58,10 +84,13 @@ export function VideoPlanDetails({
   onOpenStream: (stream: main.PastStream) => void
   /** Open a downloaded broadcast's video page (player + chat + transcript). */
   onOpenDownload: (download: main.DownloadedVideo) => void
-  /** Open the edit-session directions page (the AI note builder). */
-  onComposeDirections: (plan: main.VideoPlan) => void
+  /** The plan was deleted; leave the page. */
+  onDeleted: () => void
 }) {
-  const [tab, setTab] = useState<VideoPlanTab>(initialTab ?? 'dashboard')
+  const [busy, setBusy] = useState<'' | 'complete' | 'delete'>('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [error, setError] = useState('')
+  const [tab, setTab] = useState<VideoPlanTab>(initialTab ?? 'content')
   // Navigating here again with an explicit tab (same mounted component, new
   // nav entry) should switch to it.
   useEffect(() => {
@@ -104,9 +133,84 @@ export function VideoPlanDetails({
   const {byUrl} = useDownloads()
 
   const sources = plan.streams ?? []
-  const tags = plan.tags ?? []
   const short = plan.format === 'short'
   const FormatIcon = short ? Zap : Film
+  const done = plan.status === 'completed'
+
+  // A completed plan is a Tracked Video; its entry (publish records + share
+  // links + live view counts) backs the Shares section and the modal.
+  const [tracked, setTracked] = useState<main.TrackedVideo | null>(null)
+  const [sharesOpen, setSharesOpen] = useState(false)
+  const [refreshingShares, setRefreshingShares] = useState(false)
+  useEffect(() => {
+    if (!done) {
+      setTracked(null)
+      setSharesOpen(false)
+      return
+    }
+    let cancelled = false
+    GetTrackedVideos()
+      .then((all) => {
+        if (cancelled) return
+        setTracked((all ?? []).find((t) => t.plan.id === plan.id) ?? null)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [done, plan.id])
+
+  // The share view counts come from the backend's 1-hour platform cache;
+  // refreshing forces a fresh platform fetch, then re-joins this entry.
+  const refreshShares = async () => {
+    setRefreshingShares(true)
+    try {
+      await GetVideos(true)
+      const all = await GetTrackedVideos()
+      setTracked((all ?? []).find((t) => t.plan.id === plan.id) ?? null)
+    } catch {
+      // The stale numbers stay; the platforms will answer next time.
+    } finally {
+      setRefreshingShares(false)
+    }
+  }
+
+  const toggleComplete = async () => {
+    setBusy('complete')
+    setError('')
+    try {
+      setPlan(
+        done
+          ? await ReopenVideoPlan(plan.id)
+          : await CompleteVideoPlan(plan.id),
+      )
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'The plan could not be updated.',
+      )
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const remove = async () => {
+    setBusy('delete')
+    setError('')
+    try {
+      await DeleteVideoPlan(plan.id)
+      onDeleted()
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'The plan could not be deleted.',
+      )
+      setConfirmDelete(false)
+      setBusy('')
+    }
+  }
 
   // Each source reference resolved to its past stream and downloaded copy.
   const resolved = sources.map((src) => {
@@ -136,7 +240,7 @@ export function VideoPlanDetails({
         Back to Videos
       </button>
 
-      {/* The plan's identity and Edit action, shared by both tabs. */}
+      {/* The plan's identity and Edit action, shared by every tab. */}
       <header className="mb-6 flex max-w-3xl items-start justify-between gap-4">
         <div className="min-w-0">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/15 px-2.5 py-1 text-xs font-medium text-accent">
@@ -152,15 +256,126 @@ export function VideoPlanDetails({
             </p>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => onEdit(plan)}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-semibold text-fg transition-colors hover:bg-surface-hover"
-        >
-          <Pencil size={14} aria-hidden />
-          Edit plan
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {/* A tracked video can pick up share links after the fact — where
+              else it was posted (TikTok, Instagram, anywhere); their views
+              join the video's total. */}
+          {done && (
+            <button
+              type="button"
+              onClick={() => setSharesOpen(true)}
+              disabled={!tracked}
+              title="Add links to the other platforms this video was shared on — their views join the video's total"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-semibold text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+            >
+              <Link2 size={14} aria-hidden />
+              Share links
+              {tracked && tracked.shares.length > 0 && (
+                <span className="rounded-full bg-accent/15 px-1.5 text-xs font-semibold text-accent">
+                  {tracked.shares.length}
+                </span>
+              )}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => onEdit(plan)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-semibold text-fg transition-colors hover:bg-surface-hover"
+          >
+            <Pencil size={14} aria-hidden />
+            Edit plan
+          </button>
+          {/* A published video is done being produced: completing it moves the
+              plan out of the planned list and into Tracked Videos. Nothing is
+              thrown away, so it can be pulled back into production. */}
+          <button
+            type="button"
+            onClick={() => void toggleComplete()}
+            disabled={busy !== ''}
+            title={
+              done
+                ? 'Pull this video back into production — it returns to the planned list'
+                : 'Mark this video published and done. It leaves the planned list and becomes a Tracked Video; the workspace, renders, and history all stay.'
+            }
+            className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-semibold text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+          >
+            {busy === 'complete' ? (
+              <Loader2 size={14} aria-hidden className="animate-spin" />
+            ) : done ? (
+              <RotateCcw size={14} aria-hidden />
+            ) : (
+              <CheckCircle2 size={14} aria-hidden />
+            )}
+            {done ? 'Reopen' : 'Complete'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirmDelete(true)}
+            disabled={busy !== ''}
+            title="Delete this plan"
+            aria-label="Delete this plan"
+            className="inline-flex items-center justify-center rounded-lg border border-edge bg-surface p-2 text-fg-muted transition-colors hover:bg-surface-hover hover:text-red-600 disabled:opacity-50 dark:hover:text-red-400"
+          >
+            <Trash2 size={14} aria-hidden />
+          </button>
+        </div>
       </header>
+
+      {done && (
+        <p className="mb-4 inline-flex w-fit items-center gap-1.5 rounded-lg border border-green-600/40 bg-green-600/10 px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-400">
+          <CheckCircle2 size={13} aria-hidden />
+          Completed{plan.completedAt
+            ? ` ${formatDate(plan.completedAt)}`
+            : ''}{' '}
+          — this video is tracked, not planned.
+        </p>
+      )}
+
+      {error && (
+        <p className="mb-4 text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+
+      {/* Deleting takes the workspace with it, so it asks first. */}
+      <Modal
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        title="Delete this video plan?"
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-fg-muted">
+            <span className="font-semibold text-fg">
+              {plan.title || 'This plan'}
+            </span>{' '}
+            and everything the app kept for it — the script, the timeline, the
+            publish draft, and the edit workspace on disk with its rendered
+            videos and revision history — are removed. Any video already
+            published to YouTube stays up. This cannot be undone.
+          </p>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(false)}
+              disabled={busy === 'delete'}
+              className="rounded-lg border border-edge px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void remove()}
+              disabled={busy === 'delete'}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {busy === 'delete' ? (
+                <Loader2 size={14} aria-hidden className="animate-spin" />
+              ) : (
+                <Trash2 size={14} aria-hidden />
+              )}
+              {busy === 'delete' ? 'Deleting…' : 'Delete the plan'}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <div
         role="tablist"
@@ -187,94 +402,135 @@ export function VideoPlanDetails({
         ))}
       </div>
 
-      {tab === 'dashboard' && (
-        <div className="flex max-w-3xl flex-col gap-6">
-          {/* The plan's thumbnail floats right of the description, above the
-              source streams. */}
-          {(plan.thumbnailUrl || plan.description) && (
-            <div className="text-sm">
-              {plan.thumbnailUrl && (
-                <img
-                  src={plan.thumbnailUrl}
-                  alt="Video thumbnail"
-                  className="float-right mb-2 ml-4 aspect-video w-72 max-w-[50%] rounded-lg border border-edge object-cover"
-                />
-              )}
-              {plan.description && <Markdown>{plan.description}</Markdown>}
-              <div className="clear-both" />
-            </div>
-          )}
-
-          {sources.length > 0 && (
-            <section aria-labelledby="video-plan-sources-heading">
-              <h2
-                id="video-plan-sources-heading"
-                className="mb-2 inline-flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-fg-muted"
-              >
-                <Radio size={13} aria-hidden />
-                Source streams ({sources.length})
-              </h2>
-              <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {resolved.map(({src, stream}) => {
-                  const tile = (
-                    <EpisodeThumb
-                      title={stream?.title || src.title}
-                      startedAt={src.startedAt}
-                      thumbnailUrl={stream?.thumbnailUrl}
-                      episodeNumber={stream?.episodeNumber}
-                    />
-                  )
-                  return (
-                    <li key={src.startedAt}>
-                      {stream ? (
-                        <button
-                          type="button"
-                          onClick={() => onOpenStream(stream)}
-                          aria-label={`Open details for ${stream.title || 'untitled stream'}`}
-                          className="flex w-full flex-col overflow-hidden rounded-xl border border-edge bg-surface text-left transition-colors hover:bg-surface-hover"
-                        >
-                          {tile}
-                        </button>
-                      ) : (
-                        // The reference no longer resolves to a past stream;
-                        // show what the plan recorded, without a link.
-                        <div className="flex flex-col overflow-hidden rounded-xl border border-edge bg-surface">
-                          {tile}
-                        </div>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
-            </section>
-          )}
-
-          {tags.length > 0 && (
-            <section aria-labelledby="video-plan-tags-heading">
-              <h2
-                id="video-plan-tags-heading"
-                className="mb-2 inline-flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-fg-muted"
-              >
-                <Tag size={13} aria-hidden />
-                Tags
-              </h2>
-              <div className="flex flex-wrap gap-1.5">
-                {tags.map((t) => (
-                  <span
-                    key={t}
-                    className="rounded-full border border-edge bg-surface px-2.5 py-1 text-xs font-medium text-fg-muted"
-                  >
-                    {t}
-                  </span>
-                ))}
-              </div>
-            </section>
-          )}
-        </div>
-      )}
-
+      {/* Content: the source streams this video draws from, and the footage of
+          theirs that is actually on disk to edit with. Once the plan is
+          tracked, the published video's thumbnail (from the Publish tab)
+          leads the tab instead of the source-stream grid — the footage lists
+          below keep the paths back to the material. */}
       {tab === 'content' && (
         <div className="flex max-w-3xl flex-col gap-6">
+          {/* Tracked plans lead with the video's face and where it lives:
+              thumbnail on the left, the shares (with views and the
+              aggregate) to its right. */}
+          {done && (plan.thumbnailUrl || tracked) && (
+            <div className="flex flex-wrap items-start gap-6">
+              {plan.thumbnailUrl && (
+                <section
+                  aria-labelledby="video-plan-thumb-heading"
+                  className="shrink-0"
+                >
+                  <h2
+                    id="video-plan-thumb-heading"
+                    className="mb-2 text-sm font-semibold uppercase tracking-wide text-fg-muted"
+                  >
+                    Thumbnail
+                  </h2>
+                  <img
+                    src={plan.thumbnailUrl}
+                    alt="The video's thumbnail"
+                    className={clsx(
+                      'rounded-xl border border-edge bg-black object-cover',
+                      short ? 'aspect-[9/16] w-48' : 'aspect-video w-72',
+                    )}
+                  />
+                </section>
+              )}
+              {/* Every place the tracked video lives, with its views and the
+              aggregate; Refresh re-asks the platforms for today's numbers. */}
+              {tracked && (
+                <section
+                  aria-labelledby="video-plan-shares-heading"
+                  className="min-w-0 flex-1 basis-64"
+                >
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <h2
+                      id="video-plan-shares-heading"
+                      className="inline-flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-fg-muted"
+                    >
+                      <Link2 size={13} aria-hidden />
+                      Shares
+                      {tracked.totalViews > 0 && (
+                        <span className="normal-case tracking-normal">
+                          · {formatCompact(tracked.totalViews)} views in total
+                        </span>
+                      )}
+                    </h2>
+                    <button
+                      type="button"
+                      onClick={() => void refreshShares()}
+                      disabled={refreshingShares}
+                      title="Fetch the latest view counts from the platforms"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-3 py-1.5 text-xs font-semibold text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+                    >
+                      <RefreshCw
+                        size={12}
+                        aria-hidden
+                        className={clsx(refreshingShares && 'animate-spin')}
+                      />
+                      Refresh
+                    </button>
+                  </div>
+                  {tracked.shares.length === 0 ? (
+                    <p className="text-sm text-fg-muted">
+                      No postings recorded yet — use Share links above to add
+                      where this video was shared, and its views will count
+                      here.
+                    </p>
+                  ) : (
+                    <ul className="flex max-w-xl flex-col gap-2">
+                      {tracked.shares.map((s) => (
+                        <li
+                          key={s.url}
+                          className="flex items-center gap-3 rounded-lg border border-edge bg-surface px-3 py-2"
+                        >
+                          {s.platform ? (
+                            <PlatformPill platform={s.platform} />
+                          ) : (
+                            <span className="rounded-full border border-edge px-2.5 py-1 text-xs text-fg-muted">
+                              Other
+                            </span>
+                          )}
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm text-fg">
+                              {shareHost(s.url)}
+                            </span>
+                            <span className="block text-xs text-fg-muted">
+                              {[
+                                s.video
+                                  ? `${formatCompact(s.video.viewCount)} views`
+                                  : 'views unknown',
+                                s.source === 'publish'
+                                  ? 'published from Jax'
+                                  : '',
+                              ]
+                                .filter(Boolean)
+                                .join(' · ')}
+                            </span>
+                          </span>
+                          {s.source === 'publish' && (
+                            <UploadCloud
+                              size={14}
+                              aria-hidden
+                              className="shrink-0 text-fg-muted"
+                            />
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => openExternal(s.url)}
+                            aria-label={`Open ${shareHost(s.url)}`}
+                            title="Open"
+                            className="rounded-lg p-1.5 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                          >
+                            <ExternalLink size={14} aria-hidden />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              )}
+            </div>
+          )}
           {sources.length === 0 ? (
             <p className="text-sm text-fg-muted">
               No source streams referenced yet — add them on the plan&apos;s
@@ -284,8 +540,58 @@ export function VideoPlanDetails({
             <p className="text-sm text-fg-muted">Loading past streams…</p>
           ) : (
             <>
+              {!done && (
+                <section aria-labelledby="video-plan-sources-heading">
+                  <h2
+                    id="video-plan-sources-heading"
+                    className="mb-2 inline-flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-fg-muted"
+                  >
+                    <Radio size={13} aria-hidden />
+                    Source streams ({sources.length})
+                  </h2>
+                  <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    {resolved.map(({src, stream}) => {
+                      const tile = (
+                        <EpisodeThumb
+                          title={stream?.title || src.title}
+                          startedAt={src.startedAt}
+                          thumbnailUrl={stream?.thumbnailUrl}
+                          episodeNumber={stream?.episodeNumber}
+                        />
+                      )
+                      return (
+                        <li key={src.startedAt}>
+                          {stream ? (
+                            <button
+                              type="button"
+                              onClick={() => onOpenStream(stream)}
+                              aria-label={`Open details for ${stream.title || 'untitled stream'}`}
+                              className="flex w-full flex-col overflow-hidden rounded-xl border border-edge bg-surface text-left transition-colors hover:bg-surface-hover"
+                            >
+                              {tile}
+                            </button>
+                          ) : (
+                            // The reference no longer resolves to a past stream;
+                            // show what the plan recorded, without a link.
+                            <div className="flex flex-col overflow-hidden rounded-xl border border-edge bg-surface">
+                              {tile}
+                            </div>
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </section>
+              )}
+
               {downloaded.length > 0 ? (
-                <section aria-label="Downloaded source videos">
+                <section aria-labelledby="video-plan-footage-heading">
+                  <h2
+                    id="video-plan-footage-heading"
+                    className="mb-2 text-sm font-semibold uppercase tracking-wide text-fg-muted"
+                  >
+                    Footage on disk
+                  </h2>
                   <ul className="flex max-w-xl flex-col gap-2">
                     {downloaded.map(({stream, download}) => {
                       const d = download!
@@ -320,7 +626,11 @@ export function VideoPlanDetails({
                             />
                             <span className="absolute inset-0 flex items-center justify-center">
                               <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-transform group-hover:scale-110">
-                                <Play size={12} aria-hidden className="ml-0.5" />
+                                <Play
+                                  size={12}
+                                  aria-hidden
+                                  className="ml-0.5"
+                                />
                               </span>
                             </span>
                             {d.durationSecs > 0 && (
@@ -362,7 +672,7 @@ export function VideoPlanDetails({
               ) : (
                 <p className="text-sm text-fg-muted">
                   None of this plan&apos;s source streams have a downloaded
-                  video yet.
+                  video yet — the editor needs the footage on disk.
                 </p>
               )}
 
@@ -416,19 +726,29 @@ export function VideoPlanDetails({
       {tab === 'editor' && (
         <VideoPlanEditor
           plan={plan}
-          sourceThumbs={Object.fromEntries(
-            pastStreams
-              .filter((s) => s.thumbnailUrl)
-              .map((s) => [s.startedAt, s.thumbnailUrl]),
-          )}
-          onOpenSource={(startedAt) => {
-            const stream = pastStreams.find((s) => s.startedAt === startedAt)
-            if (stream) onOpenStream(stream)
-          }}
           onPlay={(title, url) => setPlaying({title, url})}
-          onComposeDirections={() => onComposeDirections(plan)}
+          onPublish={() => setTab('publish')}
         />
       )}
+
+      {tab === 'publish' && (
+        <VideoPlanPublish
+          plan={plan}
+          onPlanChange={setPlan}
+          onOpenEditor={() => setTab('editor')}
+        />
+      )}
+
+      {/* Share links of the tracked video; every change saves immediately
+          and hands back the re-aggregated entry. */}
+      <TrackedSharesModal
+        tracked={sharesOpen ? tracked : null}
+        onClose={() => setSharesOpen(false)}
+        onSaved={(updated) => {
+          setTracked(updated)
+          setPlan(updated.plan)
+        }}
+      />
 
       {/* Quick playback of a source or rendered video; the modal unmounts
           the player on close, which stops playback. */}

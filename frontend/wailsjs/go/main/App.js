@@ -10,44 +10,12 @@ export function AddProjectAssets(arg1) {
   return window['go']['main']['App']['AddProjectAssets'](arg1);
 }
 
-export function DeleteBrandAsset(arg1) {
-  return window['go']['main']['App']['DeleteBrandAsset'](arg1);
-}
-
-export function DeleteBrandLink(arg1) {
-  return window['go']['main']['App']['DeleteBrandLink'](arg1);
-}
-
-export function GetBrandLinks() {
-  return window['go']['main']['App']['GetBrandLinks']();
-}
-
-export function GetFacebookLiveChat() {
-  return window['go']['main']['App']['GetFacebookLiveChat']();
-}
-
-export function GetInstagramLiveChat() {
-  return window['go']['main']['App']['GetInstagramLiveChat']();
-}
-
-export function GetKickChatIDs() {
-  return window['go']['main']['App']['GetKickChatIDs']();
-}
-
-export function SaveBrandLink(arg1) {
-  return window['go']['main']['App']['SaveBrandLink'](arg1);
-}
-
-export function GetBrandAssets() {
-  return window['go']['main']['App']['GetBrandAssets']();
-}
-
-export function UpdateBrandAsset(arg1, arg2) {
-  return window['go']['main']['App']['UpdateBrandAsset'](arg1, arg2);
-}
-
 export function AddTranscriptLine(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['AddTranscriptLine'](arg1, arg2, arg3, arg4);
+}
+
+export function ApplyChangesToSkill(arg1) {
+  return window['go']['main']['App']['ApplyChangesToSkill'](arg1);
 }
 
 export function ApplyPlannedStream(arg1) {
@@ -78,16 +46,32 @@ export function CancelKickAuth() {
   return window['go']['main']['App']['CancelKickAuth']();
 }
 
+export function CancelPostStream() {
+  return window['go']['main']['App']['CancelPostStream']();
+}
+
 export function CancelTikTokAuth() {
   return window['go']['main']['App']['CancelTikTokAuth']();
+}
+
+export function CancelTranscribeDownload(arg1) {
+  return window['go']['main']['App']['CancelTranscribeDownload'](arg1);
 }
 
 export function CancelXAuth() {
   return window['go']['main']['App']['CancelXAuth']();
 }
 
-export function CancelTranscribeDownload(arg1) {
-  return window['go']['main']['App']['CancelTranscribeDownload'](arg1);
+export function ChooseClipIdea(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['ChooseClipIdea'](arg1, arg2, arg3, arg4);
+}
+
+export function ClipIdeasInProgress(arg1, arg2) {
+  return window['go']['main']['App']['ClipIdeasInProgress'](arg1, arg2);
+}
+
+export function CompleteVideoPlan(arg1) {
+  return window['go']['main']['App']['CompleteVideoPlan'](arg1);
 }
 
 export function ConcludePlannedStream(arg1) {
@@ -114,6 +98,10 @@ export function ConnectOpenAIAccount() {
   return window['go']['main']['App']['ConnectOpenAIAccount']();
 }
 
+export function CountDebugReports() {
+  return window['go']['main']['App']['CountDebugReports']();
+}
+
 export function DefaultDownloadDir() {
   return window['go']['main']['App']['DefaultDownloadDir']();
 }
@@ -122,8 +110,20 @@ export function DefaultEditWorkspaceDir() {
   return window['go']['main']['App']['DefaultEditWorkspaceDir']();
 }
 
+export function DeleteBrandAsset(arg1) {
+  return window['go']['main']['App']['DeleteBrandAsset'](arg1);
+}
+
+export function DeleteBrandLink(arg1) {
+  return window['go']['main']['App']['DeleteBrandLink'](arg1);
+}
+
 export function DeleteContentSeries(arg1) {
   return window['go']['main']['App']['DeleteContentSeries'](arg1);
+}
+
+export function DeleteDebugReport(arg1) {
+  return window['go']['main']['App']['DeleteDebugReport'](arg1);
 }
 
 export function DeleteLocalStream(arg1) {
@@ -162,12 +162,24 @@ export function DisconnectService(arg1) {
   return window['go']['main']['App']['DisconnectService'](arg1);
 }
 
+export function DismissFixNotice(arg1) {
+  return window['go']['main']['App']['DismissFixNotice'](arg1);
+}
+
 export function EditPlanDescription(arg1, arg2, arg3) {
   return window['go']['main']['App']['EditPlanDescription'](arg1, arg2, arg3);
 }
 
 export function EndStreamSession() {
   return window['go']['main']['App']['EndStreamSession']();
+}
+
+export function ExportPlanTimeline(arg1, arg2) {
+  return window['go']['main']['App']['ExportPlanTimeline'](arg1, arg2);
+}
+
+export function GenerateClipIdeas(arg1, arg2, arg3) {
+  return window['go']['main']['App']['GenerateClipIdeas'](arg1, arg2, arg3);
 }
 
 export function GenerateDownloadThumbnail(arg1) {
@@ -178,6 +190,10 @@ export function GenerateEditDirections(arg1, arg2, arg3) {
   return window['go']['main']['App']['GenerateEditDirections'](arg1, arg2, arg3);
 }
 
+export function GenerateEditScript(arg1, arg2) {
+  return window['go']['main']['App']['GenerateEditScript'](arg1, arg2);
+}
+
 export function GeneratePlanSuggestion(arg1, arg2, arg3) {
   return window['go']['main']['App']['GeneratePlanSuggestion'](arg1, arg2, arg3);
 }
@@ -186,12 +202,40 @@ export function GeneratePlanThumbnail(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['GeneratePlanThumbnail'](arg1, arg2, arg3, arg4);
 }
 
+export function GenerateStreamDescription(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['GenerateStreamDescription'](arg1, arg2, arg3, arg4);
+}
+
 export function GenerateStreamOutline(arg1, arg2) {
   return window['go']['main']['App']['GenerateStreamOutline'](arg1, arg2);
 }
 
+export function GenerateStreamThumbnail(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['GenerateStreamThumbnail'](arg1, arg2, arg3, arg4);
+}
+
+export function GenerateVideoPlanThumbnail(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['GenerateVideoPlanThumbnail'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function GenerateVideoPublishFields(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['GenerateVideoPublishFields'](arg1, arg2, arg3, arg4);
+}
+
 export function GetActiveStreamSession() {
   return window['go']['main']['App']['GetActiveStreamSession']();
+}
+
+export function GetBrandAssets() {
+  return window['go']['main']['App']['GetBrandAssets']();
+}
+
+export function GetBrandLinks() {
+  return window['go']['main']['App']['GetBrandLinks']();
+}
+
+export function GetChannelMetrics() {
+  return window['go']['main']['App']['GetChannelMetrics']();
 }
 
 export function GetChannelSources() {
@@ -214,12 +258,28 @@ export function GetChatUserInfo(arg1, arg2, arg3) {
   return window['go']['main']['App']['GetChatUserInfo'](arg1, arg2, arg3);
 }
 
+export function GetClipIdeas(arg1, arg2) {
+  return window['go']['main']['App']['GetClipIdeas'](arg1, arg2);
+}
+
 export function GetContentSeries() {
   return window['go']['main']['App']['GetContentSeries']();
 }
 
+export function GetDebugReport(arg1) {
+  return window['go']['main']['App']['GetDebugReport'](arg1);
+}
+
 export function GetDownloads() {
   return window['go']['main']['App']['GetDownloads']();
+}
+
+export function GetEditScript(arg1) {
+  return window['go']['main']['App']['GetEditScript'](arg1);
+}
+
+export function GetEditVersions(arg1) {
+  return window['go']['main']['App']['GetEditVersions'](arg1);
 }
 
 export function GetEditWorkspace(arg1) {
@@ -228,6 +288,18 @@ export function GetEditWorkspace(arg1) {
 
 export function GetEditorTools() {
   return window['go']['main']['App']['GetEditorTools']();
+}
+
+export function GetFacebookLiveChat() {
+  return window['go']['main']['App']['GetFacebookLiveChat']();
+}
+
+export function GetInstagramLiveChat() {
+  return window['go']['main']['App']['GetInstagramLiveChat']();
+}
+
+export function GetKickChatIDs() {
+  return window['go']['main']['App']['GetKickChatIDs']();
 }
 
 export function GetLiveEventHistory(arg1) {
@@ -254,8 +326,24 @@ export function GetMCPStatus() {
   return window['go']['main']['App']['GetMCPStatus']();
 }
 
+export function GetMetricsHistory(arg1) {
+  return window['go']['main']['App']['GetMetricsHistory'](arg1);
+}
+
+export function GetMetricsSnapshot(arg1) {
+  return window['go']['main']['App']['GetMetricsSnapshot'](arg1);
+}
+
 export function GetPastStreams(arg1) {
   return window['go']['main']['App']['GetPastStreams'](arg1);
+}
+
+export function GetPlanChanges(arg1) {
+  return window['go']['main']['App']['GetPlanChanges'](arg1);
+}
+
+export function GetPlanCuts(arg1) {
+  return window['go']['main']['App']['GetPlanCuts'](arg1);
 }
 
 export function GetPlanInfoStatus(arg1) {
@@ -266,8 +354,20 @@ export function GetPlanSessions() {
   return window['go']['main']['App']['GetPlanSessions']();
 }
 
+export function GetPlanTimeline(arg1) {
+  return window['go']['main']['App']['GetPlanTimeline'](arg1);
+}
+
 export function GetPlannedStreams() {
   return window['go']['main']['App']['GetPlannedStreams']();
+}
+
+export function GetPlatformHistory(arg1, arg2) {
+  return window['go']['main']['App']['GetPlatformHistory'](arg1, arg2);
+}
+
+export function GetPostStreamStatus() {
+  return window['go']['main']['App']['GetPostStreamStatus']();
 }
 
 export function GetProfile() {
@@ -310,6 +410,14 @@ export function GetStreams() {
   return window['go']['main']['App']['GetStreams']();
 }
 
+export function GetTikTokPublish(arg1) {
+  return window['go']['main']['App']['GetTikTokPublish'](arg1);
+}
+
+export function GetTrackedVideos() {
+  return window['go']['main']['App']['GetTrackedVideos']();
+}
+
 export function GetTranscribeJobs() {
   return window['go']['main']['App']['GetTranscribeJobs']();
 }
@@ -324,6 +432,10 @@ export function GetVideoDetails(arg1, arg2, arg3) {
 
 export function GetVideoPlans() {
   return window['go']['main']['App']['GetVideoPlans']();
+}
+
+export function GetVideoPublish(arg1) {
+  return window['go']['main']['App']['GetVideoPublish'](arg1);
 }
 
 export function GetVideos(arg1) {
@@ -342,60 +454,28 @@ export function GroupPastStreams(arg1) {
   return window['go']['main']['App']['GroupPastStreams'](arg1);
 }
 
+export function InstallEditorTools() {
+  return window['go']['main']['App']['InstallEditorTools']();
+}
+
 export function KickRedirectURI() {
   return window['go']['main']['App']['KickRedirectURI']();
 }
 
-export function TikTokRedirectURI() {
-  return window['go']['main']['App']['TikTokRedirectURI']();
+export function ListAppSkills() {
+  return window['go']['main']['App']['ListAppSkills']();
 }
 
-export function XRedirectURI() {
-  return window['go']['main']['App']['XRedirectURI']();
-}
-
-export function PollFacebookDeviceAuth(arg1, arg2, arg3) {
-  return window['go']['main']['App']['PollFacebookDeviceAuth'](arg1, arg2, arg3);
-}
-
-export function PollKickAuth() {
-  return window['go']['main']['App']['PollKickAuth']();
-}
-
-export function PollTikTokAuth() {
-  return window['go']['main']['App']['PollTikTokAuth']();
-}
-
-export function PollXAuth() {
-  return window['go']['main']['App']['PollXAuth']();
-}
-
-export function SearchKickCategories(arg1) {
-  return window['go']['main']['App']['SearchKickCategories'](arg1);
-}
-
-export function StartFacebookDeviceAuth(arg1, arg2) {
-  return window['go']['main']['App']['StartFacebookDeviceAuth'](arg1, arg2);
-}
-
-export function StartKickAuth(arg1, arg2) {
-  return window['go']['main']['App']['StartKickAuth'](arg1, arg2);
-}
-
-export function StartTikTokAuth(arg1, arg2) {
-  return window['go']['main']['App']['StartTikTokAuth'](arg1, arg2);
-}
-
-export function StartXAuth(arg1, arg2) {
-  return window['go']['main']['App']['StartXAuth'](arg1, arg2);
+export function ListDebugReports() {
+  return window['go']['main']['App']['ListDebugReports']();
 }
 
 export function ListFacebookPages() {
   return window['go']['main']['App']['ListFacebookPages']();
 }
 
-export function ListAppSkills() {
-  return window['go']['main']['App']['ListAppSkills']();
+export function ListFixNotices() {
+  return window['go']['main']['App']['ListFixNotices']();
 }
 
 export function MarkAllChatRead() {
@@ -422,16 +502,44 @@ export function OutlineInProgress(arg1) {
   return window['go']['main']['App']['OutlineInProgress'](arg1);
 }
 
+export function PollFacebookDeviceAuth(arg1, arg2, arg3) {
+  return window['go']['main']['App']['PollFacebookDeviceAuth'](arg1, arg2, arg3);
+}
+
+export function PollKickAuth() {
+  return window['go']['main']['App']['PollKickAuth']();
+}
+
+export function PollTikTokAuth() {
+  return window['go']['main']['App']['PollTikTokAuth']();
+}
+
 export function PollTwitchDeviceAuth(arg1, arg2, arg3) {
   return window['go']['main']['App']['PollTwitchDeviceAuth'](arg1, arg2, arg3);
+}
+
+export function PollXAuth() {
+  return window['go']['main']['App']['PollXAuth']();
 }
 
 export function PollYouTubeDeviceAuth(arg1, arg2, arg3) {
   return window['go']['main']['App']['PollYouTubeDeviceAuth'](arg1, arg2, arg3);
 }
 
+export function PrepareEditWorkspace(arg1) {
+  return window['go']['main']['App']['PrepareEditWorkspace'](arg1);
+}
+
 export function PressHotkey(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['PressHotkey'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function PublishPlanVideo(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
+  return window['go']['main']['App']['PublishPlanVideo'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+}
+
+export function PublishPlanVideoToTikTok(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['PublishPlanVideoToTikTok'](arg1, arg2, arg3, arg4);
 }
 
 export function RecycleMCPToken() {
@@ -442,6 +550,10 @@ export function RefreshChannelInfo() {
   return window['go']['main']['App']['RefreshChannelInfo']();
 }
 
+export function ReopenVideoPlan(arg1) {
+  return window['go']['main']['App']['ReopenVideoPlan'](arg1);
+}
+
 export function ResetAppSkill(arg1) {
   return window['go']['main']['App']['ResetAppSkill'](arg1);
 }
@@ -450,12 +562,16 @@ export function ResetPlannedStream(arg1) {
   return window['go']['main']['App']['ResetPlannedStream'](arg1);
 }
 
-export function UploadPlanThumbnail() {
-  return window['go']['main']['App']['UploadPlanThumbnail']();
+export function RestoreEditVersion(arg1, arg2) {
+  return window['go']['main']['App']['RestoreEditVersion'](arg1, arg2);
 }
 
 export function SaveAppSkill(arg1, arg2) {
   return window['go']['main']['App']['SaveAppSkill'](arg1, arg2);
+}
+
+export function SaveBrandLink(arg1) {
+  return window['go']['main']['App']['SaveBrandLink'](arg1);
 }
 
 export function SaveChannelSources(arg1) {
@@ -470,8 +586,20 @@ export function SaveContentSeries(arg1) {
   return window['go']['main']['App']['SaveContentSeries'](arg1);
 }
 
+export function SaveDebugReport(arg1) {
+  return window['go']['main']['App']['SaveDebugReport'](arg1);
+}
+
+export function SaveEditScript(arg1, arg2) {
+  return window['go']['main']['App']['SaveEditScript'](arg1, arg2);
+}
+
 export function SaveLiveEvents(arg1) {
   return window['go']['main']['App']['SaveLiveEvents'](arg1);
+}
+
+export function SavePlanTimeline(arg1, arg2) {
+  return window['go']['main']['App']['SavePlanTimeline'](arg1, arg2);
 }
 
 export function SavePlannedStream(arg1) {
@@ -506,28 +634,32 @@ export function SaveStreams(arg1) {
   return window['go']['main']['App']['SaveStreams'](arg1);
 }
 
-export function InstallEditorTools() {
-  return window['go']['main']['App']['InstallEditorTools']();
-}
-
-export function PrepareEditWorkspace(arg1) {
-  return window['go']['main']['App']['PrepareEditWorkspace'](arg1);
-}
-
 export function SaveVideoPlan(arg1) {
   return window['go']['main']['App']['SaveVideoPlan'](arg1);
+}
+
+export function SaveVideoPublishDraft(arg1, arg2) {
+  return window['go']['main']['App']['SaveVideoPublishDraft'](arg1, arg2);
+}
+
+export function SearchDebugReports(arg1) {
+  return window['go']['main']['App']['SearchDebugReports'](arg1);
+}
+
+export function SearchKickCategories(arg1) {
+  return window['go']['main']['App']['SearchKickCategories'](arg1);
 }
 
 export function SearchTwitchCategories(arg1) {
   return window['go']['main']['App']['SearchTwitchCategories'](arg1);
 }
 
-export function SelectFacebookPage(arg1) {
-  return window['go']['main']['App']['SelectFacebookPage'](arg1);
-}
-
 export function SelectDirectory(arg1) {
   return window['go']['main']['App']['SelectDirectory'](arg1);
+}
+
+export function SelectFacebookPage(arg1) {
+  return window['go']['main']['App']['SelectFacebookPage'](arg1);
 }
 
 export function SendBroadcastChat(arg1) {
@@ -554,8 +686,24 @@ export function SetSetting(arg1, arg2) {
   return window['go']['main']['App']['SetSetting'](arg1, arg2);
 }
 
+export function SetStreamDescription(arg1, arg2) {
+  return window['go']['main']['App']['SetStreamDescription'](arg1, arg2);
+}
+
 export function SetStreamEpisode(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetStreamEpisode'](arg1, arg2, arg3);
+}
+
+export function SetStreamThumbnail(arg1, arg2) {
+  return window['go']['main']['App']['SetStreamThumbnail'](arg1, arg2);
+}
+
+export function SetStreamTitle(arg1, arg2) {
+  return window['go']['main']['App']['SetStreamTitle'](arg1, arg2);
+}
+
+export function SetVideoPlanShares(arg1, arg2) {
+  return window['go']['main']['App']['SetVideoPlanShares'](arg1, arg2);
 }
 
 export function SetupClaudeMCP() {
@@ -570,12 +718,28 @@ export function StartEditRun(arg1, arg2) {
   return window['go']['main']['App']['StartEditRun'](arg1, arg2);
 }
 
+export function StartFacebookDeviceAuth(arg1, arg2) {
+  return window['go']['main']['App']['StartFacebookDeviceAuth'](arg1, arg2);
+}
+
+export function StartKickAuth(arg1, arg2) {
+  return window['go']['main']['App']['StartKickAuth'](arg1, arg2);
+}
+
+export function StartTikTokAuth(arg1, arg2) {
+  return window['go']['main']['App']['StartTikTokAuth'](arg1, arg2);
+}
+
 export function StartTranscription(arg1) {
   return window['go']['main']['App']['StartTranscription'](arg1);
 }
 
 export function StartTwitchDeviceAuth(arg1, arg2) {
   return window['go']['main']['App']['StartTwitchDeviceAuth'](arg1, arg2);
+}
+
+export function StartXAuth(arg1, arg2) {
+  return window['go']['main']['App']['StartXAuth'](arg1, arg2);
 }
 
 export function StartYouTubeDeviceAuth(arg1) {
@@ -590,8 +754,16 @@ export function SubscribeTwitchEvents(arg1) {
   return window['go']['main']['App']['SubscribeTwitchEvents'](arg1);
 }
 
+export function SummarizePlanChanges(arg1) {
+  return window['go']['main']['App']['SummarizePlanChanges'](arg1);
+}
+
 export function SyncPlatformEvents() {
   return window['go']['main']['App']['SyncPlatformEvents']();
+}
+
+export function TikTokRedirectURI() {
+  return window['go']['main']['App']['TikTokRedirectURI']();
 }
 
 export function TranscribeDownload(arg1) {
@@ -602,10 +774,34 @@ export function UngroupPastStreams(arg1) {
   return window['go']['main']['App']['UngroupPastStreams'](arg1);
 }
 
+export function UpdateBrandAsset(arg1, arg2) {
+  return window['go']['main']['App']['UpdateBrandAsset'](arg1, arg2);
+}
+
 export function UpdateProjectAsset(arg1, arg2, arg3) {
   return window['go']['main']['App']['UpdateProjectAsset'](arg1, arg2, arg3);
 }
 
+export function UpdateYouTubeDescription(arg1, arg2, arg3) {
+  return window['go']['main']['App']['UpdateYouTubeDescription'](arg1, arg2, arg3);
+}
+
+export function UpdateYouTubeStreamInfo(arg1, arg2) {
+  return window['go']['main']['App']['UpdateYouTubeStreamInfo'](arg1, arg2);
+}
+
+export function UpdateYouTubeThumbnail(arg1, arg2) {
+  return window['go']['main']['App']['UpdateYouTubeThumbnail'](arg1, arg2);
+}
+
+export function UploadPlanThumbnail() {
+  return window['go']['main']['App']['UploadPlanThumbnail']();
+}
+
 export function UsedEpisodeNumbers(arg1) {
   return window['go']['main']['App']['UsedEpisodeNumbers'](arg1);
+}
+
+export function XRedirectURI() {
+  return window['go']['main']['App']['XRedirectURI']();
 }

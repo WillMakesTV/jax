@@ -348,7 +348,7 @@ func fetchXUser(token string) xUser {
 // keyXChannelInfo caches the account's public metrics. The TTL is long (see
 // xProfileTTL) because the Free API tier allows only a couple dozen users/me
 // calls per day.
-const keyXChannelInfo = "x_channel_info_v1"
+const keyXChannelInfo = "x_channel_info_v2"
 
 const xProfileTTL = 6 * time.Hour
 
@@ -356,6 +356,10 @@ type xChannelInfo struct {
 	Followers string `json:"followers"`
 	Following string `json:"following"`
 	Posts     string `json:"posts"`
+	// The raw counts, for the aggregate hero and the daily history (see
+	// metrics.go); the strings above are formatted for display.
+	FollowersN int64 `json:"followersN"`
+	PostsN     int64 `json:"postsN"`
 	Avatar    string `json:"avatar"`
 	Bio       string `json:"bio"`
 }
@@ -393,6 +397,8 @@ func (a *App) fetchXLive(conn serviceConn) LiveStream {
 		out.Followers = fmtCount(r.Data.PublicMetrics.Followers)
 		out.Following = fmtCount(r.Data.PublicMetrics.Following)
 		out.Posts = fmtCount(r.Data.PublicMetrics.Tweets)
+		out.FollowersN = r.Data.PublicMetrics.Followers
+		out.PostsN = r.Data.PublicMetrics.Tweets
 		// X serves a tiny avatar by default; ask for the 400x400 variant.
 		out.Avatar = strings.Replace(r.Data.ProfileImage, "_normal.", "_400x400.", 1)
 		out.Bio = r.Data.Description

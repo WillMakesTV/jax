@@ -37,7 +37,6 @@ import {
   twitchLabelName,
   YOUTUBE_MADE_FOR_KIDS_NAME,
 } from '../lib/contentLabels'
-import {useLiveData} from '../live/LiveDataProvider'
 import {SERVICES} from '../services/services'
 import {useServices} from '../services/ServicesProvider'
 
@@ -64,8 +63,6 @@ export function PlanStream({
   onSaved: () => void
 }) {
   const {statuses} = useServices()
-  const {obs} = useLiveData()
-  const streaming = Boolean(obs?.outputActive)
 
   // The stored plan, kept current across per-field saves. null while the
   // plan is still being created (create mode: one classic editable form);
@@ -105,9 +102,9 @@ export function PlanStream({
       .then((s) => setSession((s ?? []).find((x) => x.planId === plan.id) ?? null))
       .catch(() => {})
   }, [plan])
-  const canConclude = Boolean(
-    plan && session && (session.endedAt !== '' || !streaming),
-  )
+  // Offered from the moment the plan has gone live (it has a stream
+  // session); concluding while still on the air closes the session early.
+  const canConclude = Boolean(plan && session)
 
   const conclude = async () => {
     if (!plan) return
@@ -298,7 +295,10 @@ export function PlanStream({
   const episodeNum = Number(episode)
   const episodeValid =
     episode.trim() === '' || (Number.isInteger(episodeNum) && episodeNum >= 1)
-  // The plan's own saved number is not a conflict with itself.
+  // A number already used elsewhere in the series is worth flagging, but it
+  // never blocks saving — past streams and planning can legitimately drift
+  // (imported history, renumbered seasons), and the user decides what's
+  // right. The plan's own saved number is not a collision with itself.
   const episodeTaken =
     episodicPlan &&
     episodeValid &&
@@ -331,17 +331,9 @@ export function PlanStream({
       setError('Give your stream a title.')
       return
     }
-    if (episodicPlan && episode.trim() !== '') {
-      if (!episodeValid) {
-        setError('The episode number must be a whole number of 1 or more.')
-        return
-      }
-      if (episodeTaken) {
-        setError(
-          `Episode ${episodeNum} is already used in this series — pick another number.`,
-        )
-        return
-      }
+    if (episodicPlan && episode.trim() !== '' && !episodeValid) {
+      setError('The episode number must be a whole number of 1 or more.')
+      return
     }
     setSaving(true)
     setError('')
@@ -497,19 +489,11 @@ export function PlanStream({
                 closeField()
               }}
               onSave={() => {
-                if (episodicPlan && episode.trim() !== '') {
-                  if (!episodeValid) {
-                    setFieldError(
-                      'The episode number must be a whole number of 1 or more.',
-                    )
-                    return
-                  }
-                  if (episodeTaken) {
-                    setFieldError(
-                      `Episode ${episodeNum} is already used in this series — pick another number.`,
-                    )
-                    return
-                  }
+                if (episodicPlan && episode.trim() !== '' && !episodeValid) {
+                  setFieldError(
+                    'The episode number must be a whole number of 1 or more.',
+                  )
+                  return
                 }
                 void saveField('series', {
                   seriesId,
@@ -580,10 +564,10 @@ export function PlanStream({
                       step={1}
                       value={episode}
                       onChange={(e) => setEpisode(e.target.value)}
-                      aria-invalid={episodeTaken || !episodeValid}
+                      aria-invalid={!episodeValid}
                       className={clsx(
                         'w-full rounded-lg border bg-bg px-3 py-2 text-sm text-fg outline-none',
-                        episodeTaken || !episodeValid
+                        !episodeValid
                           ? 'border-red-500/60 focus:border-red-500'
                           : 'border-edge focus:border-accent',
                       )}
@@ -596,7 +580,7 @@ export function PlanStream({
                 <p
                   className={clsx(
                     'mt-1.5 text-xs',
-                    episodeTaken || !episodeValid
+                    !episodeValid
                       ? 'text-red-600 dark:text-red-400'
                       : 'text-fg-muted',
                   )}
@@ -604,7 +588,7 @@ export function PlanStream({
                   {!episodeValid
                     ? 'Enter a whole number of 1 or more.'
                     : episodeTaken
-                      ? `Episode ${episodeNum} is already used in this series (past stream, plan, or the current live stream).`
+                      ? `Heads up: episode ${episodeNum} also appears on a past stream or plan in this series — saving anyway is fine.`
                       : "Prefilled with the next episode in this series' sequence."}
                 </p>
               )}
@@ -1086,15 +1070,19 @@ export function PlanStream({
                   </>
                 ) : (
                   <>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmReset(true)}
-                      title="False start? Forget this broadcast — sessions and go-live assignments are cleared, the plan stays for a future stream."
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
-                    >
-                      <RotateCcw size={14} aria-hidden />
-                      Reset broadcast
-                    </button>
+                    {/* A matched (session-less) broadcast has nothing to
+                        reset; only Conclude applies. */}
+                    {!session?.matched && (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmReset(true)}
+                        title="False start? Forget this broadcast — sessions and go-live assignments are cleared, the plan stays for a future stream."
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                      >
+                        <RotateCcw size={14} aria-hidden />
+                        Reset broadcast
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setConfirmConclude(true)}

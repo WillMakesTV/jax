@@ -1,4 +1,9 @@
-This is the creative brief for generated stream thumbnails. When a thumbnail is generated from the Plan Stream form, this document is sent to the image model together with the stream's title and description, the brand's assets (see below) — and, when changes are requested, the current image plus the feedback. Edit it to change the style every thumbnail follows.
+This is the creative brief for generated stream thumbnails. When a thumbnail is generated — from the Plan Stream form for an upcoming broadcast, or from a past stream's details page for a finished one — this document is sent to the image model together with the stream's title and description (past streams use their AI outline), the brand's assets (see below) — and, when changes are requested, the current image plus the feedback. Edit it to change the style every thumbnail follows.
+
+## Live vs. past
+
+- The request's "Context" section says when the thumbnail is for a past broadcast (a finished VOD). Those must not carry "LIVE" text, live badges, on-air indicators, or countdown/starting-soon framing — the stream already happened.
+- Only upcoming or live broadcasts may use live-flavored elements, and even then sparingly.
 
 ## Brand
 

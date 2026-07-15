@@ -38,11 +38,49 @@ const (
 	openaiImagesURL     = "https://api.openai.com/v1/images/generations"
 	openaiImageEditsURL = "https://api.openai.com/v1/images/edits"
 	openaiImageModel    = "gpt-image-1"
-	// Landscape — the closest Images API size to a 16:9 thumbnail.
-	openaiImageSize = "1536x1024"
+	// The Images API sizes closest to the two shapes a thumbnail is ever in:
+	// landscape for 16:9 (streams, long-form videos) and portrait for the 9:16
+	// of a short. Nothing else the API offers is nearer either ratio.
+	openaiImageSizeLandscape = "1536x1024"
+	openaiImageSizePortrait  = "1024x1536"
 
 	thumbnailSkillID = "stream-thumbnails"
 )
+
+// thumbShape is the frame a thumbnail is composed in. A short's cover is seen
+// on a phone, full-bleed vertical; a 16:9 image letterboxed into it wastes most
+// of the frame, so the two are generated at different sizes and briefed
+// differently.
+type thumbShape struct {
+	size   string // the Images API size
+	aspect string // how the brief names it
+	note   string // the composition brief for this frame
+}
+
+var (
+	landscapeThumb = thumbShape{
+		size:   openaiImageSizeLandscape,
+		aspect: "16:9 landscape",
+		note:   "This is a 16:9 landscape thumbnail — the standard YouTube/Twitch card. Compose for a wide frame.",
+	}
+	portraitThumb = thumbShape{
+		size:   openaiImageSizePortrait,
+		aspect: "9:16 vertical",
+		note: "This is a 9:16 VERTICAL thumbnail — the cover of a short-form video, seen full-screen on a phone. " +
+			"Compose for a tall frame: stack the elements vertically, keep the subject centred and large, and keep any text " +
+			"big enough to read on a small screen. Do not compose a wide 16:9 image inside the tall frame, and leave the top " +
+			"and bottom eighths clear of anything that must be seen — the platform's own UI sits there.",
+	}
+)
+
+// thumbShapeForFormat picks the frame a video plan's thumbnail is composed in:
+// a short is vertical, everything else is the usual 16:9 card.
+func thumbShapeForFormat(format string) thumbShape {
+	if format == "short" {
+		return portraitThumb
+	}
+	return landscapeThumb
+}
 
 // PlanThumbnail is a generated thumbnail: the stored file name (persisted on
 // the plan) and the served URL the frontend renders.
@@ -210,12 +248,42 @@ func (a *App) importPlanThumbnail(path string) (PlanThumbnail, error) {
 // generated. Returns the new file for the frontend to preview and store on
 // the plan.
 func (a *App) GeneratePlanThumbnail(title, description, feedback, currentFile string) (PlanThumbnail, error) {
+	return a.generateThumbnail(title, description, "", feedback, currentFile, landscapeThumb)
+}
+
+// GenerateVideoPlanThumbnail creates (or revises) a video plan's thumbnail. It
+// is the plan-aware counterpart of GeneratePlanThumbnail: the plan's format
+// decides the frame, so a short's cover comes back 9:16 vertical and a
+// long-form video's 16:9. Title and description come from the Publish form,
+// which may have moved on from the plan's own.
+func (a *App) GenerateVideoPlanThumbnail(planID, title, description, feedback, currentFile string) (PlanThumbnail, error) {
+	plan, err := a.findVideoPlan(planID)
+	if err != nil {
+		return PlanThumbnail{}, err
+	}
+	return a.generateThumbnail(
+		firstNonEmpty(strings.TrimSpace(title), plan.Title),
+		firstNonEmpty(strings.TrimSpace(description), plan.Description),
+		"", feedback, currentFile,
+		thumbShapeForFormat(plan.Format),
+	)
+}
+
+// generateThumbnail is the shared thumbnail engine behind plan and
+// past-stream thumbnails: the "stream-thumbnails" skill brief, the title and
+// description, an optional caller context section (e.g. "this is a finished
+// VOD, no LIVE badges"), and — for revisions — the current image plus the
+// feedback.
+func (a *App) generateThumbnail(title, description, contextNote, feedback, currentFile string, shape thumbShape) (PlanThumbnail, error) {
 	conn, ok := a.getConn(openaiService)
 	if !ok {
 		return PlanThumbnail{}, fmt.Errorf("connect OpenAI in Settings → AI to generate thumbnails")
 	}
 	if strings.TrimSpace(title) == "" && strings.TrimSpace(description) == "" {
 		return PlanThumbnail{}, fmt.Errorf("give the plan a title or description first — the thumbnail is generated from them")
+	}
+	if shape.size == "" {
+		shape = landscapeThumb
 	}
 
 	skill, err := a.getAppSkill(thumbnailSkillID)
@@ -224,6 +292,13 @@ func (a *App) GeneratePlanThumbnail(title, description, feedback, currentFile st
 	}
 	var b strings.Builder
 	b.WriteString(skill.Content)
+	// The frame comes after the skill's brief: the skill is written for the
+	// usual 16:9 card, and a vertical cover has to override its composition
+	// advice rather than be overridden by it.
+	fmt.Fprintf(&b, "\n\n# Frame\n%s\n", shape.note)
+	if strings.TrimSpace(contextNote) != "" {
+		fmt.Fprintf(&b, "\n\n# Context\n%s\n", strings.TrimSpace(contextNote))
+	}
 	b.WriteString("\n\n# Stream\n")
 	if strings.TrimSpace(title) != "" {
 		fmt.Fprintf(&b, "Title: %s\n", strings.TrimSpace(title))
@@ -259,12 +334,12 @@ func (a *App) GeneratePlanThumbnail(title, description, feedback, currentFile st
 		}
 		refs = append(refs, brandImages...)
 		if len(refs) > 0 {
-			png, err = a.editImages(ctx, conn.token, b.String(), refs)
+			png, err = a.editImages(ctx, conn.token, b.String(), refs, shape.size)
 		} else {
-			png, err = a.generateImage(ctx, conn.token, b.String())
+			png, err = a.generateImage(ctx, conn.token, b.String(), shape.size)
 		}
 	} else {
-		png, err = generateThumbViaCodex(ctx, b.String(), current, brandImages)
+		png, err = generateThumbViaCodex(ctx, b.String(), current, brandImages, shape)
 	}
 	if err != nil {
 		return PlanThumbnail{}, err
@@ -289,7 +364,7 @@ func (a *App) GeneratePlanThumbnail(title, description, feedback, currentFile st
 // sandbox is opened for the workspace write — the prompt is app-authored and
 // scoped to a throwaway directory, matching the trust the video editor
 // already extends to headless sessions.
-func generateThumbViaCodex(ctx context.Context, prompt string, currentImage []byte, brandImages []namedImage) ([]byte, error) {
+func generateThumbViaCodex(ctx context.Context, prompt string, currentImage []byte, brandImages []namedImage, shape thumbShape) ([]byte, error) {
 	work, err := os.MkdirTemp("", "jax-thumb-")
 	if err != nil {
 		return nil, err
@@ -326,7 +401,8 @@ func generateThumbViaCodex(ctx context.Context, prompt string, currentImage []by
 	cmd.Dir = work
 
 	var b strings.Builder
-	b.WriteString("Create one thumbnail image with your image generation tool and save it as thumb.png in the current working directory (landscape, 16:9). Do not write any other files or run unrelated commands. Reply with only the file name once saved.\n\n")
+	fmt.Fprintf(&b, "Create one thumbnail image with your image generation tool and save it as thumb.png in the current working directory (%s, %s). Do not write any other files or run unrelated commands. Reply with only the file name once saved.\n\n",
+		shape.aspect, shape.size)
 	if len(currentImage) > 0 {
 		b.WriteString("current.png in the working directory is the existing thumbnail — view it first, then produce a revised version that applies the requested changes and keeps everything that wasn't criticised.\n\n")
 	}
@@ -358,11 +434,11 @@ func generateThumbViaCodex(ctx context.Context, prompt string, currentImage []by
 }
 
 // generateImage calls the Images API and returns the decoded PNG.
-func (a *App) generateImage(ctx context.Context, key, prompt string) ([]byte, error) {
+func (a *App) generateImage(ctx context.Context, key, prompt, size string) ([]byte, error) {
 	body, err := json.Marshal(map[string]any{
 		"model":  openaiImageModel,
 		"prompt": prompt,
-		"size":   openaiImageSize,
+		"size":   size,
 	})
 	if err != nil {
 		return nil, err
@@ -380,7 +456,7 @@ func (a *App) generateImage(ctx context.Context, key, prompt string) ([]byte, er
 // editImages sends input images (the current thumbnail and/or brand
 // references) through the images-edit endpoint (multipart) with the combined
 // brief + feedback prompt.
-func (a *App) editImages(ctx context.Context, key, prompt string, images []namedImage) ([]byte, error) {
+func (a *App) editImages(ctx context.Context, key, prompt string, images []namedImage, size string) ([]byte, error) {
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	if err := mw.WriteField("model", openaiImageModel); err != nil {
@@ -389,7 +465,7 @@ func (a *App) editImages(ctx context.Context, key, prompt string, images []named
 	if err := mw.WriteField("prompt", prompt); err != nil {
 		return nil, err
 	}
-	if err := mw.WriteField("size", openaiImageSize); err != nil {
+	if err := mw.WriteField("size", size); err != nil {
 		return nil, err
 	}
 	for _, img := range images {

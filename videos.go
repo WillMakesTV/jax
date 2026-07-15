@@ -33,9 +33,12 @@ type Video struct {
 	Duration     string `json:"duration"`    // compact, e.g. "3h8m33s"
 	DurationSecs int    `json:"durationSecs"`
 	ViewCount    int64  `json:"viewCount"`
-	Kind         string `json:"kind"`   // "VOD" | "Highlight" | "Upload" | "Live VOD"
+	Kind         string `json:"kind"`   // "VOD" | "Highlight" | "Upload" | "Live VOD" | "Short" | "Reel"
 	Status       string `json:"status"` // "public" | "unlisted" | "private"
 	ChannelName  string `json:"channelName"`
+	// IsShort marks short-form video — a YouTube Short, a Facebook Reel, an
+	// Instagram Reel. See shorts.go for how each platform is asked.
+	IsShort bool `json:"isShort"`
 }
 
 // normalizeVideoStatus maps platform visibility values (YouTube privacyStatus,
@@ -102,6 +105,12 @@ func (a *App) allVideos(forceRefresh bool) ([]Video, time.Time, bool, error) {
 			{"youtube", fetchYouTubeVideos},
 			{"kick", fetchKickVideos},
 			{"facebook", a.fetchFacebookVideos},
+			// Short-form lives apart from the long: Facebook Reels have their
+			// own edge, Instagram is only reachable at all through its media
+			// edge (see shorts.go), and TikTok is short-form by definition.
+			{"facebook", a.fetchFacebookReels},
+			{"instagram", a.fetchInstagramReels},
+			{"tiktok", a.fetchTikTokVideos},
 		}
 
 		var (
@@ -139,13 +148,18 @@ func (a *App) allVideos(forceRefresh bool) ([]Video, time.Time, bool, error) {
 		if failures == attempted {
 			return nil, fmt.Errorf("every connected platform failed")
 		}
+		// Reels arrive knowing what they are; YouTube uploads have to be asked
+		// (see shorts.go). Done here, inside the fetch, so the verdicts are
+		// cached with the videos rather than re-derived on every read.
+		a.markShorts(all)
 		sortVideosNewestFirst(all)
 		return all, nil
 	}
 
-	// v6: Twitch VODs/highlights/uploads + clips; YouTube live-originated
-	// videos excluded (via liveBroadcastContent + scheduled/actual start).
-	return cachedJSON(a, a.connsCacheKey("videos_v6"), apiCacheTTL, forceRefresh, fetch)
+	// v7: adds short-form — YouTube Shorts, Facebook and Instagram Reels.
+	// (v6: Twitch VODs/highlights/uploads + clips; YouTube live-originated
+	// videos excluded via liveBroadcastContent + scheduled/actual start.)
+	return cachedJSON(a, a.connsCacheKey("videos_v7"), apiCacheTTL, forceRefresh, fetch)
 }
 
 // GetChannelVideos returns one platform's videos (VODs, highlights, uploads,

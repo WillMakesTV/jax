@@ -37,7 +37,10 @@ type PastBroadcast struct {
 
 // PastStream is a finished stream aggregated across platforms.
 type PastStream struct {
-	Title        string `json:"title"`
+	Title string `json:"title"`
+	// CustomTitle is the user's rename ("" when the platform title is used);
+	// when set it is also what Title carries (see stream_title.go).
+	CustomTitle  string `json:"customTitle"`
 	ThumbnailURL string `json:"thumbnailUrl"`
 	StartedAt    string `json:"startedAt"` // most recent broadcast start
 	TotalViews   int    `json:"totalViews"`
@@ -50,6 +53,13 @@ type PastStream struct {
 	// number 0 = the stream is not part of an episodic series).
 	EpisodeNumber      int             `json:"episodeNumber"`
 	EpisodeDescription string          `json:"episodeDescription"`
+	// Description is the stream's effective description: the user's custom
+	// text when set, otherwise the concluded plan's (see stream_desc.go).
+	Description string `json:"description"`
+	// DescriptionPushed is the description last written onto the stream's
+	// YouTube VOD ("" when never pushed; see youtube_desc.go). When it
+	// differs from Description, YouTube is showing older text.
+	DescriptionPushed string `json:"descriptionPushed"`
 	// Local is true when every broadcast of the stream is local-only: the
 	// downloaded copy is the last one and the stream can be deleted for good.
 	Local      bool            `json:"local"`
@@ -57,6 +67,9 @@ type PastStream struct {
 	// Plan is the concluded plan's snapshot (description, tags, channels)
 	// when this stream was broadcast from a plan (see conclude.go).
 	Plan *StreamPlanInfo `json:"plan"`
+	// CustomThumb is the stream's generated/uploaded thumbnail, when one has
+	// been assigned; it overrides ThumbnailURL (see stream_thumbs.go).
+	CustomThumb *StreamThumbInfo `json:"customThumb"`
 }
 
 // broadcastKey is the stable identity of one platform's broadcast, used to
@@ -182,9 +195,21 @@ func (a *App) GetPastStreams(forceRefresh bool) []PastStream {
 	// broadcasts once the VODs appear.
 	a.adoptLiveAssignments(out)
 
-	// Episodic series carry an episode number per stream, initialised by date
-	// on first sight (see episodes.go).
+	// Episode numbers ride in from the planned broadcast (adopted above) or
+	// the user's edit on the stream's page (see episodes.go).
 	a.applyStreamEpisodes(out)
+
+	// Custom (generated or uploaded) thumbnails override the platform ones
+	// (see stream_thumbs.go).
+	a.applyStreamThumbs(out)
+
+	// Effective descriptions: custom text, else the concluded plan's (see
+	// stream_desc.go).
+	a.applyStreamDescriptions(out)
+
+	// Renamed streams show their custom title instead of the platform one
+	// (see stream_title.go).
+	a.applyStreamTitles(out)
 
 	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt > out[j].StartedAt })
 	return out
@@ -226,24 +251,18 @@ type LiveStreamMeta struct {
 }
 
 // GetLiveStreamMeta returns the series/episode assigned to the broadcast that
-// went live at startedAt (RFC3339), matching within the aggregation margin.
+// went live at startedAt (RFC3339), matched against each assignment's stream
+// session (the platform-reported go-live can trail the plan's apply moment by
+// more than the aggregation margin — see liveKeyMatcher).
 func (a *App) GetLiveStreamMeta(startedAt string) LiveStreamMeta {
 	var meta LiveStreamMeta
 	target, err := time.Parse(time.RFC3339, startedAt)
 	if err != nil {
 		return meta
 	}
-	margin := a.pastMatchMargin()
+	matcher := a.liveKeyMatcher()
 	within := func(key string) bool {
-		t, ok := parseLiveKey(key)
-		if !ok {
-			return false
-		}
-		dt := target.Sub(t)
-		if dt < 0 {
-			dt = -dt
-		}
-		return dt <= margin
+		return matcher(key, target)
 	}
 
 	for key, sid := range a.pastStreamSeries() {
@@ -266,29 +285,76 @@ func (a *App) GetLiveStreamMeta(startedAt string) LiveStreamMeta {
 // it they are considered orphaned (the VOD never appeared) and pruned.
 const liveAssignmentMaxAge = 48 * time.Hour
 
-// adoptLiveAssignments copies series/episode assignments made during a live
-// broadcast onto the finished stream's broadcast keys, matched by go-live
-// time. Live keys stay until they age out — the stream may still be running
-// (Twitch exposes in-progress archives) and the live page reads them.
-func (a *App) adoptLiveAssignments(out []PastStream) {
-	if a.store == nil {
-		return
-	}
+// liveKeyMatcher returns a predicate deciding whether a broadcast that went
+// on the air at `at` belongs to the given live assignment key. A live key is
+// stamped the moment its plan is applied, but the broadcast itself may start
+// minutes later — countdown scenes and delays in the Start routine run in
+// between — which used to push the platform-reported go-live time outside
+// the instant-plus-margin match and leave the past stream with a series and
+// episode separate from its plan's. The match therefore covers the whole
+// stream session the key opened: whatever went live while that session was
+// open belongs to that plan.
+func (a *App) liveKeyMatcher() func(key string, at time.Time) bool {
 	margin := a.pastMatchMargin()
-	match := func(key string, s *PastStream) bool {
+
+	// Each session's end, keyed by its start (the same RFC3339 string the
+	// live key carries). An open session's window reaches "now", capped at
+	// sessionMaxLength like the rest of the session machinery.
+	ends := map[string]time.Time{}
+	if a.store != nil {
+		windows, err := a.store.streamSessionWindows()
+		if err != nil {
+			log.Printf("jax: session windows: %v", err)
+		}
+		for _, w := range windows {
+			start, err := time.Parse(time.RFC3339, w[0])
+			if err != nil {
+				continue
+			}
+			end := start.Add(sessionMaxLength)
+			if w[1] != "" {
+				if t, err := time.Parse(time.RFC3339, w[1]); err == nil && t.Before(end) {
+					end = t
+				}
+			} else if now := time.Now(); now.Before(end) {
+				end = now
+			}
+			ends[w[0]] = end
+		}
+	}
+
+	return func(key string, at time.Time) bool {
 		t, ok := parseLiveKey(key)
 		if !ok {
 			return false
 		}
-		st, err := time.Parse(time.RFC3339, s.StartedAt)
-		if err != nil {
-			return false
+		hi := t.Add(margin)
+		if end, ok := ends[strings.TrimPrefix(key, liveKeyPrefix)]; ok {
+			if h := end.Add(margin); h.After(hi) {
+				hi = h
+			}
 		}
-		dt := st.Sub(t)
-		if dt < 0 {
-			dt = -dt
+		return !at.Before(t.Add(-margin)) && !at.After(hi)
+	}
+}
+
+// adoptLiveAssignments copies series/episode assignments made during a live
+// broadcast onto the finished stream's broadcast keys, matched by the
+// session window the assignment's go-live opened. Live keys stay until they
+// age out — the stream may still be running (Twitch exposes in-progress
+// archives) and the live page reads them.
+func (a *App) adoptLiveAssignments(out []PastStream) {
+	if a.store == nil {
+		return
+	}
+	matcher := a.liveKeyMatcher()
+	match := func(key string, s *PastStream) bool {
+		for _, b := range s.Broadcasts {
+			if t, err := time.Parse(time.RFC3339, b.StartedAt); err == nil && matcher(key, t) {
+				return true
+			}
 		}
-		return dt <= margin
+		return false
 	}
 	prune := func(key string) bool {
 		t, ok := parseLiveKey(key)
@@ -417,7 +483,13 @@ func (a *App) SetPastStreamSeries(keys []string, seriesID string) error {
 			m[k] = seriesID
 		}
 	}
-	return a.store.setJSON(keyPastStreamSeries, m)
+	if err := a.store.setJSON(keyPastStreamSeries, m); err != nil {
+		return err
+	}
+	// A stream's series carries the season a video plan cut from it is filed
+	// under, so re-file any workspace this moves (see relocateEditWorkspaces).
+	go a.relocateEditWorkspaces()
+	return nil
 }
 
 // GroupPastStreams manually groups the given broadcasts (broadcastKey format,

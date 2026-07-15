@@ -17,6 +17,16 @@ export function formatNumber(n: number): string {
   return plain.format(n)
 }
 
+/**
+ * Cut text to at most max characters (word-boundary-blind, ellipsis added);
+ * used where a card shows the head of a long description.
+ */
+export function truncateText(s: string, max: number): string {
+  const t = s.trim()
+  if (t.length <= max) return t
+  return t.slice(0, max).trimEnd() + '…'
+}
+
 /** Milliseconds → "1h 23m 45s" (segments omitted when zero). */
 export function formatDurationMs(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000))

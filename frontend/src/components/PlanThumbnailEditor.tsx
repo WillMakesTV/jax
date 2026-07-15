@@ -49,17 +49,40 @@ export function PlanThumbnailEditor({
   history = [],
   onApply,
   onOpenFull,
+  onGenerate,
+  generateTip,
+  removeLabel,
+  vertical = false,
 }: {
   planTitle: string
   planDescription: string
   file: string
   url: string
+  /**
+   * Compose (and preview) the thumbnail 9:16 rather than 16:9 — a short-form
+   * video's cover, seen full-screen on a phone. The generator is told the same
+   * thing; this keeps the preview honest about what came back.
+   */
+  vertical?: boolean
   /** Previous versions (newest first) offered for one-click restore. */
   history?: PlanThumb[]
   /** Persist and reflect the new thumbnail ({'', ''} on removal). */
   onApply: (t: PlanThumb) => Promise<void>
   /** Open the full-size view; omit to make the preview non-clickable. */
   onOpenFull?: () => void
+  /**
+   * Produce the image (fresh when feedback/currentFile are empty, a revision
+   * otherwise). Defaults to plan generation from the title + description;
+   * past streams override this to generate from their outline.
+   */
+  onGenerate?: (feedback: string, currentFile: string) => Promise<PlanThumb>
+  /** Tooltip for the generate button; defaults to the plan wording. */
+  generateTip?: string
+  /**
+   * Label for the clear action; past streams with a platform image pass
+   * "Use platform thumbnail" since clearing falls back to it.
+   */
+  removeLabel?: string
 }) {
   const {statuses} = useServices()
   const openaiConnected = Boolean(statuses.openai?.connected)
@@ -72,12 +95,14 @@ export function PlanThumbnailEditor({
     setBusy('generate')
     setError('')
     try {
-      const t = await GeneratePlanThumbnail(
-        planTitle.trim(),
-        planDescription.trim(),
-        revise ? feedback.trim() : '',
-        revise ? file : '',
-      )
+      const t = onGenerate
+        ? await onGenerate(revise ? feedback.trim() : '', revise ? file : '')
+        : await GeneratePlanThumbnail(
+            planTitle.trim(),
+            planDescription.trim(),
+            revise ? feedback.trim() : '',
+            revise ? file : '',
+          )
       await onApply({file: t.file, url: t.url})
       if (revise) setFeedback('')
     } catch (err) {
@@ -123,6 +148,9 @@ export function PlanThumbnailEditor({
   }
 
   const generating = busy === 'generate'
+  // A vertical cover is tall; showing it in a 16:9 box would crop away the
+  // composition and lie about what will be published.
+  const frame = vertical ? 'aspect-[9/16]' : 'aspect-video'
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -132,12 +160,15 @@ export function PlanThumbnailEditor({
           onClick={onOpenFull}
           disabled={!onOpenFull}
           title={onOpenFull ? 'View full size' : undefined}
-          className="group/img relative block w-full overflow-hidden rounded-md border border-edge focus-visible:border-accent"
+          className={clsx(
+            'group/img relative block overflow-hidden rounded-md border border-edge focus-visible:border-accent',
+            vertical ? 'w-48 self-start' : 'w-full',
+          )}
         >
           <img
             src={url}
             alt="Stream thumbnail"
-            className="aspect-video w-full object-cover"
+            className={clsx(frame, 'w-full object-cover')}
           />
           {onOpenFull && (
             <span className="absolute inset-0 hidden items-center justify-center bg-black/40 text-[10px] font-semibold text-white group-hover/img:flex">
@@ -180,7 +211,10 @@ export function PlanThumbnailEditor({
             disabled={
               busy !== '' || (!planTitle.trim() && !planDescription.trim())
             }
-            title="Generated from the title, description, and your brand assets (Profile → Brand Assets). The style guide lives in Settings → Skills → Stream thumbnails."
+            title={
+              generateTip ??
+              'Generated from the title, description, and your brand assets (Profile → Brand Assets). The style guide lives in Settings → Skills → Stream thumbnails.'
+            }
             className={clsx(
               'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-50',
               url
@@ -217,7 +251,7 @@ export function PlanThumbnailEditor({
             className="inline-flex items-center gap-1.5 rounded-lg border border-edge px-3 py-1.5 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
           >
             <Trash2 size={14} aria-hidden />
-            Remove
+            {removeLabel ?? 'Remove'}
           </button>
         )}
       </div>
@@ -240,12 +274,15 @@ export function PlanThumbnailEditor({
                   onClick={() => void restore(h)}
                   disabled={busy !== ''}
                   title="Restore this thumbnail (the current one moves into the history)"
-                  className="group/hist relative block w-24 overflow-hidden rounded-md border border-edge disabled:opacity-50"
+                  className={clsx(
+                    'group/hist relative block overflow-hidden rounded-md border border-edge disabled:opacity-50',
+                    vertical ? 'w-16' : 'w-24',
+                  )}
                 >
                   <img
                     src={h.url}
                     alt="Previous thumbnail"
-                    className="aspect-video w-full object-cover"
+                    className={clsx(frame, 'w-full object-cover')}
                   />
                   <span className="absolute inset-0 hidden items-center justify-center bg-black/45 text-[10px] font-semibold text-white group-hover/hist:flex">
                     Restore

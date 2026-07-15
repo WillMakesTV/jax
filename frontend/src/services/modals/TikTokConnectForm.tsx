@@ -163,8 +163,18 @@ export function TikTokConnectForm({service}: {service: ServiceDef}) {
             >
               TikTok developer portal
             </a>{' '}
-            (add the Login Kit and Content Posting API products, Desktop
-            platform).
+            — developers.tiktok.com, not the Business/Marketing API, which is a
+            different product. Add three products (Desktop platform):{' '}
+            <span className="font-medium text-fg">Login Kit</span>,{' '}
+            <span className="font-medium text-fg">Content Posting API</span>{' '}
+            (with Direct Post), and{' '}
+            <span className="font-medium text-fg">Display API</span>, and
+            request the scopes{' '}
+            <span className="font-mono text-xs">user.info.basic</span>,{' '}
+            <span className="font-mono text-xs">user.info.profile</span>,{' '}
+            <span className="font-mono text-xs">user.info.stats</span>,{' '}
+            <span className="font-mono text-xs">video.list</span>,{' '}
+            <span className="font-mono text-xs">video.publish</span>.
           </>
         }
       >

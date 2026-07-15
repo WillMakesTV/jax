@@ -58,6 +58,11 @@ export const SETTING_KEYS = {
    * falls back to the default. Mirrors youtubeLivePrefix in planning.go.
    */
   youtubeLivePrefix: 'youtube_live_prefix',
+  /**
+   * "true"/"": show the optional AI Debugging skill in the skill catalog
+   * (Settings → Development). Mirrors keyDevDebugSkillEnabled in store.go.
+   */
+  devDebugSkill: 'dev_ai_debug_skill_enabled',
 } as const
 
 /**

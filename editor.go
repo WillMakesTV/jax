@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -217,8 +219,9 @@ type EditSource struct {
 	Title         string `json:"title"`
 	EpisodeNumber int    `json:"episodeNumber"`
 	// File is the video's filename inside the workspace ("" when the stream
-	// has no downloaded copy yet).
+	// has no downloaded copy yet); MediaURL serves it for in-app playback.
 	File          string `json:"file"`
+	MediaURL      string `json:"mediaUrl"`
 	Downloaded    bool   `json:"downloaded"`
 	HasTranscript bool   `json:"hasTranscript"`
 	// Subfolder is the download's folder name ("" when not downloaded) — the
@@ -244,11 +247,157 @@ type EditWorkspaceInfo struct {
 	Running  bool         `json:"running"`
 }
 
+// seasonFolderName normalizes a series' season into a folder name: a bare
+// number becomes "Season 1", anything else is used as written. "" when the
+// series has no season.
+func seasonFolderName(season string) string {
+	season = strings.TrimSpace(season)
+	if season == "" {
+		return ""
+	}
+	if _, err := strconv.Atoi(season); err == nil {
+		season = "Season " + season
+	}
+	return sanitizeFileName(season)
+}
+
+// planSeason resolves the season a video plan belongs to: the season of the
+// content series its source streams are part of ("" when the sources have no
+// series, or that series has no season). The first source that resolves wins —
+// a plan cut from several streams of one show is filed under that show's
+// season.
+func (a *App) planSeason(plan VideoPlan) string {
+	if len(plan.Streams) == 0 {
+		return ""
+	}
+	pastStreams := a.GetPastStreams(false)
+	series := a.GetContentSeries()
+	for _, ref := range plan.Streams {
+		for i := range pastStreams {
+			if pastStreams[i].StartedAt != ref.StartedAt || pastStreams[i].SeriesID == "" {
+				continue
+			}
+			for _, cs := range series {
+				if cs.ID != pastStreams[i].SeriesID {
+					continue
+				}
+				if name := seasonFolderName(cs.Season); name != "" {
+					return name
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// editWorkspaceRel is a plan's workspace path relative to the workspace root,
+// as path segments: the season subfolder (when its sources' series has one)
+// followed by the plan's own vplan_* folder. Every plan gets its own folder;
+// the season only decides which shelf it sits on.
+//
+// The same segments build the filesystem path and the /edits/ URL, so the two
+// can never drift apart (see editWorkspaceURL and the media server's route).
+func (a *App) editWorkspaceRel(planID string) []string {
+	var parts []string
+	if plan, err := a.findVideoPlan(planID); err == nil {
+		if season := a.planSeason(plan); season != "" {
+			parts = append(parts, season)
+		}
+	}
+	return append(parts, sanitizeFileName(planID))
+}
+
 // editWorkspaceDir is a plan's workspace folder inside the configured
 // workspace root (Settings → Videos); outputs are served under /edits/ by
 // the media server.
 func (a *App) editWorkspaceDir(planID string) string {
-	return filepath.Join(a.resolveEditRoot(), sanitizeFileName(planID))
+	return filepath.Join(append([]string{a.resolveEditRoot()}, a.editWorkspaceRel(planID)...)...)
+}
+
+// editWorkspaceURL is the media-server address of a plan's workspace folder.
+func (a *App) editWorkspaceURL(base, planID string) string {
+	parts := a.editWorkspaceRel(planID)
+	for i, p := range parts {
+		parts[i] = url.PathEscape(p)
+	}
+	return base + editsPrefix + strings.Join(parts, "/")
+}
+
+// isDir reports whether path is an existing directory.
+func isDir(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.IsDir()
+}
+
+// findWorkspaceFolder locates a plan's existing workspace wherever it currently
+// sits: directly under the root (the flat layout every plan started in), or
+// under a season folder it no longer belongs to.
+func findWorkspaceFolder(root, planID string) (string, bool) {
+	name := sanitizeFileName(planID)
+	if p := filepath.Join(root, name); isDir(p) {
+		return p, true
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return "", false
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if p := filepath.Join(root, e.Name(), name); isDir(p) {
+			return p, true
+		}
+	}
+	return "", false
+}
+
+// relocateEditWorkspaces files each plan's workspace under the season it now
+// belongs to — moving the flat folders plans were created in before seasons
+// existed, and following a series whose season was changed since. It is cheap
+// when nothing moved: it only stats the folder each plan should already be in.
+//
+// Called on startup and whenever something that decides the path changes (a
+// series' season, a plan's sources, a stream's series). The renames stay inside
+// the workspace root, so they are same-volume and instant.
+func (a *App) relocateEditWorkspaces() {
+	root := a.resolveEditRoot()
+	if !isDir(root) {
+		return
+	}
+	// Never move a workspace out from under a running session or export — the
+	// session's working directory (and its half-written render) is in there.
+	a.mu.Lock()
+	busy := a.movingEdits || a.editCmd != nil || a.exportingPlan != ""
+	a.mu.Unlock()
+	if busy {
+		return
+	}
+
+	for _, plan := range a.GetVideoPlans() {
+		want := a.editWorkspaceDir(plan.ID)
+		if isDir(want) {
+			continue // already where it belongs
+		}
+		from, ok := findWorkspaceFolder(root, plan.ID)
+		if !ok {
+			continue // no workspace yet; it will be created in the right place
+		}
+		if err := os.MkdirAll(filepath.Dir(want), 0o755); err != nil {
+			log.Printf("jax: season folder for %q: %v", plan.Title, err)
+			continue
+		}
+		if err := os.Rename(from, want); err != nil {
+			log.Printf("jax: relocate workspace for %q: %v", plan.Title, err)
+			continue
+		}
+		log.Printf("jax: filed %q under %s", plan.Title, filepath.Base(filepath.Dir(want)))
+		// The season folder it came from may now be empty; Remove only
+		// succeeds on an empty directory, so this can't take anything with it.
+		if old := filepath.Dir(from); old != filepath.Clean(root) {
+			_ = os.Remove(old)
+		}
+	}
 }
 
 // findVideoPlan resolves a plan by id.
@@ -643,6 +792,12 @@ func (a *App) GetEditWorkspace(planID string) (EditWorkspaceInfo, error) {
 		info.Prepared = true
 	}
 
+	a.mu.Lock()
+	base := a.mediaBaseURL
+	info.Running = a.editCmd != nil && a.editPlanID == planID
+	a.mu.Unlock()
+	planPrefix := a.editWorkspaceURL(base, planID)
+
 	for _, s := range a.resolveEditSources(plan) {
 		src := EditSource{
 			StartedAt: s.ref.StartedAt,
@@ -660,6 +815,7 @@ func (a *App) GetEditWorkspace(planID string) (EditWorkspaceInfo, error) {
 			name := editSourceFileName(s.stream, s.ref, filepath.Ext(s.download.VideoFile))
 			if fileExists(filepath.Join(dir, name)) {
 				src.File = name
+				src.MediaURL = planPrefix + "/" + url.PathEscape(name)
 			}
 			stem := strings.TrimSuffix(name, filepath.Ext(name))
 			src.HasTranscript = fileExists(filepath.Join(dir, "edit", "transcripts", stem+".json")) ||
@@ -669,17 +825,12 @@ func (a *App) GetEditWorkspace(planID string) (EditWorkspaceInfo, error) {
 	}
 
 	// Rendered artifacts, newest first.
-	a.mu.Lock()
-	base := a.mediaBaseURL
-	info.Running = a.editCmd != nil && a.editPlanID == planID
-	a.mu.Unlock()
 	for _, name := range []string{"final.mp4", "preview.mp4"} {
 		p := filepath.Join(dir, "edit", name)
 		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
 			info.Outputs = append(info.Outputs, EditOutput{
-				Name: name,
-				MediaURL: base + editsPrefix + url.PathEscape(sanitizeFileName(planID)) +
-					"/edit/" + url.PathEscape(name),
+				Name:       name,
+				MediaURL:   planPrefix + "/edit/" + url.PathEscape(name),
 				ModifiedAt: fi.ModTime().UTC().Format(time.RFC3339),
 				SizeBytes:  fi.Size(),
 			})
@@ -740,6 +891,7 @@ func (a *App) GenerateEditDirections(planID, notes, current string) (string, err
 	b.WriteString("# Video plan\n")
 	fmt.Fprintf(&b, "Title: %s\n", plan.Title)
 	fmt.Fprintf(&b, "Format: %s form\n", plan.Format)
+	fmt.Fprintf(&b, "%s\n", runtimeTarget(plan.Format))
 	if len(plan.Tags) > 0 {
 		fmt.Fprintf(&b, "Tags: %s\n", strings.Join(plan.Tags, ", "))
 	}
@@ -788,35 +940,379 @@ func (a *App) GenerateEditDirections(planID, notes, current string) (string, err
 // Edit runs
 // ---------------------------------------------------------------------------
 
-// editPrompt is the headless instruction handed to Claude Code for a run.
-func editPrompt(plan VideoPlan, instruction string) string {
+const (
+	// editSessionSkillID is the Application Skill carrying the edit run's
+	// ground rules (user-tunable in Settings → Skills).
+	editSessionSkillID = "video-edit-session"
+	// editTimelineSkillID governs the manual timeline pass; it rides along in
+	// the prompt once the plan has a timeline, so a re-render respects the
+	// producer's cuts.
+	editTimelineSkillID = "video-edit-timeline"
+)
+
+// runtimeTarget states the plan format's target length — the same targets the
+// script skill writes to, restated for the session that executes the script.
+func runtimeTarget(format string) string {
+	if format == "short" {
+		return "Target runtime: 30–60 seconds, vertical."
+	}
+	return "Target runtime: 8–15 minutes, horizontal — pick the length the material actually supports and never pad to reach it."
+}
+
+// skillText returns an Application Skill's effective content, falling back to
+// the embedded default when the skill can't be read ("" only if both fail).
+func (a *App) skillText(id string) string {
+	if skill, err := a.getAppSkill(id); err == nil && strings.TrimSpace(skill.Content) != "" {
+		return skill.Content
+	}
+	content, err := defaultSkillContent(id)
+	if err != nil {
+		return ""
+	}
+	return content
+}
+
+// editPrompt is the headless instruction handed to Claude Code for a run. The
+// ground rules are the "Video edit sessions" skill, so the producer can retune
+// the session's behaviour from Settings without touching the app; the timeline
+// skill joins them once a manual cut exists, so the re-render honours it.
+//
+// The plan's saved script always rides along — it is what the first run
+// executes and what every later run revises. Instruction carries only the
+// producer's request for *this* pass ("" for the first run), so a revision
+// session sees both the approved script and what should change about it.
+func (a *App) editPrompt(plan VideoPlan, instruction string) string {
 	var b strings.Builder
 	b.WriteString("Use the video-use skill (in .claude/skills/video-use) to edit the videos in this directory.\n\n")
 	fmt.Fprintf(&b, "The deliverable: %q, a %s-form video.\n", plan.Title, plan.Format)
+	fmt.Fprintf(&b, "%s\n", runtimeTarget(plan.Format))
 	if strings.TrimSpace(plan.Description) != "" {
 		fmt.Fprintf(&b, "Plan description:\n%s\n", strings.TrimSpace(plan.Description))
 	}
 	if len(plan.Tags) > 0 {
 		fmt.Fprintf(&b, "Tags: %s\n", strings.Join(plan.Tags, ", "))
 	}
-	b.WriteString(`
-Ground rules:
-- Word-level transcripts for every source are pre-cached in edit/transcripts/.
-  Never re-transcribe and never call ElevenLabs — treat the cached transcripts
-  as authoritative. Their word timings are interpolated, so pad cuts by at
-  least 150ms and prefer cutting in silence.
-- Read project.md first; it carries the plan and prior session notes.
-- Read edit/source-notes.md next: the app's per-source overviews and
-  timestamped outlines of what happened in each stream — use them with the
-  transcripts to locate the moments worth keeping.
-- Run non-interactively: never ask questions, pick sensible defaults, and note
-  every decision in project.md.
-- Produce edit/final.mp4 (and edit/preview.mp4 for drafts).
-`)
+
+	if rules := a.skillText(editSessionSkillID); rules != "" {
+		b.WriteString("\n# Ground rules\n\n")
+		b.WriteString(rules)
+		b.WriteString("\n")
+	}
+	// A saved timeline means the producer has already cut this video by hand;
+	// their pass is the approval, and the timeline skill says so.
+	if a.GetPlanTimeline(plan.ID).File != "" {
+		if timeline := a.skillText(editTimelineSkillID); timeline != "" {
+			b.WriteString("\n# The producer's timeline\n\n")
+			b.WriteString(timeline)
+			b.WriteString("\n")
+		}
+	}
+
+	// The format's standing editing preferences — the corrections this producer
+	// has had to make before, folded in so they don't have to make them again
+	// (see edits.go).
+	if prefs := a.skillText(editsSkillFor(plan.Format)); prefs != "" {
+		b.WriteString("\n# How this producer likes their videos cut\n\n")
+		b.WriteString(prefs)
+		b.WriteString("\n")
+	}
+
+	if script := strings.TrimSpace(a.GetEditScript(plan.ID)); script != "" {
+		b.WriteString("\n# The script\n\nThe producer approved this script for the video. It is what the first cut executes, and what every later cut is a revision of.\n\n")
+		b.WriteString(script)
+		b.WriteString("\n")
+	}
 	if strings.TrimSpace(instruction) != "" {
-		fmt.Fprintf(&b, "\nDirection for this session:\n%s\n", strings.TrimSpace(instruction))
+		b.WriteString("\n# Requested changes for this pass\n\nThe video is already rendered. Make exactly these changes to it and leave the rest of the cut alone:\n\n")
+		b.WriteString(strings.TrimSpace(instruction))
+		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// ---------------------------------------------------------------------------
+// The plan's edit script
+//
+// The Editor tab's "Generate with AI" drafts the outline/script for the video
+// from the sources' transcripts and outlines, and saves it against the plan —
+// so the producer can leave, come back, and process the video without
+// regenerating. It is also the base every "Request edits" pass revises.
+// ---------------------------------------------------------------------------
+
+// keyEditScripts stores the planID → script map.
+const keyEditScripts = "video_plan_edit_scripts"
+
+// editScripts loads the saved scripts. Never nil.
+func (a *App) editScripts() map[string]string {
+	m := map[string]string{}
+	if a.store != nil {
+		if _, err := a.store.getJSON(keyEditScripts, &m); err != nil {
+			log.Printf("jax: load edit scripts: %v", err)
+		}
+	}
+	if m == nil {
+		return map[string]string{}
+	}
+	return m
+}
+
+// GetEditScript returns a plan's saved edit script ("" when none).
+func (a *App) GetEditScript(planID string) string {
+	return a.editScripts()[planID]
+}
+
+// SaveEditScript persists a plan's edit script.
+func (a *App) SaveEditScript(planID, script string) error {
+	if a.store == nil {
+		return fmt.Errorf("storage unavailable")
+	}
+	scripts := a.editScripts()
+	scripts[planID] = script
+	return a.store.setJSON(keyEditScripts, scripts)
+}
+
+// GenerateEditScript drafts the plan's edit script from its source material
+// and saves it — the Editor tab's "Generate with AI". Notes carry the
+// producer's feedback for a revision pass ("" for the first draft); the
+// current saved script is folded in, so a revision builds on it rather than
+// starting over.
+func (a *App) GenerateEditScript(planID, notes string) (string, error) {
+	script, err := a.GenerateEditDirections(planID, notes, a.GetEditScript(planID))
+	if err != nil {
+		return "", err
+	}
+	if err := a.SaveEditScript(planID, script); err != nil {
+		return "", err
+	}
+	return script, nil
+}
+
+// ---------------------------------------------------------------------------
+// Revision history
+//
+// Every pass over the video — an AI session or a manual timeline reprocess —
+// snapshots the current revision into its own folder under edit/versions/
+// before it overwrites anything:
+//
+//   edit/versions/20260712-100000.000/{final.mp4, preview.mp4, cuts.json}
+//
+// A whole folder, not just the mp4: the cut only means something alongside the
+// manifest that says where its segments came from, so restoring a revision
+// brings back a video the timeline can still open, pre-split, and expand. The
+// folder is named for the render's time, and the snapshot is skipped when that
+// name already exists — so archiving an unchanged revision twice (a session
+// that started and produced nothing, a restore) is a no-op rather than a pile
+// of duplicates.
+//
+// Revisions archived before this were single files (final-<stamp>.mp4). They
+// are still listed and still restorable; they simply carry no manifest.
+// ---------------------------------------------------------------------------
+
+// EditVersion is one archived revision of the video.
+type EditVersion struct {
+	// Name identifies the revision: its folder name, or — for one archived
+	// before revisions became folders — the archived file's name.
+	Name string `json:"name"`
+	// MediaURL plays the revision's cut in the app.
+	MediaURL   string `json:"mediaUrl"`
+	ModifiedAt string `json:"modifiedAt"` // RFC3339
+	SizeBytes  int64  `json:"sizeBytes"`
+	// HasCuts reports whether the revision kept its segment manifest, so
+	// restoring it reopens the timeline pre-split at that cut's segments.
+	HasCuts bool `json:"hasCuts"`
+	// Legacy marks a revision archived as a bare file, before revisions
+	// became folders.
+	Legacy bool `json:"legacy"`
+}
+
+// editOutputNames are the render artifacts a session produces.
+var editOutputNames = []string{"final.mp4", "preview.mp4"}
+
+// revisionFiles are everything a revision snapshot preserves: the renders, and
+// the manifest that maps the cut back to its source footage.
+var revisionFiles = []string{"final.mp4", "preview.mp4", cutsManifestName}
+
+// revisionStamp names a revision folder by the time its cut was rendered.
+func revisionStamp(mod time.Time) string {
+	// Milliseconds, not seconds: the snapshot skips a folder name it already
+	// holds, and at one-second resolution two different renders landing in the
+	// same second would collide — the skip would fire and the older cut would
+	// be lost for good when it was overwritten.
+	return mod.Format("20060102-150405.000")
+}
+
+// archiveEditRevision snapshots the workspace's current cut into its own folder
+// under edit/versions/. The live files stay in place — a revision session reads
+// and overwrites them — so the snapshot is a byte copy, not a move.
+func (a *App) archiveEditRevision(planID string) {
+	editDir := filepath.Join(a.editWorkspaceDir(planID), "edit")
+
+	// The revision is timestamped by the cut it holds; with no cut there is
+	// nothing worth keeping.
+	var mod time.Time
+	for _, name := range editOutputNames {
+		if fi, err := os.Stat(filepath.Join(editDir, name)); err == nil && !fi.IsDir() {
+			mod = fi.ModTime()
+			break
+		}
+	}
+	if mod.IsZero() {
+		return
+	}
+
+	dst := filepath.Join(editDir, "versions", revisionStamp(mod))
+	if isDir(dst) {
+		return // this exact revision is already archived
+	}
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		log.Printf("jax: archive revision for %s: %v", planID, err)
+		return
+	}
+	for _, name := range revisionFiles {
+		src := filepath.Join(editDir, name)
+		if !fileExists(src) {
+			continue
+		}
+		if err := copyFile(src, filepath.Join(dst, name)); err != nil {
+			log.Printf("jax: archive %s for %s: %v", name, planID, err)
+		}
+	}
+}
+
+// GetEditVersions lists a plan's archived revisions, newest first. Never nil on
+// success.
+func (a *App) GetEditVersions(planID string) ([]EditVersion, error) {
+	if _, err := a.findVideoPlan(planID); err != nil {
+		return nil, err
+	}
+	dir := filepath.Join(a.editWorkspaceDir(planID), "edit", "versions")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return []EditVersion{}, nil // no revisions yet
+	}
+	a.mu.Lock()
+	base := a.mediaBaseURL
+	a.mu.Unlock()
+	versionsURL := a.editWorkspaceURL(base, planID) + "/edit/versions/"
+
+	out := []EditVersion{}
+	for _, e := range entries {
+		if e.IsDir() {
+			// A revision folder: the cut it holds is what plays.
+			cut := ""
+			for _, name := range editOutputNames {
+				if fileExists(filepath.Join(dir, e.Name(), name)) {
+					cut = name
+					break
+				}
+			}
+			if cut == "" {
+				continue // no video in there; nothing to offer
+			}
+			fi, err := os.Stat(filepath.Join(dir, e.Name(), cut))
+			if err != nil {
+				continue
+			}
+			out = append(out, EditVersion{
+				Name: e.Name(),
+				MediaURL: versionsURL + url.PathEscape(e.Name()) + "/" +
+					url.PathEscape(cut),
+				ModifiedAt: fi.ModTime().UTC().Format(time.RFC3339),
+				SizeBytes:  fi.Size(),
+				HasCuts:    fileExists(filepath.Join(dir, e.Name(), cutsManifestName)),
+			})
+			continue
+		}
+		// A revision archived before revisions became folders.
+		if !strings.EqualFold(filepath.Ext(e.Name()), ".mp4") {
+			continue
+		}
+		fi, err := e.Info()
+		if err != nil {
+			continue
+		}
+		out = append(out, EditVersion{
+			Name:       e.Name(),
+			MediaURL:   versionsURL + url.PathEscape(e.Name()),
+			ModifiedAt: fi.ModTime().UTC().Format(time.RFC3339),
+			SizeBytes:  fi.Size(),
+			Legacy:     true,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ModifiedAt > out[j].ModifiedAt })
+	return out, nil
+}
+
+// legacyRevisionOutput maps a pre-folder archive's file name back to the render
+// it was ("" when the name isn't one).
+func legacyRevisionOutput(name string) string {
+	for _, output := range editOutputNames {
+		stem := strings.TrimSuffix(output, filepath.Ext(output))
+		if strings.HasPrefix(name, stem+"-") {
+			return output
+		}
+	}
+	return ""
+}
+
+// RestoreEditVersion makes an archived revision the current video again. The
+// revision it replaces is snapshotted first, so flipping back and forth loses
+// nothing, and the archived copy stays in the history either way.
+//
+// Restoring brings back the revision's manifest too, and resets the plan's
+// in-progress timeline to it — otherwise the timeline would still be holding
+// the segments of a cut that is no longer the video.
+func (a *App) RestoreEditVersion(planID, name string) (EditWorkspaceInfo, error) {
+	a.mu.Lock()
+	busy := a.editCmd != nil && a.editPlanID == planID
+	a.mu.Unlock()
+	if busy {
+		return EditWorkspaceInfo{}, fmt.Errorf("an edit session is running on this plan — stop it before restoring a version")
+	}
+
+	name = filepath.Base(strings.TrimSpace(name))
+	if name == "" || name == "." || name == ".." {
+		return EditWorkspaceInfo{}, fmt.Errorf("that version name is not recognized")
+	}
+	editDir := filepath.Join(a.editWorkspaceDir(planID), "edit")
+	src := filepath.Join(editDir, "versions", name)
+
+	switch {
+	case isDir(src):
+		// A revision folder: everything it kept goes back.
+		a.archiveEditRevision(planID)
+		restored := false
+		for _, file := range revisionFiles {
+			from := filepath.Join(src, file)
+			if !fileExists(from) {
+				continue
+			}
+			if err := copyFile(from, filepath.Join(editDir, file)); err != nil {
+				return EditWorkspaceInfo{}, fmt.Errorf("the version could not be restored: %v", err)
+			}
+			restored = true
+		}
+		if !restored {
+			return EditWorkspaceInfo{}, fmt.Errorf("that version holds no video to restore")
+		}
+
+	case fileExists(src) && legacyRevisionOutput(name) != "":
+		// A revision archived before revisions became folders: just the render.
+		a.archiveEditRevision(planID)
+		dst := filepath.Join(editDir, legacyRevisionOutput(name))
+		if err := copyFile(src, dst); err != nil {
+			return EditWorkspaceInfo{}, fmt.Errorf("the version could not be restored: %v", err)
+		}
+
+	default:
+		return EditWorkspaceInfo{}, fmt.Errorf("that version no longer exists on disk")
+	}
+
+	// The restored cut is the video now, so the timeline must reopen against
+	// it — the manifest that came back with it, or nothing (which reopens the
+	// video un-split) rather than the previous cut's segments.
+	a.resetPlanTimeline(planID)
+	return a.GetEditWorkspace(planID)
 }
 
 // StartEditRun prepares the plan's workspace and starts a headless Claude
@@ -835,6 +1331,11 @@ func (a *App) StartEditRun(planID, instruction string) error {
 	if err != nil {
 		return err
 	}
+	// The session needs something to execute: the plan's script, or — for a
+	// revision of an already-rendered video — the requested changes.
+	if strings.TrimSpace(a.GetEditScript(planID)) == "" && strings.TrimSpace(instruction) == "" {
+		return fmt.Errorf("generate the video's script first — the session has nothing to execute")
+	}
 	info, err := a.PrepareEditWorkspace(planID)
 	if err != nil {
 		return err
@@ -849,9 +1350,17 @@ func (a *App) StartEditRun(planID, instruction string) error {
 		return fmt.Errorf("none of the plan's source streams have a downloaded video — download them from their stream pages first")
 	}
 
+	// Snapshot the current revision before the session can overwrite it —
+	// every cut stays available for reviewing and reverting.
+	a.archiveEditRevision(planID)
+
+	// The producer's words are a correction to how the editor works, not just
+	// to this video; keep them (see edits.go).
+	a.recordEditRequest(planID, "ai", instruction)
+
 	// The editing session runs shell/ffmpeg commands, so it needs Claude
 	// Code's permission gate lifted; the run is confined to the workspace.
-	cmd, err := claudeHeadlessCmd(context.Background(), editPrompt(plan, instruction),
+	cmd, err := claudeHeadlessCmd(context.Background(), a.editPrompt(plan, instruction),
 		"--output-format", "stream-json", "--verbose",
 		"--dangerously-skip-permissions")
 	if err != nil {
@@ -909,26 +1418,53 @@ func (a *App) StartEditRun(planID, instruction string) error {
 		}
 		a.mu.Unlock()
 
-		if current && a.ctx != nil {
+		if current {
 			detail := ""
 			if waitErr != nil {
 				detail = firstNonEmpty(tail, waitErr.Error())
 			}
-			wruntime.EventsEmit(a.ctx, "editor:exit", planID, detail)
+			// The session produced a new cut, so the producer's in-progress
+			// timeline describes a video that no longer exists — drop it and
+			// let the timeline reopen at the segments the session recorded.
+			if detail == "" {
+				a.resetPlanTimeline(planID)
+			}
+			if a.ctx != nil {
+				wruntime.EventsEmit(a.ctx, "editor:exit", planID, detail)
+			}
 		}
 	}()
 
 	return nil
 }
 
-// CancelEditRun stops the in-progress editing session, if any.
+// killTree terminates a process and everything it spawned. Killing only the
+// session process orphans its children — a cancelled render kept running
+// (and kept burning CPU) while its half-written intermediates confused the
+// next session.
+func killTree(p *os.Process) {
+	if p == nil {
+		return
+	}
+	if runtime.GOOS == "windows" {
+		cmd := exec.Command("taskkill", "/pid", strconv.Itoa(p.Pid), "/t", "/f")
+		hideWindow(cmd)
+		if err := cmd.Run(); err == nil {
+			return
+		}
+	}
+	_ = p.Kill()
+}
+
+// CancelEditRun stops the in-progress editing session, if any, including any
+// render processes it spawned.
 func (a *App) CancelEditRun() {
 	a.mu.Lock()
 	cmd := a.editCmd
 	a.editCmd = nil
 	a.editPlanID = ""
 	a.mu.Unlock()
-	if cmd != nil && cmd.Process != nil {
-		_ = cmd.Process.Kill()
+	if cmd != nil {
+		killTree(cmd.Process)
 	}
 }

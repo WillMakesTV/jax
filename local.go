@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -155,8 +156,11 @@ func (a *App) mergeLocalBroadcasts(all []PastBroadcast) []PastBroadcast {
 
 // DeleteLocalStream permanently deletes a downloaded broadcast: the download
 // subfolder (video + manifest) is removed from disk along with its broadcast
-// snapshots and any staged transcription work. Meant for local-only streams —
-// the past stream disappears from the list once its last copy is gone. The
+// snapshots and any queued or running transcription work. For a stream the
+// platforms still list, only the local copy goes — the stream stays in the
+// list (and can be downloaded again); for a local-only stream this is its
+// last copy, so the past stream disappears with it. Stored chat, transcript,
+// and outline are untouched (they live in the database, not the folder). The
 // confirmation lives in the frontend.
 func (a *App) DeleteLocalStream(subfolder string) error {
 	sub := strings.TrimSpace(subfolder)
@@ -164,12 +168,29 @@ func (a *App) DeleteLocalStream(subfolder string) error {
 	if sub == "" || sub != filepath.Base(sub) || sub == "." || sub == ".." {
 		return fmt.Errorf("invalid download folder %q", subfolder)
 	}
+	a.mu.Lock()
+	downloading := a.downloadCmd != nil && a.downloadSub == sub
+	a.mu.Unlock()
+	if downloading {
+		return fmt.Errorf("this video is still downloading — cancel the download first")
+	}
 	folder := filepath.Join(a.resolveDownloadDir(), sub)
 	if !fileExists(filepath.Join(folder, "manifest.json")) {
 		return fmt.Errorf("no downloaded video at %q", sub)
 	}
-	if err := os.RemoveAll(folder); err != nil {
-		return fmt.Errorf("could not delete the download: %w", err)
+	// A transcription reading the video file must stop before the file goes.
+	// Windows releases a killed process's file handles with a small lag, so
+	// the removal retries briefly instead of failing on "in use".
+	a.CancelTranscribeDownload(sub)
+	var rmErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		if rmErr = os.RemoveAll(folder); rmErr == nil {
+			break
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	if rmErr != nil {
+		return fmt.Errorf("could not delete the download: %w", rmErr)
 	}
 	if a.store != nil {
 		if err := a.store.deleteLocalBroadcastsBySubfolder(sub); err != nil {
