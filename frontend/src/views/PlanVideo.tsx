@@ -4,6 +4,7 @@ import {
   Check,
   Clapperboard,
   Film,
+  MonitorPlay,
   Trash2,
   Upload,
   X,
@@ -22,6 +23,7 @@ import {
 import {main} from '../../wailsjs/go/models'
 import {EpisodeThumb} from '../components/EpisodeThumb'
 import {formatDate} from '../lib/format'
+import {ObsRecordPanel} from '../obs/ObsRecordPanel'
 
 const field =
   'w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent'
@@ -82,6 +84,9 @@ export function PlanVideo({
     plan?.files ?? [],
   )
   const [pendingPaths, setPendingPaths] = useState<string[]>([])
+  // The Record-from-OBS panel (footage tab): an OBS preview with record
+  // controls; stopped recordings join pendingPaths like picked files.
+  const [obsRecordOpen, setObsRecordOpen] = useState(false)
   // Past streams for the picker (cached backend read; fine on mount).
   const [pastStreams, setPastStreams] = useState<main.PastStream[]>([])
   const [streamsLoaded, setStreamsLoaded] = useState(false)
@@ -512,18 +517,46 @@ export function PlanVideo({
                     ))}
                   </ul>
                 )}
-                <button
-                  type="button"
-                  onClick={() => void addFootage()}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
-                >
-                  <Upload size={14} aria-hidden />
-                  Add footage files…
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void addFootage()}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+                  >
+                    <Upload size={14} aria-hidden />
+                    Add footage files…
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setObsRecordOpen((v) => !v)}
+                    aria-pressed={obsRecordOpen}
+                    className={clsx(
+                      'inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-sm font-medium transition-colors',
+                      obsRecordOpen
+                        ? 'border-accent bg-accent/10 text-fg'
+                        : 'border-edge bg-surface text-fg hover:bg-surface-hover',
+                    )}
+                  >
+                    <MonitorPlay size={14} aria-hidden />
+                    Record from OBS
+                  </button>
+                </div>
+                {obsRecordOpen && (
+                  <div className="mt-2">
+                    <ObsRecordPanel
+                      onRecorded={(path) =>
+                        setPendingPaths((prev) =>
+                          prev.includes(path) ? prev : [...prev, path],
+                        )
+                      }
+                    />
+                  </div>
+                )}
                 <p className="mt-1.5 text-xs text-fg-muted">
                   Video files that never aired — screen captures, b-roll, phone
-                  clips. They&apos;re copied into the plan&apos;s edit workspace
-                  next to the downloaded broadcasts.
+                  clips, or a fresh recording straight from OBS. They&apos;re
+                  copied into the plan&apos;s edit workspace next to the
+                  downloaded broadcasts.
                 </p>
               </>
             )}
