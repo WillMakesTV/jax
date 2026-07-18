@@ -3,9 +3,11 @@ import {
   CalendarRange,
   ExternalLink,
   File,
+  Loader2,
   Megaphone,
   Paperclip,
   Plus,
+  Sparkles,
   Trash2,
   Upload,
 } from 'lucide-react'
@@ -14,6 +16,7 @@ import {
   AddSponsorBranding,
   DeleteSponsorBranding,
   DeleteSponsorCampaign,
+  GenerateSponsorDescription,
   GetSponsors,
   SaveSponsor,
 } from '../../wailsjs/go/main/App'
@@ -258,6 +261,26 @@ function DetailsSection({
     }
   }
 
+  // Generate with AI: the backend reads the website (homepage, llms.txt,
+  // sitemap), writes the description, and pulls likely logo/branding images
+  // into the branding uploads. The returned sponsor carries all of it.
+  const [generating, setGenerating] = useState(false)
+  const generate = async () => {
+    setGenerating(true)
+    setError('')
+    try {
+      onChange(await GenerateSponsorDescription(sponsor.id))
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'The description could not be generated.',
+      )
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   const dirtyDescription = description !== sponsor.description
   const websiteHref = website.trim()
     ? /^https?:\/\//i.test(website.trim())
@@ -319,15 +342,33 @@ function DetailsSection({
       </div>
 
       <div>
-        <span className="mb-1.5 block text-sm font-medium text-fg">
-          Description
-        </span>
+        <div className="mb-1.5 flex items-center justify-between gap-3">
+          <span className="text-sm font-medium text-fg">Description</span>
+          <button
+            type="button"
+            onClick={() => void generate()}
+            disabled={generating || !websiteHref}
+            title={
+              websiteHref
+                ? 'Read the sponsor’s website and write the description'
+                : 'Add the sponsor’s website first — the research starts there.'
+            }
+            className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {generating ? (
+              <Loader2 size={14} aria-hidden className="animate-spin" />
+            ) : (
+              <Sparkles size={14} aria-hidden className="text-accent" />
+            )}
+            {generating ? 'Researching…' : 'Generate with AI'}
+          </button>
+        </div>
         <MarkdownField
           id="sponsor-description"
           value={description}
           onChange={setDescription}
           onDone={() => void persist({description})}
-          placeholder="Who is this sponsor? Products, audience fit, contacts, terms…"
+          placeholder="Who is this sponsor? Products, audience fit, contacts, terms… — or Generate with AI from their website."
         />
         {dirtyDescription && (
           <button

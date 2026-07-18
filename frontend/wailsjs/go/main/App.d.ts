@@ -126,6 +126,8 @@ export function GeneratePlanThumbnail(arg1:string,arg2:string,arg3:string,arg4:s
 
 export function GenerateProjectThumbnail(arg1:string,arg2:string,arg3:string):Promise<main.PlanThumbnail>;
 
+export function GenerateSponsorDescription(arg1:string):Promise<main.Sponsor>;
+
 export function GenerateStreamDescription(arg1:string,arg2:string,arg3:string,arg4:number):Promise<string>;
 
 export function GenerateStreamOutline(arg1:string,arg2:number):Promise<main.StreamOutline>;
