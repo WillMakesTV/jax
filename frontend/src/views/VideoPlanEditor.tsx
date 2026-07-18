@@ -12,6 +12,7 @@ import {
   Send,
   Sparkles,
   Square,
+  Timer,
   Wand2,
   X,
 } from 'lucide-react'
@@ -19,6 +20,7 @@ import clsx from 'clsx'
 import {useCallback, useEffect, useRef, useState} from 'react'
 import {
   ApplyChangesToSkill,
+  GetEditRuns,
   GetEditScript,
   GetEditVersions,
   GetEditWorkspace,
@@ -34,7 +36,7 @@ import {EventsOn} from '../../wailsjs/runtime/runtime'
 import {Markdown} from '../components/markdown/Markdown'
 import {MarkdownField} from '../components/markdown/MarkdownField'
 import {useEditSession} from '../editor/EditSessionProvider'
-import {formatBytes, formatDate} from '../lib/format'
+import {formatBytes, formatDate, formatDurationMs} from '../lib/format'
 import {useServices} from '../services/ServicesProvider'
 import {VideoPlanTimeline} from './VideoPlanTimeline'
 
@@ -126,6 +128,9 @@ export function VideoPlanEditor({
   // Past cuts (every session files the renders it replaces).
   const [versions, setVersions] = useState<main.EditVersion[]>([])
   const [restoring, setRestoring] = useState('')
+  // Every processing session's start/end clock (see edit_runs.go), so each
+  // revision's render time is on the record.
+  const [runs, setRuns] = useState<main.EditRun[]>([])
 
   // Every edit asked for on this video, and the rolling summary of them — the
   // thing that can be taught back to the skill (see edits.go).
@@ -147,6 +152,9 @@ export function VideoPlanEditor({
       .catch(() => {})
     GetEditVersions(plan.id)
       .then((v) => setVersions(v ?? []))
+      .catch(() => {})
+    GetEditRuns(plan.id)
+      .then((r) => setRuns(r ?? []))
       .catch(() => {})
   }, [plan.id])
 
@@ -958,6 +966,58 @@ export function VideoPlanEditor({
                 </li>
               )
             })}
+          </ul>
+        </section>
+      )}
+
+      {/* Every processing session's clock: when it started and how long the
+          revision took to render. Newest first; failures say so. */}
+      {runs.length > 0 && (
+        <section aria-labelledby="editor-runs-heading">
+          <h2
+            id="editor-runs-heading"
+            className="mb-1 inline-flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-fg-muted"
+          >
+            <Timer size={13} aria-hidden />
+            Processing times ({runs.length})
+          </h2>
+          <ul className="flex flex-col gap-1">
+            {[...runs].reverse().map((r) => (
+              <li
+                key={r.startedAt}
+                className="flex items-center gap-3 rounded-lg border border-edge bg-surface px-3 py-1.5 text-sm"
+              >
+                <span className="min-w-0 flex-1 truncate text-fg">
+                  {formatDate(r.startedAt)}
+                </span>
+                {r.endedAt === '' ? (
+                  <span className="inline-flex shrink-0 items-center gap-1.5 text-fg-muted">
+                    <Loader2 size={12} aria-hidden className="animate-spin" />
+                    running…
+                  </span>
+                ) : (
+                  <>
+                    <span className="shrink-0 font-medium text-fg">
+                      {formatDurationMs(r.durationSecs * 1000)}
+                    </span>
+                    {r.error ? (
+                      <span
+                        title={r.error}
+                        className="shrink-0 text-red-600 dark:text-red-400"
+                      >
+                        failed
+                      </span>
+                    ) : (
+                      <Check
+                        size={13}
+                        aria-hidden
+                        className="shrink-0 text-green-600 dark:text-green-400"
+                      />
+                    )}
+                  </>
+                )}
+              </li>
+            ))}
           </ul>
         </section>
       )}

@@ -298,6 +298,10 @@ export function GetDownloads() {
   return window['go']['main']['App']['GetDownloads']();
 }
 
+export function GetEditRuns(arg1) {
+  return window['go']['main']['App']['GetEditRuns'](arg1);
+}
+
 export function GetEditScript(arg1) {
   return window['go']['main']['App']['GetEditScript'](arg1);
 }

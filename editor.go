@@ -1405,6 +1405,10 @@ func (a *App) StartEditRun(planID, instruction string) error {
 	a.editPlanID = planID
 	a.mu.Unlock()
 
+	// Clock the session in — how long each revision takes to process is part
+	// of its record (see edit_runs.go).
+	a.recordEditRunStart(planID)
+
 	go func() {
 		scanner := bufio.NewScanner(stdout)
 		scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
@@ -1443,6 +1447,8 @@ func (a *App) StartEditRun(planID, instruction string) error {
 			if waitErr != nil {
 				detail = firstNonEmpty(tail, waitErr.Error())
 			}
+			// Clock the session out with its outcome.
+			a.recordEditRunEnd(planID, detail)
 			// The session produced a new cut, so the producer's in-progress
 			// timeline describes a video that no longer exists — drop it and
 			// let the timeline reopen at the segments the session recorded.

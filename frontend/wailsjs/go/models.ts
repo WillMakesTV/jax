@@ -551,6 +551,25 @@ export namespace main {
 	        this.subfolder = source["subfolder"];
 	    }
 	}
+	export class EditRun {
+	    startedAt: string;
+	    endedAt: string;
+	    durationSecs: number;
+	    error?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new EditRun(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.startedAt = source["startedAt"];
+	        this.endedAt = source["endedAt"];
+	        this.durationSecs = source["durationSecs"];
+	        this.error = source["error"];
+	    }
+	}
+
 	export class EditVersion {
 	    name: string;
 	    mediaUrl: string;

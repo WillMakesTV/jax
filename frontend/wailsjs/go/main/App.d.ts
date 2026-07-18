@@ -150,6 +150,8 @@ export function GetDebugReport(arg1:number):Promise<main.DebugReport>;
 
 export function GetDownloads():Promise<Array<main.DownloadedVideo>>;
 
+export function GetEditRuns(arg1:string):Promise<Array<main.EditRun>>;
+
 export function GetEditScript(arg1:string):Promise<string>;
 
 export function GetEditVersions(arg1:string):Promise<Array<main.EditVersion>>;
