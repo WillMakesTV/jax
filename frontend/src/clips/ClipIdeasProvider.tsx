@@ -40,6 +40,8 @@ interface ClipIdeasContextValue {
     title: string,
     format: string,
   ) => Promise<main.ClipIdeaSet>
+  /** Clear the lingering done/error notice — clicking it counts as read. */
+  dismissNotice: () => void
 }
 
 const ClipIdeasContext = createContext<ClipIdeasContextValue | undefined>(
@@ -114,9 +116,14 @@ export function ClipIdeasProvider({children}: {children: ReactNode}) {
     [showNotice],
   )
 
+  const dismissNotice = useCallback(() => {
+    window.clearTimeout(noticeTimer.current)
+    setNotice(null)
+  }, [])
+
   const value = useMemo<ClipIdeasContextValue>(
-    () => ({jobs, notice, generate}),
-    [jobs, notice, generate],
+    () => ({jobs, notice, generate, dismissNotice}),
+    [jobs, notice, generate, dismissNotice],
   )
 
   return (

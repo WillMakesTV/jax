@@ -297,6 +297,7 @@ export function StatusBar({
         jobs={clipIdeas.jobs}
         notice={clipIdeas.notice}
         onOpen={onOpenClipIdeas}
+        onDismiss={clipIdeas.dismissNotice}
       />
 
       {/* AI thumbnail/listing generation for a video plan; click through to
@@ -486,10 +487,13 @@ function ClipIdeasStatus({
   jobs,
   notice,
   onOpen,
+  onDismiss,
 }: {
   jobs: ClipIdeasJob[]
   notice: ClipIdeasNotice | null
   onOpen: (startedAt: string) => void
+  /** Clear the lingering notice — following it counts as read. */
+  onDismiss: () => void
 }) {
   if (jobs.length > 0) {
     const label =
@@ -513,7 +517,12 @@ function ClipIdeasStatus({
   return (
     <button
       type="button"
-      onClick={() => onOpen(notice.startedAt)}
+      onClick={() => {
+        // Following the notice is reading it — clear it rather than letting
+        // it linger for the full timeout.
+        onDismiss()
+        onOpen(notice.startedAt)
+      }}
       title={
         notice.state === 'done'
           ? 'Open the Clips tab to read the three pitched scripts'
