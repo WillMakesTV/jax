@@ -32,6 +32,8 @@ export function CancelTranscribeDownload(arg1:string):Promise<void>;
 
 export function CancelXAuth():Promise<void>;
 
+export function ChatAppAbout(arg1:main.ProjectChatMessage[],arg2:string):Promise<main.ProjectChatReply>;
+
 export function ChatProjectDescription(arg1:string,arg2:main.ProjectChatMessage[],arg3:string):Promise<main.ProjectChatReply>;
 
 export function ChooseClipIdea(arg1:string,arg2:string,arg3:string,arg4:number):Promise<main.VideoPlan>;
@@ -117,6 +119,8 @@ export function GenerateStreamThumbnail(arg1:string,arg2:string,arg3:string,arg4
 export function GenerateVideoPlanThumbnail(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string):Promise<main.PlanThumbnail>;
 
 export function GenerateVideoPublishFields(arg1:string,arg2:main.VideoPublishDraft,arg3:Array<string>,arg4:string):Promise<main.VideoPublishSuggestion>;
+
+export function GetAppAbout():Promise<string>;
 
 export function GetActiveStreamSession():Promise<main.ActiveStreamSession>;
 
@@ -359,6 +363,8 @@ export function SetDefaultSeriesType(arg1:string):Promise<void>;
 export function SetHideFromCapture(arg1:boolean):Promise<void>;
 
 export function SetPastStreamSeries(arg1:Array<string>,arg2:string):Promise<void>;
+
+export function SetAppAbout(arg1:string):Promise<void>;
 
 export function SetGitHubRepo(arg1:string):Promise<void>;
 

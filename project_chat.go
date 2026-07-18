@@ -59,9 +59,6 @@ const chatDescriptionMarker = "---DESCRIPTION---"
 // and the producer's new message go to the connected AI service, which
 // replies conversationally and rewrites the description draft in full.
 func (a *App) ChatProjectDescription(projectID string, history []ProjectChatMessage, message string) (ProjectChatReply, error) {
-	if strings.TrimSpace(message) == "" {
-		return ProjectChatReply{}, fmt.Errorf("write a message first")
-	}
 	var project *Project
 	for _, p := range a.getProjects() {
 		if p.ID == projectID {
@@ -71,6 +68,25 @@ func (a *App) ChatProjectDescription(projectID string, history []ProjectChatMess
 	}
 	if project == nil {
 		return ProjectChatReply{}, fmt.Errorf("no project with id %q", projectID)
+	}
+
+	var b strings.Builder
+	b.WriteString("# Project\n")
+	fmt.Fprintf(&b, "Title: %s\n", project.Title)
+	if desc := strings.TrimSpace(project.Description); desc != "" {
+		fmt.Fprintf(&b, "\nCurrent description draft:\n%s\n", desc)
+	}
+	return a.runDescriptionChat(b.String(), history, message)
+}
+
+// runDescriptionChat is the shared engine behind the description-building
+// chats (a project's brief, the Settings About page): the subject document,
+// the transcript, and the new message go to the connected AI service — with
+// the app's own MCP tools attached in account mode — and the reply carries
+// the full replacement description draft.
+func (a *App) runDescriptionChat(subject string, history []ProjectChatMessage, message string) (ProjectChatReply, error) {
+	if strings.TrimSpace(message) == "" {
+		return ProjectChatReply{}, fmt.Errorf("write a message first")
 	}
 	skill, err := a.getAppSkill(projectBriefSkillID)
 	if err != nil {
@@ -88,11 +104,7 @@ func (a *App) ChatProjectDescription(projectID string, history []ProjectChatMess
 	}
 
 	var b strings.Builder
-	b.WriteString("# Project\n")
-	fmt.Fprintf(&b, "Title: %s\n", project.Title)
-	if desc := strings.TrimSpace(project.Description); desc != "" {
-		fmt.Fprintf(&b, "\nCurrent description draft:\n%s\n", desc)
-	}
+	b.WriteString(subject)
 	if len(history) > 0 {
 		b.WriteString("\n# Conversation so far\n")
 		for _, m := range history {
@@ -109,7 +121,7 @@ func (a *App) ChatProjectDescription(projectID string, history []ProjectChatMess
 
 	// Account-mode runs get the app's own MCP tools: the live application
 	// documentation and read access to app state, so the chat can answer
-	// questions about Jax itself while building the brief.
+	// questions about Jax itself while building the description.
 	text, err := a.askAIText(system, b.String(), a.claudeMCPArgs(projectChatTools)...)
 	if err != nil {
 		return ProjectChatReply{}, err

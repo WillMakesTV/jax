@@ -32,6 +32,9 @@ const (
 	// keyGitHubRepo holds the "owner/repo" the AI-debugging workflow files
 	// issues and pushes fixes against (see github.go).
 	keyGitHubRepo = "github_repo"
+	// keyAppAbout holds the producer-authored description of the app itself
+	// (Settings → About; see about.go).
+	keyAppAbout = "app_about"
 )
 
 // Store wraps the SQLite database that persists all app data. The database

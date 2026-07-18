@@ -62,6 +62,10 @@ export function CancelXAuth() {
   return window['go']['main']['App']['CancelXAuth']();
 }
 
+export function ChatAppAbout(arg1, arg2) {
+  return window['go']['main']['App']['ChatAppAbout'](arg1, arg2);
+}
+
 export function ChatProjectDescription(arg1, arg2, arg3) {
   return window['go']['main']['App']['ChatProjectDescription'](arg1, arg2, arg3);
 }
@@ -232,6 +236,10 @@ export function GenerateVideoPlanThumbnail(arg1, arg2, arg3, arg4, arg5) {
 
 export function GenerateVideoPublishFields(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['GenerateVideoPublishFields'](arg1, arg2, arg3, arg4);
+}
+
+export function GetAppAbout() {
+  return window['go']['main']['App']['GetAppAbout']();
 }
 
 export function GetActiveStreamSession() {
@@ -716,6 +724,10 @@ export function SetHideFromCapture(arg1) {
 
 export function SetPastStreamSeries(arg1, arg2) {
   return window['go']['main']['App']['SetPastStreamSeries'](arg1, arg2);
+}
+
+export function SetAppAbout(arg1) {
+  return window['go']['main']['App']['SetAppAbout'](arg1);
 }
 
 export function SetGitHubRepo(arg1) {

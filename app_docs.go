@@ -226,9 +226,11 @@ func searchAppDocs(query string) AppDocsSearchResult {
 }
 
 // AppDescription is the describe_app overview: what the app is (from the
-// app-overview skill) plus the shape of the current build.
+// app-overview skill and the producer's own About page) plus the shape of
+// the current build.
 type AppDescription struct {
 	Overview      string       `json:"overview"`
+	About         string       `json:"about,omitempty"`
 	Pages         []AppPageDoc `json:"pages"`
 	FunctionCount int          `json:"functionCount"`
 	ModelCount    int          `json:"modelCount"`
@@ -236,9 +238,10 @@ type AppDescription struct {
 }
 
 // DescribeApp assembles the high-level self-description: the app-overview
-// skill's content, the routable pages, and counts pointing at the detailed
-// doc tools. Everything is derived from the running build, so it stays
-// current as the application expands.
+// skill's content, the producer-authored About description, the routable
+// pages, and counts pointing at the detailed doc tools. Everything else is
+// derived from the running build, so it stays current as the application
+// expands.
 func (a *App) DescribeApp() AppDescription {
 	overview := ""
 	if skill, err := a.getAppSkill("app-overview"); err == nil {
@@ -246,6 +249,7 @@ func (a *App) DescribeApp() AppDescription {
 	}
 	return AppDescription{
 		Overview:      overview,
+		About:         a.GetAppAbout(),
 		Pages:         appPageDocs(),
 		FunctionCount: len(appFunctionDocs()),
 		ModelCount:    len(appModelDocs()),

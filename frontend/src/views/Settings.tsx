@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import {useState} from 'react'
 import {PageHeader} from '../components/PageHeader'
+import {AboutTab} from './settings/AboutTab'
 import {AiTab} from './settings/AiTab'
 import {DevelopmentTab} from './settings/DevelopmentTab'
 import {PreferencesTab} from './settings/PreferencesTab'
@@ -17,6 +18,7 @@ type TabId =
   | 'streams'
   | 'videos'
   | 'development'
+  | 'about'
 
 const TABS: {id: TabId; label: string}[] = [
   {id: 'preferences', label: 'Preferences'},
@@ -26,6 +28,7 @@ const TABS: {id: TabId; label: string}[] = [
   {id: 'streams', label: 'Streams'},
   {id: 'videos', label: 'Videos'},
   {id: 'development', label: 'Development'},
+  {id: 'about', label: 'About'},
 ]
 
 export function Settings() {
@@ -76,6 +79,7 @@ export function Settings() {
         {tab === 'streams' && <StreamsTab />}
         {tab === 'videos' && <VideosTab />}
         {tab === 'development' && <DevelopmentTab />}
+        {tab === 'about' && <AboutTab />}
       </div>
     </div>
   )
