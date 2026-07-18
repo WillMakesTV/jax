@@ -1,6 +1,6 @@
-import {FileText, FolderKanban, Paperclip, Plus, Trash2} from 'lucide-react'
+import {FileText, FolderKanban, Paperclip, Plus} from 'lucide-react'
 import {useCallback, useEffect, useState} from 'react'
-import {DeleteProject, GetProjects} from '../../wailsjs/go/main/App'
+import {GetProjects} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {PageHeader} from '../components/PageHeader'
 import {useDataChanged} from '../lib/dataChanged'
@@ -27,15 +27,6 @@ export function Projects({
   useEffect(load, [load])
   // Projects saved elsewhere (e.g. an MCP client) appear without a re-visit.
   useDataChanged(['projects'], load)
-
-  const remove = async (id: string) => {
-    try {
-      await DeleteProject(id)
-      setProjects((prev) => prev.filter((p) => p.id !== id))
-    } catch {
-      // Non-fatal; the list reconciles on the next load.
-    }
-  }
 
   return (
     <div className="flex flex-col">
@@ -84,7 +75,6 @@ export function Projects({
               key={p.id}
               project={p}
               onOpen={() => onOpenProject(p)}
-              onDelete={() => void remove(p.id)}
             />
           ))}
         </ul>
@@ -96,11 +86,9 @@ export function Projects({
 function ProjectCard({
   project,
   onOpen,
-  onDelete,
 }: {
   project: main.Project
   onOpen: () => void
-  onDelete: () => void
 }) {
   const files = project.assets?.length ?? 0
   const docs = project.docs?.length ?? 0
@@ -116,9 +104,19 @@ function ProjectCard({
             onOpen()
           }
         }}
-        className="flex h-full cursor-pointer flex-col rounded-xl border border-edge bg-surface p-4 text-left transition-colors hover:border-accent/50 hover:bg-surface-hover"
+        className="flex h-full cursor-pointer flex-col overflow-hidden rounded-xl border border-edge bg-surface text-left transition-colors hover:border-accent/50 hover:bg-surface-hover"
       >
-        <div className="flex items-start justify-between gap-3">
+        {/* The project's cover image, when it has one. */}
+        {project.thumbnailUrl && (
+          <img
+            src={project.thumbnailUrl}
+            alt=""
+            aria-hidden
+            className="aspect-video w-full border-b border-edge object-cover"
+          />
+        )}
+
+        <div className="flex flex-1 flex-col p-4">
           <div className="flex min-w-0 items-center gap-2.5">
             <span
               aria-hidden
@@ -130,34 +128,23 @@ function ProjectCard({
               {project.title}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onDelete()
-            }}
-            title="Delete project"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
-          >
-            <Trash2 size={14} aria-hidden />
-          </button>
-        </div>
 
-        {project.description && (
-          <p className="mt-2 line-clamp-2 text-sm text-fg-muted">
-            {project.description}
-          </p>
-        )}
+          {project.description && (
+            <p className="mt-2 line-clamp-2 text-sm text-fg-muted">
+              {project.description}
+            </p>
+          )}
 
-        <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-3">
-          <span className="inline-flex items-center gap-1 rounded-full border border-edge bg-bg px-2 py-0.5 text-xs font-medium text-fg-muted">
-            <Paperclip size={11} aria-hidden />
-            {files} {files === 1 ? 'file' : 'files'}
-          </span>
-          <span className="inline-flex items-center gap-1 rounded-full border border-edge bg-bg px-2 py-0.5 text-xs font-medium text-fg-muted">
-            <FileText size={11} aria-hidden />
-            {docs} {docs === 1 ? 'doc' : 'docs'}
-          </span>
+          <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-3">
+            <span className="inline-flex items-center gap-1 rounded-full border border-edge bg-bg px-2 py-0.5 text-xs font-medium text-fg-muted">
+              <Paperclip size={11} aria-hidden />
+              {files} {files === 1 ? 'file' : 'files'}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-edge bg-bg px-2 py-0.5 text-xs font-medium text-fg-muted">
+              <FileText size={11} aria-hidden />
+              {docs} {docs === 1 ? 'doc' : 'docs'}
+            </span>
+          </div>
         </div>
       </div>
     </li>
