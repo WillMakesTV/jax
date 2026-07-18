@@ -1,5 +1,5 @@
 import {Circle, MonitorPlay, Plug, Square} from 'lucide-react'
-import {useEffect, useState} from 'react'
+import {useEffect, useRef, useState} from 'react'
 import {formatDurationMs} from '../lib/format'
 import {useLiveData} from '../live/LiveDataProvider'
 import {useServices} from '../services/ServicesProvider'
@@ -28,9 +28,13 @@ interface StopRecordResponse {
  */
 export function ObsRecordPanel({
   onRecorded,
+  recordDir,
 }: {
   /** Receives the recorded file's absolute path after Stop recording. */
   onRecorded: (path: string) => void
+  /** When set, OBS records into this directory instead of its own default
+   *  (restored once the recording stops). */
+  recordDir?: string
 }) {
   const {obsRequest} = useServices()
   const {obsConnected} = useLiveData()
@@ -40,6 +44,9 @@ export function ObsRecordPanel({
   const [duration, setDuration] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // OBS's own record directory while we've pointed it at recordDir; restored
+  // after the recording stops.
+  const prevDir = useRef('')
 
   // Follow the record output's actual state — it can also be driven from OBS
   // itself — polling while the panel is on screen.
@@ -73,6 +80,22 @@ export function ObsRecordPanel({
     setBusy(true)
     setError('')
     try {
+      if (recordDir) {
+        // Point OBS's record output at the caller's folder for this take,
+        // remembering its own directory to put back afterwards. An OBS too
+        // old for SetRecordDirectory just keeps its default.
+        try {
+          const {recordDirectory} = await obsRequest<{
+            recordDirectory: string
+          }>('GetRecordDirectory')
+          await obsRequest('SetRecordDirectory', {
+            recordDirectory: recordDir,
+          })
+          prevDir.current = recordDirectory
+        } catch {
+          prevDir.current = ''
+        }
+      }
       await obsRequest('StartRecord')
       setRecording(true)
       setDuration(0)
@@ -94,6 +117,13 @@ export function ObsRecordPanel({
       const {outputPath} = await obsRequest<StopRecordResponse>('StopRecord')
       setRecording(false)
       setDuration(0)
+      if (prevDir.current) {
+        // Give OBS its own record directory back.
+        void obsRequest('SetRecordDirectory', {
+          recordDirectory: prevDir.current,
+        }).catch(() => {})
+        prevDir.current = ''
+      }
       if (outputPath) onRecorded(outputPath)
     } catch (err) {
       setError(
@@ -179,8 +209,9 @@ export function ObsRecordPanel({
           </button>
         )}
         <p className="text-xs text-fg-muted">
-          Records OBS&apos;s program output to its configured recording folder;
-          the file is added to the plan when the recording stops.
+          {recordDir
+            ? "Records OBS's program output straight into the plan's sources folder; the file is added to the plan when the recording stops."
+            : "Records OBS's program output to its configured recording folder; the file is added to the plan when the recording stops."}
         </p>
         {error && (
           <p className="w-full text-sm text-red-600 dark:text-red-400">

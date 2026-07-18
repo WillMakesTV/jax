@@ -14,6 +14,7 @@ import clsx from 'clsx'
 import {useEffect, useState} from 'react'
 import {
   DeleteVideoPlan,
+  EnsureVideoPlanWorkspace,
   GetPastStreams,
   ImportVideoPlanFootage,
   PickFootageFiles,
@@ -50,10 +51,13 @@ type ContentMode = 'streams' | 'footage'
 
 /**
  * The video-plan edit page, in two steps: first the format (short or long
- * form), then the content — a title and the source material, picked from past
- * broadcasts or imported as new footage files. The non-live counterpart of
- * the stream-plan form; saved plans surface at the top of the Videos page,
- * and a plan's read-only counterpart is the VideoPlanDetails view page.
+ * form) and the video idea — required, and crossing to step two creates the
+ * plan plus its workspace folder — then the content: source material picked
+ * from past broadcasts, imported footage files, or a fresh OBS recording
+ * landed straight in the workspace's sources folder. The non-live
+ * counterpart of the stream-plan form; saved plans surface at the top of the
+ * Videos page, and a plan's read-only counterpart is the VideoPlanDetails
+ * view page.
  */
 export function PlanVideo({
   plan,
@@ -72,6 +76,13 @@ export function PlanVideo({
   const [step, setStep] = useState<1 | 2>(1)
   const [title, setTitle] = useState(plan?.title ?? '')
   const [format, setFormat] = useState<string>(plan?.format || 'long')
+  // The stored plan behind the form. A brand-new plan is created (and its
+  // workspace folder made) as the wizard advances past the idea step, so
+  // recordings and imports have a home on disk from the start.
+  const [draft, setDraft] = useState<main.VideoPlan | null>(plan)
+  // The workspace's sources folder — where Record from OBS lands its files.
+  const [sourcesDir, setSourcesDir] = useState('')
+  const [advancing, setAdvancing] = useState(false)
   const [tags, setTags] = useState((plan?.tags ?? []).join(', '))
   const [contentMode, setContentMode] = useState<ContentMode>('streams')
   // The past streams this video draws from (source footage).
@@ -143,6 +154,59 @@ export function PlanVideo({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
+  // Advance past the idea step: the idea is required, and crossing over
+  // creates the stored plan (first time through) plus its workspace folder —
+  // with the sources subfolder Record from OBS records into — under the
+  // Settings → Videos workspace root.
+  const next = async () => {
+    if (!title.trim() || advancing) return
+    setAdvancing(true)
+    setError('')
+    try {
+      let current = draft
+      if (!current) {
+        current = await SaveVideoPlan(
+          main.VideoPlan.createFrom({
+            id: '',
+            title: title.trim(),
+            format,
+            tags: [],
+            streams: [],
+            description: '',
+            thumbnailFile: '',
+            createdAt: '',
+          }),
+        )
+        setDraft(current)
+      }
+      const dirs = await EnsureVideoPlanWorkspace(current.id)
+      setSourcesDir(dirs.sources)
+      setStep(2)
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'The plan could not be created.',
+      )
+    } finally {
+      setAdvancing(false)
+    }
+  }
+
+  // A finished OBS recording already sits in the plan's sources folder;
+  // import it onto the plan right away (the backend moves it into the
+  // workspace root). If that fails it falls back to importing on save.
+  const importRecording = async (path: string) => {
+    if (!draft) return
+    try {
+      const updated = await ImportVideoPlanFootage(draft.id, [path])
+      setImportedFiles(updated.files ?? [])
+      setDraft(updated)
+    } catch {
+      setPendingPaths((prev) => (prev.includes(path) ? prev : [...prev, path]))
+    }
+  }
+
   const addFootage = async () => {
     setError('')
     try {
@@ -164,9 +228,9 @@ export function PlanVideo({
   // Already-imported footage is removed from the workspace immediately (like
   // project files); pending picks are only local state until save.
   const removeImported = async (name: string) => {
-    if (!plan) return
+    if (!draft) return
     try {
-      const updated = await RemoveVideoPlanFootage(plan.id, name)
+      const updated = await RemoveVideoPlanFootage(draft.id, name)
       setImportedFiles(updated.files ?? [])
     } catch (err) {
       setError(
@@ -184,7 +248,7 @@ export function PlanVideo({
     try {
       let saved = await SaveVideoPlan(
         main.VideoPlan.createFrom({
-          id: plan?.id ?? '',
+          id: draft?.id ?? '',
           title: title.trim(),
           format,
           tags: tags
@@ -195,9 +259,9 @@ export function PlanVideo({
           // The description and thumbnail are the Publish tab's, not this
           // form's — passed straight through, because a save here must never
           // wipe the ones publishing has already drafted.
-          description: plan?.description ?? '',
-          thumbnailFile: plan?.thumbnailFile ?? '',
-          createdAt: plan?.createdAt ?? '',
+          description: draft?.description ?? '',
+          thumbnailFile: draft?.thumbnailFile ?? '',
+          createdAt: draft?.createdAt ?? '',
         }),
       )
       // Footage picked during the wizard imports once the plan exists.
@@ -300,18 +364,27 @@ export function PlanVideo({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               rows={2}
+              required
               placeholder="A short description of the video — e.g. top 5 moments from the launch stream"
               className={`${field} resize-none`}
             />
+            <p className="mt-1.5 text-xs text-fg-muted">
+              Required — moving on creates the plan and its workspace folder.
+            </p>
           </div>
+
+          {error && (
+            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+          )}
 
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => setStep(2)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-5 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90"
+              onClick={() => void next()}
+              disabled={!title.trim() || advancing}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-5 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Next
+              {advancing ? 'Preparing…' : 'Next'}
               <ArrowRight size={14} aria-hidden />
             </button>
             <button
@@ -545,11 +618,8 @@ export function PlanVideo({
                 {obsRecordOpen && (
                   <div className="mt-2">
                     <ObsRecordPanel
-                      onRecorded={(path) =>
-                        setPendingPaths((prev) =>
-                          prev.includes(path) ? prev : [...prev, path],
-                        )
-                      }
+                      recordDir={sourcesDir}
+                      onRecorded={(path) => void importRecording(path)}
                     />
                   </div>
                 )}

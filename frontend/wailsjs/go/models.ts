@@ -1175,6 +1175,21 @@ export namespace main {
 	        this.matched = source["matched"];
 	    }
 	}
+	export class PlanWorkspaceDirs {
+	    dir: string;
+	    sources: string;
+
+	    static createFrom(source: any = {}) {
+	        return new PlanWorkspaceDirs(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.dir = source["dir"];
+	        this.sources = source["sources"];
+	    }
+	}
+
 	export class PlanSuggestion {
 	    title: string;
 	    description: string;

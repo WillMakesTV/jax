@@ -96,6 +96,8 @@ export function EditPlanDescription(arg1:string,arg2:string,arg3:string):Promise
 
 export function EndStreamSession():Promise<void>;
 
+export function EnsureVideoPlanWorkspace(arg1:string):Promise<main.PlanWorkspaceDirs>;
+
 export function ExportPlanTimeline(arg1:string,arg2:main.PlanTimeline):Promise<main.EditWorkspaceInfo>;
 
 export function GenerateClipIdeas(arg1:string,arg2:string,arg3:string):Promise<main.ClipIdeaSet>;

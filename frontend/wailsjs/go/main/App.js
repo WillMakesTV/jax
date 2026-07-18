@@ -190,6 +190,10 @@ export function EndStreamSession() {
   return window['go']['main']['App']['EndStreamSession']();
 }
 
+export function EnsureVideoPlanWorkspace(arg1) {
+  return window['go']['main']['App']['EnsureVideoPlanWorkspace'](arg1);
+}
+
 export function ExportPlanTimeline(arg1, arg2) {
   return window['go']['main']['App']['ExportPlanTimeline'](arg1, arg2);
 }

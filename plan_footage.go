@@ -40,10 +40,38 @@ func (a *App) PickFootageFiles() ([]string, error) {
 	return paths, nil
 }
 
-// ImportVideoPlanFootage copies picked video files into the plan's edit
-// workspace root and records them on the plan. A name that collides with a
-// file already in the workspace gets a numbered suffix, so imports never
-// overwrite a downloaded broadcast or each other. Returns the updated plan.
+// PlanWorkspaceDirs are a plan's workspace folders on disk.
+type PlanWorkspaceDirs struct {
+	Dir string `json:"dir"`
+	// Sources is the workspace's landing zone for fresh captures — the
+	// Record-from-OBS panel points OBS's record output here.
+	Sources string `json:"sources"`
+}
+
+// EnsureVideoPlanWorkspace creates the plan's workspace folder inside the
+// configured workspace root (Settings → Videos), along with its sources
+// subfolder for fresh recordings, and returns the absolute paths. Called as
+// the "Plan a video" form advances past the idea step, so the plan has a home
+// on disk from the start.
+func (a *App) EnsureVideoPlanWorkspace(planID string) (PlanWorkspaceDirs, error) {
+	if _, err := a.findVideoPlan(planID); err != nil {
+		return PlanWorkspaceDirs{}, err
+	}
+	dir := a.editWorkspaceDir(planID)
+	sources := filepath.Join(dir, "sources")
+	if err := os.MkdirAll(sources, 0o755); err != nil {
+		return PlanWorkspaceDirs{}, fmt.Errorf("could not create the workspace: %w", err)
+	}
+	return PlanWorkspaceDirs{Dir: dir, Sources: sources}, nil
+}
+
+// ImportVideoPlanFootage brings picked video files into the plan's edit
+// workspace root and records them on the plan. Files from elsewhere are
+// copied; a file already inside the plan's workspace (an OBS recording landed
+// in sources/) is moved instead, so imports never duplicate gigabytes. A name
+// that collides with a file already in the workspace gets a numbered suffix,
+// so imports never overwrite a downloaded broadcast or each other. Returns
+// the updated plan.
 func (a *App) ImportVideoPlanFootage(planID string, paths []string) (VideoPlan, error) {
 	if _, err := a.findVideoPlan(planID); err != nil {
 		return VideoPlan{}, err
@@ -59,7 +87,12 @@ func (a *App) ImportVideoPlanFootage(planID string, paths []string) (VideoPlan, 
 			continue
 		}
 		name := uniqueWorkspaceName(dir, filepath.Base(src))
-		if err := copyFile(src, filepath.Join(dir, name)); err != nil {
+		dst := filepath.Join(dir, name)
+		if insideDir(dir, src) {
+			if err := os.Rename(src, dst); err != nil {
+				return VideoPlan{}, fmt.Errorf("could not move %s: %w", filepath.Base(src), err)
+			}
+		} else if err := copyFile(src, dst); err != nil {
 			return VideoPlan{}, fmt.Errorf("could not copy %s: %w", filepath.Base(src), err)
 		}
 		imported = append(imported, name)
@@ -71,6 +104,15 @@ func (a *App) ImportVideoPlanFootage(planID string, paths []string) (VideoPlan, 
 		p.Files = append(p.Files, imported...)
 		return nil
 	})
+}
+
+// insideDir reports whether path sits inside dir (at any depth).
+func insideDir(dir, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // RemoveVideoPlanFootage deletes one imported footage file from the plan's
