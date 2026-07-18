@@ -789,7 +789,6 @@ function App() {
               <VideoPlanDetails
                 plan={cur.videoPlan}
                 initialTab={cur.videoPlanTab ?? undefined}
-                onBack={() => setView('videos')}
                 onEdit={openPlanVideo}
                 onOpenStream={openStreamDetails}
                 onOpenDownload={openDownloadVideo}

@@ -533,7 +533,7 @@ function DebugReportsSection() {
       <div
         role="tablist"
         aria-label="Debug report lists"
-        className="mt-4 flex w-fit items-center gap-1 rounded-lg border border-edge bg-bg p-1"
+        className="ml-auto mt-4 flex w-fit items-center gap-1 rounded-lg border border-edge bg-bg p-1"
       >
         <button
           type="button"

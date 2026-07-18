@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   Check,
   CheckCircle2,
   Clapperboard,
@@ -139,7 +138,6 @@ function ShareRow({share: s}: {share: main.TrackedShare}) {
 export function VideoPlanDetails({
   plan: initial,
   initialTab,
-  onBack,
   onEdit,
   onOpenStream,
   onOpenDownload,
@@ -149,7 +147,6 @@ export function VideoPlanDetails({
   /** Tab to land on; navigation (e.g. the status bar's edit-session chip)
    *  sets it. */
   initialTab?: VideoPlanTab
-  onBack: () => void
   /** Open the edit form for this plan. */
   onEdit: (plan: main.VideoPlan) => void
   /** Open a source stream's details view. */
@@ -306,15 +303,7 @@ export function VideoPlanDetails({
 
   return (
     <div className="flex flex-col">
-      <button
-        type="button"
-        onClick={onBack}
-        className="mb-4 inline-flex w-fit items-center gap-1.5 text-sm text-fg-muted transition-colors hover:text-fg"
-      >
-        <ArrowLeft size={16} aria-hidden />
-        Back to Videos
-      </button>
-
+      {/* No local back link: the top bar's global back covers it. */}
       {/* The plan's identity and actions, shared by every tab: the title
           takes the full width, with the CTAs on their own row beneath. */}
       <header className="mb-6 flex max-w-3xl flex-col gap-4">

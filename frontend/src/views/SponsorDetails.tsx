@@ -584,6 +584,14 @@ function BrandingSection({
         <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
       )}
 
+      {/* The star's meaning isn't guessable from the icon alone; say it. */}
+      {(sponsor.branding ?? []).length > 0 && (
+        <p className="text-xs text-fg-muted">
+          Star a file to make it the sponsor's logo — it shows on the sponsor's
+          card.
+        </p>
+      )}
+
       <SponsorFileList
         files={sponsor.branding ?? []}
         emptyCopy="Logos, brand kits, overlays — the sponsor's identity, ready to drop into streams and videos."
@@ -706,6 +714,11 @@ export function SponsorFileList({
                   isLogo
                     ? 'This file is the sponsor logo — click to clear'
                     : 'Use this file as the sponsor logo'
+                }
+                aria-label={
+                  isLogo
+                    ? `Stop using ${f.name} as the sponsor logo`
+                    : `Use ${f.name} as the sponsor logo`
                 }
                 className={
                   isLogo
