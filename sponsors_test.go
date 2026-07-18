@@ -30,6 +30,7 @@ func TestSponsorRoundTrip(t *testing.T) {
 
 	// Update in place; branding/campaigns supplied by the caller are ignored.
 	s.Description = "# Better tools"
+	s.SelfPromotion = true
 	s.Branding = []SponsorFile{{ID: "bogus"}}
 	updated, err := a.SaveSponsor(s)
 	if err != nil {
@@ -37,6 +38,9 @@ func TestSponsorRoundTrip(t *testing.T) {
 	}
 	if updated.Description != "# Better tools" {
 		t.Fatalf("description not updated: %q", updated.Description)
+	}
+	if !updated.SelfPromotion {
+		t.Fatal("selfPromotion should persist through save")
 	}
 	if len(updated.Branding) != 0 {
 		t.Fatal("supplied branding should be ignored on save")

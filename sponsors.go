@@ -58,6 +58,9 @@ type Sponsor struct {
 	Website string `json:"website"`
 	// Description is markdown.
 	Description string `json:"description"`
+	// SelfPromotion marks a sponsor owned (or part-owned) by the streamer,
+	// so mentions of it can carry the required disclaimers.
+	SelfPromotion bool `json:"selfPromotion"`
 	// LogoFileID names which branding file serves as the sponsor's logo
 	// ("" = none); LogoURL is derived on read, never persisted.
 	LogoFileID string            `json:"logoFileId"`

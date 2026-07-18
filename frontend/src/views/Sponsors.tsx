@@ -157,6 +157,14 @@ function SponsorCard({
         )}
 
         <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-3">
+          {sponsor.selfPromotion && (
+            <span
+              title="Owned or part-owned by you — mentions carry a disclosure disclaimer"
+              className="inline-flex items-center rounded-full border border-amber-600/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400"
+            >
+              Self-promotion
+            </span>
+          )}
           <span className="inline-flex items-center gap-1 rounded-full border border-edge bg-bg px-2 py-0.5 text-xs font-medium text-fg-muted">
             <Megaphone size={11} aria-hidden />
             {campaigns} {campaigns === 1 ? 'campaign' : 'campaigns'}

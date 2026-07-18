@@ -379,6 +379,8 @@ export namespace main {
 	    route: string;
 	    global: boolean;
 	    checkedOut: boolean;
+	    issueUrl: string;
+	    issueNumber: number;
 	    createdAt: string;
 	    updatedAt: string;
 	
@@ -394,6 +396,8 @@ export namespace main {
 	        this.route = source["route"];
 	        this.global = source["global"];
 	        this.checkedOut = source["checkedOut"];
+	        this.issueUrl = source["issueUrl"];
+	        this.issueNumber = source["issueNumber"];
 	        this.createdAt = source["createdAt"];
 	        this.updatedAt = source["updatedAt"];
 	    }
@@ -401,8 +405,13 @@ export namespace main {
 	
 	export class FixNotice {
 	    id: number;
+	    reportId: number;
 	    title: string;
+	    description: string;
 	    route: string;
+	    issueUrl: string;
+	    issueNumber: number;
+	    read: boolean;
 	    resolvedAt: string;
 
 	    static createFrom(source: any = {}) {
@@ -412,8 +421,13 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
+	        this.reportId = source["reportId"];
 	        this.title = source["title"];
+	        this.description = source["description"];
 	        this.route = source["route"];
+	        this.issueUrl = source["issueUrl"];
+	        this.issueNumber = source["issueNumber"];
+	        this.read = source["read"];
 	        this.resolvedAt = source["resolvedAt"];
 	    }
 	}
@@ -1556,6 +1570,7 @@ export class Sponsor {
     name: string;
     website: string;
     description: string;
+    selfPromotion: boolean;
     logoFileId: string;
     logoUrl: string;
     branding: SponsorFile[];
@@ -1572,6 +1587,7 @@ export class Sponsor {
         this.name = source["name"];
         this.website = source["website"];
         this.description = source["description"];
+        this.selfPromotion = source["selfPromotion"];
         this.logoFileId = source["logoFileId"];
         this.logoUrl = source["logoUrl"];
         this.branding = this.convertValues(source["branding"], SponsorFile);

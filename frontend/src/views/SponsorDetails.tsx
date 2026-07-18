@@ -247,6 +247,7 @@ function DetailsSection({
     name?: string
     website?: string
     description?: string
+    selfPromotion?: boolean
   }) => {
     setError('')
     try {
@@ -256,6 +257,7 @@ function DetailsSection({
           name: fields.name ?? sponsor.name,
           website: fields.website ?? (sponsor.website || ''),
           description: fields.description ?? sponsor.description,
+          selfPromotion: fields.selfPromotion ?? sponsor.selfPromotion,
           branding: [],
           campaigns: [],
           createdAt: sponsor.createdAt,
@@ -351,6 +353,25 @@ function DetailsSection({
           className={field}
         />
       </div>
+
+      {/* Owned or part-owned by the streamer: mentions must disclose it. */}
+      <label className="flex cursor-pointer items-start gap-2.5">
+        <input
+          type="checkbox"
+          checked={sponsor.selfPromotion ?? false}
+          onChange={(e) => void persist({selfPromotion: e.target.checked})}
+          className="mt-0.5 h-4 w-4 shrink-0 accent-accent"
+        />
+        <span>
+          <span className="block text-sm font-medium text-fg">
+            Self-promotion
+          </span>
+          <span className="block text-xs text-fg-muted">
+            This sponsor is owned or part-owned by you — mentions of it carry a
+            disclosure disclaimer.
+          </span>
+        </span>
+      </label>
 
       <div>
         <div className="mb-1.5 flex items-center justify-between gap-3">
