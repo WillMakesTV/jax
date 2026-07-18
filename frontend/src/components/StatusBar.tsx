@@ -683,7 +683,11 @@ function EditSessionStatus({
         className="inline-flex min-w-0 items-center gap-1.5 font-medium text-fg transition-colors hover:text-accent"
       >
         <Loader2 size={12} aria-hidden className="animate-spin" />
-        <span className="shrink-0">Generating video — {plan}</span>
+        <span className="shrink-0">Generating video —</span>
+        {/* The title is the whole video idea now, so it gets an ellipsis
+            rather than the run of the bar; the full text sits in the hover
+            title. */}
+        <span className="max-w-[14rem] truncate">{plan}</span>
         {step && (
           <span className="max-w-[20rem] truncate text-fg-muted">· {step}</span>
         )}
