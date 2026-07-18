@@ -698,71 +698,110 @@ function DebugReportsSection() {
  * Debug reports section's Resolved tab; the bug-fixed notice in the status
  * bar links here.
  */
+/** How many resolved reports one page shows. */
+const RESOLVED_PAGE_SIZE = 25
+
 function ResolvedReportsList({history}: {history: main.FixNotice[]}) {
   const [expanded, setExpanded] = useState<number | null>(null)
+  const [page, setPage] = useState(0)
+
+  // New resolutions shift the pages; clamp rather than strand the view.
+  const pages = Math.max(1, Math.ceil(history.length / RESOLVED_PAGE_SIZE))
+  const current = Math.min(page, pages - 1)
+  const start = current * RESOLVED_PAGE_SIZE
+  const visible = history.slice(start, start + RESOLVED_PAGE_SIZE)
 
   return (
-    <ul className="mt-4 flex flex-col divide-y divide-edge">
-      {history.map((n) => {
-        const open = expanded === n.id
-        return (
-          <li key={n.id} className="py-2">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setExpanded(open ? null : n.id)}
-                aria-expanded={open}
-                className="flex min-w-0 flex-1 items-center gap-2 text-left"
-              >
-                {open ? (
-                  <ChevronDown
-                    size={16}
-                    aria-hidden
-                    className="shrink-0 text-fg-muted"
-                  />
-                ) : (
-                  <ChevronRight
-                    size={16}
-                    aria-hidden
-                    className="shrink-0 text-fg-muted"
-                  />
-                )}
-                <Check
-                  size={14}
-                  aria-hidden
-                  className="shrink-0 text-green-600 dark:text-green-400"
-                />
-                <span className="truncate text-sm font-medium text-fg">
-                  {n.title || n.description}
-                </span>
-                {n.route && (
-                  <span className="shrink-0 rounded-full bg-surface-hover px-2 py-0.5 text-xs text-fg-muted">
-                    {n.route}
-                  </span>
-                )}
-                <span className="ml-auto shrink-0 text-xs text-fg-muted">
-                  {new Date(n.resolvedAt).toLocaleDateString()}
-                </span>
-              </button>
-              {n.issueUrl && (
+    <>
+      <ul className="mt-4 flex flex-col divide-y divide-edge">
+        {visible.map((n) => {
+          const open = expanded === n.id
+          return (
+            <li key={n.id} className="py-2">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => openExternal(n.issueUrl)}
-                  title={n.issueUrl}
-                  className="shrink-0 rounded-full bg-surface-hover px-2 py-0.5 text-xs font-medium text-fg-muted transition-colors hover:text-fg"
+                  onClick={() => setExpanded(open ? null : n.id)}
+                  aria-expanded={open}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
                 >
-                  {n.issueNumber ? `#${n.issueNumber}` : 'issue'}
+                  {open ? (
+                    <ChevronDown
+                      size={16}
+                      aria-hidden
+                      className="shrink-0 text-fg-muted"
+                    />
+                  ) : (
+                    <ChevronRight
+                      size={16}
+                      aria-hidden
+                      className="shrink-0 text-fg-muted"
+                    />
+                  )}
+                  <Check
+                    size={14}
+                    aria-hidden
+                    className="shrink-0 text-green-600 dark:text-green-400"
+                  />
+                  <span className="truncate text-sm font-medium text-fg">
+                    {n.title || n.description}
+                  </span>
+                  {n.route && (
+                    <span className="shrink-0 rounded-full bg-surface-hover px-2 py-0.5 text-xs text-fg-muted">
+                      {n.route}
+                    </span>
+                  )}
+                  <span className="ml-auto shrink-0 text-xs text-fg-muted">
+                    {new Date(n.resolvedAt).toLocaleDateString()}
+                  </span>
                 </button>
+                {n.issueUrl && (
+                  <button
+                    type="button"
+                    onClick={() => openExternal(n.issueUrl)}
+                    title={n.issueUrl}
+                    className="shrink-0 rounded-full bg-surface-hover px-2 py-0.5 text-xs font-medium text-fg-muted transition-colors hover:text-fg"
+                  >
+                    {n.issueNumber ? `#${n.issueNumber}` : 'issue'}
+                  </button>
+                )}
+              </div>
+              {open && (
+                <p className="mt-2 ml-6 whitespace-pre-wrap text-sm text-fg-muted">
+                  {n.description || 'No description was recorded.'}
+                </p>
               )}
-            </div>
-            {open && (
-              <p className="mt-2 ml-6 whitespace-pre-wrap text-sm text-fg-muted">
-                {n.description || 'No description was recorded.'}
-              </p>
-            )}
-          </li>
-        )
-      })}
-    </ul>
+            </li>
+          )
+        })}
+      </ul>
+
+      {pages > 1 && (
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <span className="text-xs text-fg-muted">
+            {start + 1}–{Math.min(start + RESOLVED_PAGE_SIZE, history.length)}{' '}
+            of {history.length}
+          </span>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setPage(Math.max(0, current - 1))}
+              disabled={current === 0}
+              className="rounded-lg border border-edge bg-surface px-2.5 py-1 text-xs font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              onClick={() => setPage(Math.min(pages - 1, current + 1))}
+              disabled={current >= pages - 1}
+              className="rounded-lg border border-edge bg-surface px-2.5 py-1 text-xs font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
