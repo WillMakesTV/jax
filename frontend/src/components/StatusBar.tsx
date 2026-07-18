@@ -64,6 +64,7 @@ import {
   type VodJob,
   type VodNotice,
 } from '../transcript/VodTranscribeProvider'
+import type {StreamTab} from '../views/StreamDetails'
 
 interface StatusBarProps {
   /** Navigate to the Chat page (unread-messages notification). */
@@ -82,8 +83,9 @@ interface StatusBarProps {
   onOpenPlanAi: (planId: string) => void
   /** Open the Editor tab of the video plan with the active edit session. */
   onOpenEditSession: (planId: string) => void
-  /** Open the past stream the post-stream wrap-up is processing. */
-  onOpenPostStream: (startedAt: string) => void
+  /** Open the past stream the post-stream wrap-up is processing, on the tab
+   *  matching the pipeline's stage (null = overview). */
+  onOpenPostStream: (startedAt: string, tab: StreamTab | null) => void
   /** Open the page a resolved bug report was filed on. */
   onOpenFixNotice: (notice: main.FixNotice) => void
 }
@@ -779,7 +781,7 @@ const POST_STREAM_CLEAR_MS = 600_000
 function PostStreamStatusChip({
   onOpen,
 }: {
-  onOpen: (startedAt: string) => void
+  onOpen: (startedAt: string, tab: StreamTab | null) => void
 }) {
   const [status, setStatus] = useState<main.PostStreamStatus | null>(null)
   const clearTimer = useRef<number | undefined>(undefined)
@@ -836,10 +838,22 @@ function PostStreamStatusChip({
     ...(status.warnings ?? []),
   ].join('\n')
 
+  // Land on the tab matching the pipeline's stage, so the click shows the
+  // work in question — a finished wrap-up ends on the clip scripts it just
+  // pitched, not the overview.
+  const stageTab: StreamTab | null =
+    status.stage === 'transcribe'
+      ? 'transcript'
+      : status.stage === 'outline'
+        ? 'outline'
+        : status.stage === 'clips' || status.stage === 'done'
+          ? 'clips'
+          : null
+
   return status.startedAt ? (
     <button
       type="button"
-      onClick={() => onOpen(status.startedAt)}
+      onClick={() => onOpen(status.startedAt, stageTab)}
       title={title}
       className={`${cls} transition-colors hover:text-accent`}
     >

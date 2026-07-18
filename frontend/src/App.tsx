@@ -705,8 +705,8 @@ function App() {
         }
         onOpenPlanAi={(planId) => void openVideoPlanById(planId, 'publish')}
         onOpenEditSession={(planId) => void openVideoPlanById(planId, 'editor')}
-        onOpenPostStream={(startedAt) =>
-          void openStreamByStart(startedAt, null)
+        onOpenPostStream={(startedAt, streamTab) =>
+          void openStreamByStart(startedAt, streamTab)
         }
         onOpenFixNotice={(n) => openFixedRoute(n.route)}
       />
