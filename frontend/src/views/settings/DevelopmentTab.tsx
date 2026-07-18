@@ -128,6 +128,10 @@ function GitHubSection() {
   const [info, setInfo] = useState<main.DeviceCodeInfo | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  // A standing connection renders as a compact one-liner; the details
+  // (account, disconnect, repository) only show while expanded. Completing
+  // a connect expands so the repository can be set right away.
+  const [expanded, setExpanded] = useState(false)
 
   const poller = useRef<{cancelled: boolean; timer: number | undefined}>({
     cancelled: false,
@@ -173,6 +177,7 @@ function GitHubSection() {
         if (result.status === 'complete') {
           setPhase('config')
           setConn(await GetGitHubConnection())
+          setExpanded(true)
         } else if (result.status === 'error') {
           setError(result.message || 'Authorization failed.')
           setPhase('config')
@@ -239,6 +244,48 @@ function GitHubSection() {
   const inputCls =
     'rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent'
 
+  // Connected and collapsed: a compact one-liner; the details are a click
+  // away.
+  if (conn?.connected && !expanded) {
+    return (
+      <section
+        aria-labelledby="github-connection-heading"
+        className="rounded-xl border border-edge bg-surface px-6 py-4"
+      >
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          aria-expanded={false}
+          className="flex w-full items-center gap-3 text-left"
+        >
+          <span
+            aria-hidden
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-hover text-fg"
+          >
+            <GitHubIcon size={16} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span
+              id="github-connection-heading"
+              className="block text-sm font-semibold text-fg"
+            >
+              GitHub
+            </span>
+            <span className="block truncate text-xs text-fg-muted">
+              Connected as {conn.account}
+              {repo ? ` · ${repo}` : ''}
+            </span>
+          </span>
+          <ChevronRight
+            size={16}
+            aria-hidden
+            className="shrink-0 text-fg-muted"
+          />
+        </button>
+      </section>
+    )
+  }
+
   return (
     <section
       aria-labelledby="github-connection-heading"
@@ -252,17 +299,33 @@ function GitHubSection() {
           <GitHubIcon size={20} />
         </span>
         <div className="min-w-0 flex-1">
-          <h2
-            id="github-connection-heading"
-            className="text-base font-semibold text-fg"
-          >
-            Connect GitHub
-          </h2>
-          <p className="mt-1 text-sm text-fg-muted">
-            The repository the AI-debugging workflow works against: agents open
-            an issue per debug report, push the fix citing it, and close it on
-            resolution.
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2
+                id="github-connection-heading"
+                className="text-base font-semibold text-fg"
+              >
+                Connect GitHub
+              </h2>
+              <p className="mt-1 text-sm text-fg-muted">
+                The repository the AI-debugging workflow works against: agents
+                open an issue per debug report, push the fix citing it, and
+                close it on resolution.
+              </p>
+            </div>
+            {conn?.connected && (
+              <button
+                type="button"
+                onClick={() => setExpanded(false)}
+                aria-expanded
+                aria-label="Collapse the GitHub section"
+                title="Collapse"
+                className="shrink-0 rounded-lg p-1.5 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+              >
+                <ChevronDown size={16} aria-hidden />
+              </button>
+            )}
+          </div>
 
           {conn?.connected ? (
             <div className="mt-4 flex flex-col gap-4">
