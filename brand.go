@@ -393,3 +393,37 @@ func (a *App) DeleteBrandAsset(assetID string) ([]BrandAsset, error) {
 	}
 	return updated, nil
 }
+
+// ---------------------------------------------------------------------------
+// Branding guidelines
+//
+// The brand's written rules — voice, tone, colors, typography, dos and
+// don'ts — authored as markdown on the Profile page's Brand Assets tab.
+// Readable over MCP (get_brand_guidelines) so every AI feature producing
+// brand-facing visuals or copy can consult them instead of guessing.
+// ---------------------------------------------------------------------------
+
+// keyBrandGuidelines stores the markdown branding-guidelines document.
+const keyBrandGuidelines = "brand_guidelines"
+
+// GetBrandGuidelines returns the brand's written guidelines (markdown; ”
+// when none have been written).
+func (a *App) GetBrandGuidelines() string {
+	if a.store == nil {
+		return ""
+	}
+	text, err := a.store.getSetting(keyBrandGuidelines)
+	if err != nil {
+		log.Printf("jax: read brand guidelines: %v", err)
+		return ""
+	}
+	return text
+}
+
+// SetBrandGuidelines stores the guidelines document.
+func (a *App) SetBrandGuidelines(markdown string) error {
+	if a.store == nil {
+		return fmt.Errorf("store is not open")
+	}
+	return a.store.setSetting(keyBrandGuidelines, strings.TrimSpace(markdown))
+}

@@ -14,6 +14,7 @@ Jax is a desktop control room for a streaming creator: it plans streams, pushes 
 The `jax` MCP server exposes read and planning tools that mirror what the app's pages show. General rules:
 
 - Start with `get_app_status` to learn the creator's profile, which services are connected, and whether a stream session is open.
+- Before producing anything brand-facing (thumbnails, descriptions, outros), read `get_brand_guidelines` — the producer's written branding rules — plus `list_brand_assets` and `list_brand_links` (see the brand-assets skill). The written guidelines outrank generic style choices.
 - Streams are identified by broadcast keys (`<platform>|<url>`) or by their RFC3339 `startedAt` time, both returned by `list_past_streams`. A currently live stream uses `live|<startedAt>`.
 - List tools serve cached platform data; pass `refresh: true` only when freshness matters, because refetching costs API quota.
 - Deliberately **not** available over MCP: going live or publishing stream info, OAuth and credentials, OBS control and routine execution, native file dialogs, and destructive deletes. Those stay behind an explicit click in the app — tell the user which button to press instead.

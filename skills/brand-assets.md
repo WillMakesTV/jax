@@ -16,6 +16,10 @@ Brand assets are the uploaded files that define the creator's visual identity �
 
 When advising on brand consistency (thumbnails, overlays, video plans), start from `list_brand_assets` and the descriptions found there rather than guessing the brand's look.
 
+## Branding guidelines
+
+The brand's written rules — voice, tone, colors, typography, dos and don'ts — live as a markdown document on the Profile page's Brand Assets tab, edited in the same markdown editor used across the app. Over MCP, `get_brand_guidelines` returns the document; consult it before producing any brand-facing visual or copy (thumbnails, descriptions, outros, overlays) — the written guidelines outrank generic style choices, and where they conflict with a default, the guidelines win. An empty document just means none have been written yet; suggest the producer capture the rules they keep repeating.
+
 ## Brand links
 
 Alongside the files, the brand's outward links (social profiles, website, store) live on the Profile page's Links tab and are readable over MCP via `list_brand_links`. Every AI feature that drafts audience-facing copy — stream and video plan descriptions, edit-session directions — receives them automatically. The rule everywhere: when copy mentions the brand's socials or site, use those URLs verbatim and never invent links.

@@ -128,6 +128,8 @@ export function GetActiveStreamSession():Promise<main.ActiveStreamSession>;
 
 export function GetBrandAssets():Promise<Array<main.BrandAsset>>;
 
+export function GetBrandGuidelines():Promise<string>;
+
 export function GetBrandLinks():Promise<Array<main.BrandLink>>;
 
 export function GetChannelMetrics():Promise<Array<main.ChannelMetrics>>;
@@ -369,6 +371,8 @@ export function SetHideFromCapture(arg1:boolean):Promise<void>;
 export function SetPastStreamSeries(arg1:Array<string>,arg2:string):Promise<void>;
 
 export function SetAppAbout(arg1:string):Promise<void>;
+
+export function SetBrandGuidelines(arg1:string):Promise<void>;
 
 export function SetGitHubRepo(arg1:string):Promise<void>;
 

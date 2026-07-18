@@ -254,6 +254,10 @@ export function GetBrandAssets() {
   return window['go']['main']['App']['GetBrandAssets']();
 }
 
+export function GetBrandGuidelines() {
+  return window['go']['main']['App']['GetBrandGuidelines']();
+}
+
 export function GetBrandLinks() {
   return window['go']['main']['App']['GetBrandLinks']();
 }
@@ -736,6 +740,10 @@ export function SetPastStreamSeries(arg1, arg2) {
 
 export function SetAppAbout(arg1) {
   return window['go']['main']['App']['SetAppAbout'](arg1);
+}
+
+export function SetBrandGuidelines(arg1) {
+  return window['go']['main']['App']['SetBrandGuidelines'](arg1);
 }
 
 export function SetGitHubRepo(arg1) {

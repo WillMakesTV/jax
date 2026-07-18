@@ -6,7 +6,7 @@ Stream plans are the blueprint for an upcoming broadcast: a title, a markdown de
 - `save_planned_stream` creates a plan (omit `id`) or updates one (pass the existing `id`). Only the fields you send change.
 - `delete_planned_stream` removes a plan by id. Confirm with the user first — plans can hold significant prep writing.
 
-In the app, plans are created from **Broadcasting → Plan a stream**, which offers AI helpers: a whole-plan generate button (drafts title, description, and tags from the series context and previous episodes' outlines) and selection-scoped "request edits" on the description. The brand's links (Profile → Links; `list_brand_links` over MCP) always ride along in those prompts — drafted descriptions close with a short follow/links line, and any social or site reference must use those URLs verbatim, never invented ones. Follow the same rule when writing or editing descriptions over MCP.
+In the app, plans are created from **Broadcasting → Plan a stream**, which offers AI helpers: a whole-plan generate button (drafts title, description, and tags from the series context and previous episodes' outlines) and selection-scoped "request edits" on the description. The brand's links (Profile → Links; `list_brand_links` over MCP) always ride along in those prompts — drafted descriptions close with a short follow/links line, and any social or site reference must use those URLs verbatim, never invented ones. Follow the same rule when writing or editing descriptions over MCP, and consult the brand's written guidelines first (`get_brand_guidelines`; Profile → Brand Assets) — they outrank generic style choices.
 
 ## Writing a good plan
 

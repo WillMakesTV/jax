@@ -17,12 +17,15 @@ import {
   DeleteBrandAsset,
   DeleteBrandLink,
   GetBrandAssets,
+  GetBrandGuidelines,
   GetBrandLinks,
   SaveBrandLink,
+  SetBrandGuidelines,
   UpdateBrandAsset,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {Avatar} from '../components/Avatar'
+import {MarkdownField} from '../components/markdown/MarkdownField'
 import {PageHeader} from '../components/PageHeader'
 import {openExternal} from '../lib/browser'
 import {formatBytes, formatDate} from '../lib/format'
@@ -228,6 +231,88 @@ function UserInfoTab() {
 /** File extensions rendered as an inline image preview. */
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i
 
+/**
+ * The brand's written guidelines — voice, tone, colors, dos and don'ts — in
+ * the app's markdown editor. AI features (and MCP clients, via
+ * get_brand_guidelines) consult this before producing brand-facing visuals
+ * or copy, so the rules written here follow the brand everywhere.
+ */
+function BrandGuidelinesSection() {
+  const [guidelines, setGuidelines] = useState('')
+  const [saved, setSaved] = useState('')
+  const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    GetBrandGuidelines()
+      .then((v) => {
+        if (cancelled) return
+        setGuidelines(v)
+        setSaved(v)
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoaded(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const save = async (value: string) => {
+    setError('')
+    try {
+      await SetBrandGuidelines(value)
+      setSaved(value)
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not save the guidelines.',
+      )
+    }
+  }
+
+  const dirty = guidelines !== saved
+
+  return (
+    <div className="mb-6">
+      <p className="mb-1.5 text-sm font-medium text-fg">Branding Guidelines</p>
+      <p className="mb-2 text-sm text-fg-muted">
+        The written rules of the brand — voice, tone, colors, typography, dos
+        and don&apos;ts. Every AI feature producing brand-facing visuals or copy
+        consults them first.
+      </p>
+      {!loaded ? (
+        <p className="text-sm text-fg-muted">Loading…</p>
+      ) : (
+        <>
+          <MarkdownField
+            id="brand-guidelines"
+            value={guidelines}
+            onChange={setGuidelines}
+            onDone={() => void save(guidelines)}
+            placeholder="e.g. Voice: energetic but never salesy. Colors: purple #7C3AED on near-black. Logo always bottom-right, never stretched…"
+          />
+          {dirty && (
+            <button
+              type="button"
+              onClick={() => void save(guidelines)}
+              className="mt-3 rounded-lg bg-accent px-4 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90"
+            >
+              Save guidelines
+            </button>
+          )}
+        </>
+      )}
+      {error && (
+        <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </div>
+  )
+}
+
 /** Uploaded brand files: add, describe, and remove. */
 function BrandAssetsTab() {
   const [assets, setAssets] = useState<main.BrandAsset[]>([])
@@ -260,6 +345,8 @@ function BrandAssetsTab() {
 
   return (
     <div className="max-w-2xl">
+      <BrandGuidelinesSection />
+
       <div className="mb-4 flex items-center justify-between gap-3">
         <p className="text-sm text-fg-muted">
           {assets.length === 0

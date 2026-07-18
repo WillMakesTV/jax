@@ -180,6 +180,17 @@ func mcpToolCatalog() []mcpTool {
 				return a.GetBrandLinks(), nil
 			},
 		},
+		{
+			name:        "get_brand_guidelines",
+			description: "The brand's written guidelines (markdown) — voice, tone, colors, typography, dos and don'ts — authored on the Profile page's Brand Assets tab. Consult them before producing any brand-facing visual or copy; they outrank generic style choices. Empty means none have been written yet.",
+			handler: func(a *App, _ json.RawMessage) (any, error) {
+				text := strings.TrimSpace(a.GetBrandGuidelines())
+				if text == "" {
+					return "No branding guidelines have been written yet (Profile → Brand Assets).", nil
+				}
+				return text, nil
+			},
+		},
 
 		// --- Past streams ------------------------------------------------
 		{
