@@ -1,5 +1,5 @@
 import {Bug} from 'lucide-react'
-import {useEffect, useState} from 'react'
+import {useState} from 'react'
 import {SaveDebugReport} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {DictationButton} from './DictationButton'
@@ -40,13 +40,20 @@ export function DebugReportModal({
   const [error, setError] = useState('')
 
   // Reload the fields each time the dialog opens (fresh file or edit target).
-  useEffect(() => {
-    if (!open) return
-    setDescription(report?.description ?? '')
-    setRoute(report?.route ?? defaultRoute)
-    setGlobal(report?.global ?? false)
-    setError('')
-  }, [open, report, defaultRoute])
+  // Synchronously during render — not in an effect — so the description field
+  // mounts with the right value and picks its mode from it: edit when the
+  // description is empty, view when it already has one. An effect would run a
+  // beat after the field mounted against the previous open's stale state.
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
+    if (open) {
+      setDescription(report?.description ?? '')
+      setRoute(report?.route ?? defaultRoute)
+      setGlobal(report?.global ?? false)
+      setError('')
+    }
+  }
 
   const save = async () => {
     setBusy(true)
