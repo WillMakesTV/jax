@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   Check,
   CornerDownRight,
+  ExternalLink,
   File,
   FileText,
   Paperclip,
@@ -28,6 +29,7 @@ import {main} from '../../wailsjs/go/models'
 import {DescriptionChat, type ChatTurn} from '../components/DescriptionChat'
 import {MarkdownField} from '../components/markdown/MarkdownField'
 import {Modal} from '../components/Modal'
+import {openExternal} from '../lib/browser'
 
 const field =
   'w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent'
@@ -116,7 +118,11 @@ export function ProjectDetails({
           </div>
 
           {tab === 'overview' && (
-            <OverviewSection project={proj} onChange={setProj} />
+            <OverviewSection
+              project={proj}
+              onChange={setProj}
+              onOpenTab={setTab}
+            />
           )}
           {tab === 'files' && (
             <FilesSection project={proj} onChange={setProj} />
@@ -226,20 +232,25 @@ function CreateProjectForm({
 }
 
 // ---------------------------------------------------------------------------
-// Overview: click-to-edit title + description, and the brief chat
+// Overview: click-to-edit title, repository link, description with its
+// Request Edits chat, and files/docs summary cards alongside
 // ---------------------------------------------------------------------------
 
 function OverviewSection({
   project,
   onChange,
+  onOpenTab,
 }: {
   project: main.Project
   onChange: (project: main.Project) => void
+  /** Jump to another of the project's tabs (the files/docs cards). */
+  onOpenTab: (tab: ProjectTab) => void
 }) {
   const [description, setDescription] = useState(project.description)
+  const [repository, setRepository] = useState(project.repository ?? '')
   const [error, setError] = useState('')
-  // The brief chat lives in a modal behind a CTA; its transcript is held
-  // here so closing the dialog doesn't lose the conversation.
+  // The description chat lives in a modal behind the Request Edits CTA; its
+  // transcript is held here so closing the dialog doesn't lose it.
   const [chatOpen, setChatOpen] = useState(false)
   const [chatMessages, setChatMessages] = useState<ChatTurn[]>([])
 
@@ -249,15 +260,21 @@ function OverviewSection({
   if (project !== synced) {
     setSynced(project)
     setDescription(project.description)
+    setRepository(project.repository ?? '')
   }
 
   // Assets/docs are preserved by the backend regardless of what is sent.
-  const persist = async (fields: {title?: string; description?: string}) => {
+  const persist = async (fields: {
+    title?: string
+    description?: string
+    repository?: string
+  }) => {
     const saved = await SaveProject(
       main.Project.createFrom({
         id: project.id,
         title: fields.title ?? project.title,
         description: fields.description ?? description,
+        repository: fields.repository ?? (project.repository || ''),
         createdAt: project.createdAt,
         assets: [],
         docs: [],
@@ -281,51 +298,149 @@ function OverviewSection({
 
   const dirty = description !== project.description
 
-  return (
-    <div className="flex max-w-2xl flex-col gap-5">
-      <EditableTitle
-        value={project.title}
-        onSave={(title) => persist({title})}
-      />
+  const saveRepository = async () => {
+    setError('')
+    try {
+      await persist({repository: repository.trim()})
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not save the repository.',
+      )
+    }
+  }
 
-      <div>
-        <div className="mb-1.5 flex items-center justify-between gap-3">
-          <span className="text-sm font-medium text-fg">Description</span>
-          <button
-            type="button"
-            onClick={() => setChatOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
-          >
-            <Sparkles size={14} aria-hidden className="text-accent" />
-            Build the description
-          </button>
-        </div>
-        <MarkdownField
-          id="project-description"
-          value={description}
-          onChange={setDescription}
-          onDone={() => void saveDescription(description)}
-          placeholder="What is this project? Goals, links, context… — or talk it through in the Build the description chat."
+  // "owner/repo" opens on GitHub; anything with a scheme opens as-is.
+  const repoURL = (() => {
+    const value = (project.repository ?? '').trim()
+    if (!value) return ''
+    if (/^https?:\/\//i.test(value)) return value
+    if (/^[\w.-]+\/[\w.-]+$/.test(value)) return `https://github.com/${value}`
+    return ''
+  })()
+
+  const assetCount = project.assets?.length ?? 0
+  const docCount = project.docs?.length ?? 0
+
+  return (
+    <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+      <div className="flex min-w-0 max-w-2xl flex-1 flex-col gap-5">
+        <EditableTitle
+          value={project.title}
+          onSave={(title) => persist({title})}
         />
-        {dirty && (
-          <button
-            type="button"
-            onClick={() => void saveDescription(description)}
-            className="mt-3 rounded-lg bg-accent px-4 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90"
-          >
-            Save description
-          </button>
+
+        <div>
+          <span className={labelCls}>Repository</span>
+          <div className="flex items-center gap-2">
+            <input
+              value={repository}
+              onChange={(e) => setRepository(e.target.value)}
+              onBlur={() => {
+                if (repository.trim() !== (project.repository ?? '').trim())
+                  void saveRepository()
+              }}
+              placeholder="owner/repo or a full URL"
+              className={field}
+            />
+            {repoURL && (
+              <button
+                type="button"
+                onClick={() => openExternal(repoURL)}
+                title={`Open ${repoURL}`}
+                aria-label="Open the repository"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-edge bg-surface text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+              >
+                <ExternalLink size={14} aria-hidden />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-1.5 flex items-center justify-between gap-3">
+            <span className="text-sm font-medium text-fg">Description</span>
+            <button
+              type="button"
+              onClick={() => setChatOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+            >
+              <Sparkles size={14} aria-hidden className="text-accent" />
+              Request Edits
+            </button>
+          </div>
+          <MarkdownField
+            id="project-description"
+            value={description}
+            onChange={setDescription}
+            onDone={() => void saveDescription(description)}
+            placeholder="What is this project? Goals, links, context… — or talk it through with Request Edits."
+          />
+          {dirty && (
+            <button
+              type="button"
+              onClick={() => void saveDescription(description)}
+              className="mt-3 rounded-lg bg-accent px-4 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90"
+            >
+              Save description
+            </button>
+          )}
+        </div>
+
+        {error && (
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
         )}
       </div>
 
-      {error && (
-        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-      )}
+      {/* Files and docs at a glance, one click from their tabs. */}
+      <aside className="flex w-full shrink-0 flex-col gap-3 lg:w-64">
+        <button
+          type="button"
+          onClick={() => onOpenTab('files')}
+          className="flex items-center gap-3 rounded-xl border border-edge bg-surface p-4 text-left transition-colors hover:bg-surface-hover"
+        >
+          <span
+            aria-hidden
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-hover text-fg-muted"
+          >
+            <Paperclip size={18} />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-fg">Files</span>
+            <span className="block text-xs text-fg-muted">
+              {assetCount === 0
+                ? 'Nothing uploaded yet'
+                : `${assetCount} file${assetCount === 1 ? '' : 's'}`}
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onOpenTab('docs')}
+          className="flex items-center gap-3 rounded-xl border border-edge bg-surface p-4 text-left transition-colors hover:bg-surface-hover"
+        >
+          <span
+            aria-hidden
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-hover text-fg-muted"
+          >
+            <FileText size={18} />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-fg">Docs</span>
+            <span className="block text-xs text-fg-muted">
+              {docCount === 0
+                ? 'Nothing written yet'
+                : `${docCount} doc${docCount === 1 ? '' : 's'}`}
+            </span>
+          </span>
+        </button>
+      </aside>
 
       <Modal
         open={chatOpen}
         onClose={() => setChatOpen(false)}
-        title="Build the description"
+        title="Request Edits"
         icon={<Sparkles size={18} aria-hidden className="text-accent" />}
         maxWidthClass="max-w-xl"
       >

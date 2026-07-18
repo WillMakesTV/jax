@@ -49,12 +49,15 @@ type ProjectDoc struct {
 
 // Project is a creatable body of work that stream plans can reference.
 type Project struct {
-	ID          string         `json:"id"`
-	Title       string         `json:"title"`
-	Description string         `json:"description"`
-	CreatedAt   string         `json:"createdAt"`
-	Assets      []ProjectAsset `json:"assets"`
-	Docs        []ProjectDoc   `json:"docs"`
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	// Repository is the project's code home ("owner/repo" or a full URL);
+	// optional, shown as a link on the Overview.
+	Repository string         `json:"repository"`
+	CreatedAt  string         `json:"createdAt"`
+	Assets     []ProjectAsset `json:"assets"`
+	Docs       []ProjectDoc   `json:"docs"`
 }
 
 // projectsDir returns the root directory holding per-project files
