@@ -414,6 +414,8 @@ export function StopTranscription():Promise<void>;
 
 export function SubscribeTwitchEvents(arg1:string):Promise<Array<string>>;
 
+export function StopEditRun(arg1:string):Promise<void>;
+
 export function SummarizePlanChanges(arg1:string):Promise<main.PlanChanges>;
 
 export function SyncPlatformEvents():Promise<Array<main.StoredLiveEvent>>;

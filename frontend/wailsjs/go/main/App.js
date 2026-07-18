@@ -826,6 +826,10 @@ export function SubscribeTwitchEvents(arg1) {
   return window['go']['main']['App']['SubscribeTwitchEvents'](arg1);
 }
 
+export function StopEditRun(arg1) {
+  return window['go']['main']['App']['StopEditRun'](arg1);
+}
+
 export function SummarizePlanChanges(arg1) {
   return window['go']['main']['App']['SummarizePlanChanges'](arg1);
 }

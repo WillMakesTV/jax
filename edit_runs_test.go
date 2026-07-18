@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestEditRunLog(t *testing.T) {
 	a := newTestApp(t)
@@ -42,5 +45,35 @@ func TestEditRunLog(t *testing.T) {
 	a.recordEditRunEnd(plan.ID, "late")
 	if runs := a.GetEditRuns(plan.ID); len(runs) != 2 || runs[1].Error != "ffmpeg exploded" {
 		t.Fatalf("stray end mutated the log: %+v", runs)
+	}
+}
+
+func TestStopEditRunClosesStaleRows(t *testing.T) {
+	a := newTestApp(t)
+	plan, err := a.SaveVideoPlan(VideoPlan{Title: "Stuck", Format: "long"})
+	if err != nil {
+		t.Fatalf("save plan: %v", err)
+	}
+
+	// Two orphaned rows (e.g. app restarts mid-session) with no live process.
+	a.recordEditRunStart(plan.ID)
+	a.recordEditRunStart(plan.ID)
+
+	// With no live session for the plan, Stop clocks out every open row.
+	a.StopEditRun(plan.ID)
+	runs := a.GetEditRuns(plan.ID)
+	if len(runs) != 2 {
+		t.Fatalf("runs = %d, want 2: %+v", len(runs), runs)
+	}
+	for _, r := range runs {
+		if r.EndedAt == "" || !strings.Contains(r.Error, "stopped") {
+			t.Fatalf("open row not clocked out: %+v", r)
+		}
+	}
+
+	// Closed rows stay untouched by another stop.
+	a.StopEditRun(plan.ID)
+	if again := a.GetEditRuns(plan.ID); len(again) != 2 || again[0].EndedAt != runs[0].EndedAt {
+		t.Fatalf("stop rewrote closed rows: %+v", again)
 	}
 }

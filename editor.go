@@ -1487,10 +1487,15 @@ func killTree(p *os.Process) {
 func (a *App) CancelEditRun() {
 	a.mu.Lock()
 	cmd := a.editCmd
+	planID := a.editPlanID
 	a.editCmd = nil
 	a.editPlanID = ""
 	a.mu.Unlock()
 	if cmd != nil {
 		killTree(cmd.Process)
+		// The wait goroutine detaches on cancel (editCmd no longer matches),
+		// so it won't clock the run out — do it here, or the log keeps a
+		// forever-"running" row.
+		a.recordEditRunEndAll(planID, "cancelled")
 	}
 }

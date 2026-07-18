@@ -78,14 +78,55 @@ func (a *App) recordEditRunEnd(planID, errDetail string) {
 		if runs[i].EndedAt != "" {
 			continue
 		}
-		now := time.Now().UTC()
-		runs[i].EndedAt = now.Format(time.RFC3339)
-		if started, err := time.Parse(time.RFC3339, runs[i].StartedAt); err == nil {
-			runs[i].DurationSecs = int(now.Sub(started) / time.Second)
-		}
-		runs[i].Error = errDetail
+		closeEditRun(&runs[i], errDetail)
 		m[planID] = runs
 		a.saveEditRunLog(m)
 		return
 	}
+}
+
+// recordEditRunEndAll clocks out every still-open run of a plan — the broom
+// behind StopEditRun, where orphaned rows (an app restart mid-session) may
+// have piled up.
+func (a *App) recordEditRunEndAll(planID, errDetail string) {
+	m := a.editRunLog()
+	runs := m[planID]
+	closed := false
+	for i := range runs {
+		if runs[i].EndedAt != "" {
+			continue
+		}
+		closeEditRun(&runs[i], errDetail)
+		closed = true
+	}
+	if closed {
+		m[planID] = runs
+		a.saveEditRunLog(m)
+	}
+}
+
+// closeEditRun stamps a run's end, duration, and outcome.
+func closeEditRun(r *EditRun, errDetail string) {
+	now := time.Now().UTC()
+	r.EndedAt = now.Format(time.RFC3339)
+	if started, err := time.Parse(time.RFC3339, r.StartedAt); err == nil {
+		r.DurationSecs = int(now.Sub(started) / time.Second)
+	}
+	r.Error = errDetail
+}
+
+// StopEditRun stops a plan's processing session from the run log. A live
+// session for the plan is killed (with everything it spawned); open rows
+// with no live process behind them — a session orphaned by an app restart —
+// are simply clocked out as stopped. Either way the plan's log is left with
+// no open rows.
+func (a *App) StopEditRun(planID string) {
+	a.mu.Lock()
+	live := a.editPlanID == planID && a.editCmd != nil
+	a.mu.Unlock()
+	if live {
+		a.CancelEditRun()
+		return
+	}
+	a.recordEditRunEndAll(planID, "stopped — the session was no longer running")
 }

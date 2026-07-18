@@ -29,6 +29,7 @@ import {
   InstallEditorTools,
   RestoreEditVersion,
   SaveEditScript,
+  StopEditRun,
   SummarizePlanChanges,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
@@ -991,10 +992,27 @@ export function VideoPlanEditor({
                   {formatDate(r.startedAt)}
                 </span>
                 {r.endedAt === '' ? (
-                  <span className="inline-flex shrink-0 items-center gap-1.5 text-fg-muted">
-                    <Loader2 size={12} aria-hidden className="animate-spin" />
-                    running…
-                  </span>
+                  <>
+                    <span className="inline-flex shrink-0 items-center gap-1.5 text-fg-muted">
+                      <Loader2 size={12} aria-hidden className="animate-spin" />
+                      running…
+                    </span>
+                    {/* Kill a stuck run: the live session's process tree, or
+                        just closing out a row orphaned by an app restart. */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void StopEditRun(plan.id).finally(() =>
+                          refreshWorkspace(),
+                        )
+                      }}
+                      title="Stop this run — kills the session's processes if it is still alive, or clears a row left behind by a crash/restart"
+                      className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-edge px-2 py-1 text-xs font-semibold text-fg-muted transition-colors hover:bg-surface-hover hover:text-red-600 dark:hover:text-red-400"
+                    >
+                      <Square size={10} aria-hidden fill="currentColor" />
+                      Stop
+                    </button>
+                  </>
                 ) : (
                   <>
                     <span className="shrink-0 font-medium text-fg">
