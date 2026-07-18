@@ -280,6 +280,8 @@ export function ListFixNotices():Promise<Array<main.FixNotice>>;
 
 export function ImportVideoPlanFootage(arg1:string,arg2:Array<string>):Promise<main.VideoPlan>;
 
+export function ListResolvedReports():Promise<Array<main.FixNotice>>;
+
 export function MarkAllChatRead():Promise<void>;
 
 export function MarkAllLiveEventsRead():Promise<void>;

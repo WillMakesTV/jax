@@ -8,6 +8,7 @@ Each debug report has:
 - **route** — the app view id where the bug shows up (e.g. `dashboard`, `planning`, `settings`, `stream-details`). Jax has no URL router; these ids come from the frontend's `ViewId` union in `frontend/src/navigation.ts`, and the matching view component lives under `frontend/src/views/`.
 - **global** — true when the problem is app-wide rather than tied to one view (crashes, styling regressions, data corruption). Global reports may leave `route` blank.
 - **checkedOut** — true once an agent has claimed the report. It lets several agents share one queue without colliding: skip a report whose `checkedOut` is already true, and claim the one you pick before you start.
+- **issueUrl** / **issueNumber** — the GitHub issue opened for the report. Record these with `save_debug_report` right after `gh issue create`; they follow the report into the resolution history when it is resolved, so the app can link every fixed bug to the issue that tracked it.
 
 ## The tools
 
@@ -21,13 +22,13 @@ Each debug report has:
 ## Working a report
 
 1. Pick a report whose `checkedOut` is false and claim it with `check_out_debug_report` — from that moment other agents skip it.
-2. Open a GitHub issue for it with the built-in `gh` CLI, so the work is visible on the repository: `gh issue create --title "<summary derived from the description>" --body "<the report's description, plus its route and report id>"`. Note the issue number for the commit.
+2. Open a GitHub issue for it with the built-in `gh` CLI, so the work is visible on the repository: `gh issue create --title "<summary derived from the description>" --body "<the report's description, plus its route and report id>"`. Note the issue number for the commit, and record the reference on the report itself: `save_debug_report` with the report's id, its existing description, and `issueUrl` + `issueNumber` — the reference follows the report into the app's resolution history.
 3. Read the report and open the code behind its `route` (or, for global reports, the shared shell: `frontend/src/App.tsx`, `TopBar`, `StatusBar`, or the Go backend).
 4. Reproduce the problem, or at least trace the code path until the description's symptoms are explained.
 5. Fix it, matching the surrounding code's conventions.
 6. Verify: run the Go tests, build the frontend, and exercise the affected flow. A report is not resolved because the code "should" work now.
 7. Commit the fix and push it. The commit message's summary line names the change; its body describes what was added or changed and why — the message should stand on its own as a record of the work, and cite the issue (e.g. `Fixes #12` so GitHub links and closes it). Never add a `Co-Authored-By` trailer.
 8. Comment on the issue that it is resolved: what was added or changed, and how to test it — the concrete steps in the app (which page, which buttons, what to expect) that show the fix working. `gh issue comment <n> --body "<resolution note>"`. Then make sure the issue is closed — `Fixes #N` closes it automatically when the commit lands on the default branch; otherwise `gh issue close <n>`.
-9. Only after the fix is verified, committed, and pushed: call `delete_debug_report` with the report's id. If you could not resolve the report, leave it in place, append what you learned to its description with `save_debug_report`, and leave the issue open with a comment on where the investigation stands.
+9. Only after the fix is verified, committed, and pushed: call `delete_debug_report` with the report's id. The report moves into the app's resolution history (Settings → Development) carrying its issue reference and resolved time, and the reporter sees a bug-fixed notice. If you could not resolve the report, leave it in place, append what you learned to its description with `save_debug_report`, and leave the issue open with a comment on where the investigation stands.
 
 Never delete a report you did not fix, and never let a resolved report linger — the queue's value is that empty means nothing is known to be broken, and the repository's issues mirror that state.

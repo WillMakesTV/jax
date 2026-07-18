@@ -226,33 +226,51 @@ CREATE INDEX IF NOT EXISTS idx_live_events_at ON live_events(at);
 -- Developer debug reports filed from the in-app debug button; an AI client
 -- works them over MCP and deletes each once resolved (see ai_debug.go).
 CREATE TABLE IF NOT EXISTS dev_ai_debug (
-	id          INTEGER PRIMARY KEY AUTOINCREMENT,
-	title       TEXT NOT NULL DEFAULT '',
-	description TEXT NOT NULL DEFAULT '',
-	route       TEXT NOT NULL DEFAULT '',
-	global      INTEGER NOT NULL DEFAULT 0,
-	checked_out INTEGER NOT NULL DEFAULT 0,
-	created_at  TEXT NOT NULL,
-	updated_at  TEXT NOT NULL
+	id           INTEGER PRIMARY KEY AUTOINCREMENT,
+	title        TEXT NOT NULL DEFAULT '',
+	description  TEXT NOT NULL DEFAULT '',
+	route        TEXT NOT NULL DEFAULT '',
+	global       INTEGER NOT NULL DEFAULT 0,
+	checked_out  INTEGER NOT NULL DEFAULT 0,
+	issue_url    TEXT NOT NULL DEFAULT '',
+	issue_number INTEGER NOT NULL DEFAULT 0,
+	created_at   TEXT NOT NULL,
+	updated_at   TEXT NOT NULL
 );
--- Read-once "your bug was fixed" notices, left behind when a debug report is
--- resolved over MCP; the status bar shows them and a click dismisses.
+-- Resolved-report history: one row per resolved debug report, kept for good.
+-- Unread rows double as the "your bug was fixed" notices the status bar
+-- shows; a click marks them read (see ai_debug.go).
 CREATE TABLE IF NOT EXISTS dev_ai_debug_fixed (
-	id          INTEGER PRIMARY KEY AUTOINCREMENT,
-	title       TEXT NOT NULL DEFAULT '',
-	route       TEXT NOT NULL DEFAULT '',
-	resolved_at TEXT NOT NULL
+	id           INTEGER PRIMARY KEY AUTOINCREMENT,
+	report_id    INTEGER NOT NULL DEFAULT 0,
+	title        TEXT NOT NULL DEFAULT '',
+	description  TEXT NOT NULL DEFAULT '',
+	route        TEXT NOT NULL DEFAULT '',
+	issue_url    TEXT NOT NULL DEFAULT '',
+	issue_number INTEGER NOT NULL DEFAULT 0,
+	read         INTEGER NOT NULL DEFAULT 0,
+	resolved_at  TEXT NOT NULL
 );`
 	if _, err := s.db.Exec(schema); err != nil {
 		return err
 	}
-	// Column added after dev_ai_debug shipped; CREATE TABLE IF NOT EXISTS
-	// leaves existing tables untouched, so add it here. A duplicate-column
+	// Columns added after these tables shipped; CREATE TABLE IF NOT EXISTS
+	// leaves existing tables untouched, so add them here. A duplicate-column
 	// error just means an up-to-date database — ignore it.
-	if _, err := s.db.Exec(
+	for _, stmt := range []string{
 		`ALTER TABLE dev_ai_debug ADD COLUMN checked_out INTEGER NOT NULL DEFAULT 0`,
-	); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
-		return err
+		`ALTER TABLE dev_ai_debug ADD COLUMN issue_url TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE dev_ai_debug ADD COLUMN issue_number INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE dev_ai_debug_fixed ADD COLUMN report_id INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE dev_ai_debug_fixed ADD COLUMN description TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE dev_ai_debug_fixed ADD COLUMN issue_url TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE dev_ai_debug_fixed ADD COLUMN issue_number INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE dev_ai_debug_fixed ADD COLUMN read INTEGER NOT NULL DEFAULT 0`,
+	} {
+		if _, err := s.db.Exec(stmt); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column name") {
+			return err
+		}
 	}
 	return nil
 }

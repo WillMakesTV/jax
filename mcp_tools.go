@@ -841,13 +841,15 @@ func mcpToolCatalog() []mcpTool {
 		},
 		{
 			name:        "save_debug_report",
-			description: `Create or update a debug report. Omit "id" to file a new report; include it to update an existing one (e.g. to append findings before pausing an investigation). Description is required.`,
+			description: `Create or update a debug report. Omit "id" to file a new report; include it to update an existing one (e.g. to append findings before pausing an investigation, or to record the GitHub issue opened for it — do this right after creating the issue so the report and its resolution history carry the reference). Description is required.`,
 			inputSchema: objSchema(map[string]any{
 				"id":          prop("integer", "Report id when updating; omit to create."),
 				"title":       prop("string", "Short summary line."),
 				"description": prop("string", "Long-form description of the bug: symptoms, expectations, reproduction notes."),
 				"route":       prop("string", "The app view id the bug appears on (e.g. \"dashboard\", \"planning\"). May be blank for global reports."),
 				"global":      prop("boolean", "True when the problem is app-wide rather than tied to one view."),
+				"issueUrl":    prop("string", "URL of the GitHub issue opened for this report."),
+				"issueNumber": prop("integer", "Number of that GitHub issue."),
 			}, "description"),
 			handler: func(a *App, args json.RawMessage) (any, error) {
 				var r DebugReport
@@ -859,7 +861,7 @@ func mcpToolCatalog() []mcpTool {
 		},
 		{
 			name:        "delete_debug_report",
-			description: "Remove a debug report — the resolve step of the AI debugging workflow. Only delete a report after its fix is verified; this is deliberately the one destructive delete exposed over MCP. The reporter is left a read-once notice in the app that the bug was fixed, linking to the report's page.",
+			description: "Remove a debug report — the resolve step of the AI debugging workflow. Only delete a report after its fix is verified; this is deliberately the one destructive delete exposed over MCP. The report moves into the resolution history (Settings → Development) with its GitHub issue reference and resolved time, and the reporter sees a bug-fixed notice in the app.",
 			inputSchema: objSchema(map[string]any{
 				"id": prop("integer", "The report id to delete."),
 			}, "id"),

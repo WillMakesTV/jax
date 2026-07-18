@@ -38,7 +38,7 @@ import {StreamDetails, type StreamTab} from './views/StreamDetails'
 import {Videos} from './views/Videos'
 import {VideoDetails} from './views/VideoDetails'
 import {VideoPlanDetails, type VideoPlanTab} from './views/VideoPlanDetails'
-import {Settings} from './views/Settings'
+import {Settings, type SettingsTab} from './views/Settings'
 import {Profile, type ProfileTab} from './views/Profile'
 
 // localStorage mirror of the nav-collapsed flag. SQLite is the source of truth,
@@ -85,6 +85,8 @@ interface NavState {
   sponsor: main.Sponsor | null
   /** The campaign being viewed; null = creating a new one. */
   campaign: main.SponsorCampaign | null
+  /** Tab to land on when opening Settings; null = default. */
+  settingsTab: SettingsTab | null
 }
 
 const INITIAL_NAV: NavState = {
@@ -106,6 +108,7 @@ const INITIAL_NAV: NavState = {
   project: null,
   sponsor: null,
   campaign: null,
+  settingsTab: null,
 }
 
 const sameNav = (a: NavState, b: NavState) =>
@@ -126,7 +129,8 @@ const sameNav = (a: NavState, b: NavState) =>
   a.profileTab === b.profileTab &&
   a.project === b.project &&
   a.sponsor === b.sponsor &&
-  a.campaign === b.campaign
+  a.campaign === b.campaign &&
+  a.settingsTab === b.settingsTab
 
 function App() {
   const [collapsed, setCollapsed] = useState<boolean>(readCollapsed)
@@ -413,6 +417,21 @@ function App() {
       setView(target)
     },
     [setView],
+  )
+
+  // A bug-fixed notice that carries its GitHub issue reference opens the
+  // report history (Settings → Development), where the resolution details
+  // live; older notices without one fall back to the view the report was
+  // filed on.
+  const openFixNotice = useCallback(
+    (notice: main.FixNotice) => {
+      if (notice.issueUrl || notice.issueNumber) {
+        navigate({view: 'settings', settingsTab: 'development'})
+        return
+      }
+      openFixedRoute(notice.route)
+    },
+    [navigate, openFixedRoute],
   )
 
   // Status-bar chips that reference a video plan by id (edit session on the
@@ -767,7 +786,12 @@ function App() {
                 onBack={() => setView('videos')}
               />
             )}
-            {view === 'settings' && <Settings />}
+            {view === 'settings' && (
+              <Settings
+                key={cur.settingsTab ?? 'default'}
+                initialTab={cur.settingsTab ?? undefined}
+              />
+            )}
             {view === 'profile' && (
               <Profile initialTab={cur.profileTab ?? undefined} />
             )}
@@ -797,7 +821,7 @@ function App() {
         onOpenPostStream={(startedAt, streamTab) =>
           void openStreamByStart(startedAt, streamTab)
         }
-        onOpenFixNotice={(n) => openFixedRoute(n.route)}
+        onOpenFixNotice={openFixNotice}
       />
     </div>
   )

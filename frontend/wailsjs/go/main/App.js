@@ -558,6 +558,10 @@ export function ImportVideoPlanFootage(arg1, arg2) {
   return window['go']['main']['App']['ImportVideoPlanFootage'](arg1, arg2);
 }
 
+export function ListResolvedReports() {
+  return window['go']['main']['App']['ListResolvedReports']();
+}
+
 export function MarkAllChatRead() {
   return window['go']['main']['App']['MarkAllChatRead']();
 }

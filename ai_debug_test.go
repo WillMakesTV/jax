@@ -119,6 +119,26 @@ func TestResolveDebugReportLeavesFixNotice(t *testing.T) {
 		Description: "Clicking Generate does nothing.",
 		Route:       "planning",
 	})
+	// The workflow records the GitHub issue on the report after filing it.
+	r, err := a.SaveDebugReport(DebugReport{
+		ID:          r.ID,
+		Title:       r.Title,
+		Description: r.Description,
+		Route:       r.Route,
+		IssueURL:    "https://github.com/o/r/issues/7",
+		IssueNumber: 7,
+	})
+	if err != nil {
+		t.Fatalf("record issue: %v", err)
+	}
+	// A later findings update that omits the issue keeps the reference.
+	r, err = a.SaveDebugReport(DebugReport{
+		ID: r.ID, Description: "Clicking Generate does nothing. Traced to X.",
+		Route: r.Route,
+	})
+	if err != nil || r.IssueURL == "" || r.IssueNumber != 7 {
+		t.Fatalf("issue reference should survive updates: %+v (%v)", r, err)
+	}
 
 	if err := a.ResolveDebugReport(r.ID); err != nil {
 		t.Fatalf("resolve: %v", err)
@@ -138,16 +158,23 @@ func TestResolveDebugReportLeavesFixNotice(t *testing.T) {
 	if n.Title != r.Title || n.Route != "planning" || n.ResolvedAt == "" {
 		t.Fatalf("notice mismatch: %+v", n)
 	}
+	if n.ReportID != r.ID || n.IssueURL == "" || n.IssueNumber != 7 {
+		t.Fatalf("notice should carry the issue reference: %+v", n)
+	}
 
-	// Read once, gone for good.
+	// Reading clears the notification but keeps the history entry.
 	if err := a.DismissFixNotice(n.ID); err != nil {
 		t.Fatalf("dismiss: %v", err)
 	}
-	if err := a.DismissFixNotice(n.ID); err == nil {
-		t.Fatal("want error dismissing twice")
+	if err := a.DismissFixNotice(n.ID); err != nil {
+		t.Fatalf("dismissing again should be harmless: %v", err)
 	}
 	if got := a.ListFixNotices(); len(got) != 0 {
 		t.Fatalf("notices after dismiss = %+v, want none", got)
+	}
+	history := a.ListResolvedReports()
+	if len(history) != 1 || !history[0].Read || history[0].IssueNumber != 7 {
+		t.Fatalf("history should keep the read entry: %+v", history)
 	}
 
 	// A withdrawal (plain delete) must not leave a notice behind.

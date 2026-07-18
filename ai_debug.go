@@ -26,30 +26,40 @@ type DebugReport struct {
 	Route       string `json:"route"`       // app view id the bug appears on
 	Global      bool   `json:"global"`      // applies app-wide, not to one view
 	CheckedOut  bool   `json:"checkedOut"`  // an agent has claimed this report
-	CreatedAt   string `json:"createdAt"`   // RFC3339
-	UpdatedAt   string `json:"updatedAt"`   // RFC3339
+	// IssueURL/IssueNumber reference the GitHub issue the AI-debugging
+	// workflow opened for this report (recorded via save_debug_report right
+	// after `gh issue create`).
+	IssueURL    string `json:"issueUrl"`
+	IssueNumber int64  `json:"issueNumber"`
+	CreatedAt   string `json:"createdAt"` // RFC3339
+	UpdatedAt   string `json:"updatedAt"` // RFC3339
 }
 
-// FixNotice is the read-once "your bug was fixed" notification a resolved
-// debug report leaves behind, so the person who filed it hears back. The
-// status bar shows it with a link to the report's page; clicking dismisses it
-// for good.
+// FixNotice is one resolved debug report: a permanent history entry that,
+// while unread, doubles as the "your bug was fixed" notification the status
+// bar shows. Clicking the notice marks it read; the row stays as history
+// (Settings → Development) with its GitHub issue reference.
 type FixNotice struct {
-	ID         int64  `json:"id"`
-	Title      string `json:"title"`      // the resolved report's title
-	Route      string `json:"route"`      // app view id the report was filed on
-	ResolvedAt string `json:"resolvedAt"` // RFC3339
+	ID          int64  `json:"id"`
+	ReportID    int64  `json:"reportId"`    // the resolved report's id
+	Title       string `json:"title"`       // the resolved report's title
+	Description string `json:"description"` // the report as it was resolved
+	Route       string `json:"route"`       // app view id the report was filed on
+	IssueURL    string `json:"issueUrl"`    // GitHub issue the fix landed under
+	IssueNumber int64  `json:"issueNumber"`
+	Read        bool   `json:"read"`       // the notice has been seen
+	ResolvedAt  string `json:"resolvedAt"` // RFC3339
 }
 
 // --- Store ------------------------------------------------------------------
 
-const debugReportColumns = `id, title, description, route, global, checked_out, created_at, updated_at`
+const debugReportColumns = `id, title, description, route, global, checked_out, issue_url, issue_number, created_at, updated_at`
 
 func scanDebugReport(row interface{ Scan(...any) error }) (DebugReport, error) {
 	var r DebugReport
 	var global, checkedOut int
 	err := row.Scan(&r.ID, &r.Title, &r.Description, &r.Route, &global,
-		&checkedOut, &r.CreatedAt, &r.UpdatedAt)
+		&checkedOut, &r.IssueURL, &r.IssueNumber, &r.CreatedAt, &r.UpdatedAt)
 	r.Global = global != 0
 	r.CheckedOut = checkedOut != 0
 	return r, err
@@ -88,9 +98,10 @@ func (s *Store) getDebugReport(id int64) (DebugReport, error) {
 // insertDebugReport stores a new report and returns it with its assigned id.
 func (s *Store) insertDebugReport(r DebugReport) (DebugReport, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO dev_ai_debug (title, description, route, global, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		r.Title, r.Description, r.Route, boolToInt(r.Global), r.CreatedAt, r.UpdatedAt)
+		`INSERT INTO dev_ai_debug (title, description, route, global, issue_url, issue_number, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.Title, r.Description, r.Route, boolToInt(r.Global),
+		r.IssueURL, r.IssueNumber, r.CreatedAt, r.UpdatedAt)
 	if err != nil {
 		return DebugReport{}, err
 	}
@@ -105,9 +116,11 @@ func (s *Store) insertDebugReport(r DebugReport) (DebugReport, error) {
 func (s *Store) updateDebugReport(r DebugReport) error {
 	res, err := s.db.Exec(
 		`UPDATE dev_ai_debug
-		 SET title = ?, description = ?, route = ?, global = ?, updated_at = ?
+		 SET title = ?, description = ?, route = ?, global = ?,
+		     issue_url = ?, issue_number = ?, updated_at = ?
 		 WHERE id = ?`,
-		r.Title, r.Description, r.Route, boolToInt(r.Global), r.UpdatedAt, r.ID)
+		r.Title, r.Description, r.Route, boolToInt(r.Global),
+		r.IssueURL, r.IssueNumber, r.UpdatedAt, r.ID)
 	if err != nil {
 		return err
 	}
@@ -181,16 +194,31 @@ func (s *Store) searchDebugReports(q string) ([]DebugReport, error) {
 	return out, rows.Err()
 }
 
-// insertFixNotice stores a resolved report's notice and returns it with its
-// assigned id.
+const fixNoticeColumns = `id, report_id, title, description, route, issue_url, issue_number, read, resolved_at`
+
+func scanFixNotice(row interface{ Scan(...any) error }) (FixNotice, error) {
+	var n FixNotice
+	var read int
+	err := row.Scan(&n.ID, &n.ReportID, &n.Title, &n.Description, &n.Route,
+		&n.IssueURL, &n.IssueNumber, &read, &n.ResolvedAt)
+	n.Read = read != 0
+	return n, err
+}
+
+// insertFixNotice stores a resolved report's history entry and returns it
+// with its assigned id.
 func (s *Store) insertFixNotice(n FixNotice) (FixNotice, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO dev_ai_debug_fixed (title, route, resolved_at) VALUES (?, ?, ?)`,
-		n.Title, n.Route, n.ResolvedAt)
+		`INSERT INTO dev_ai_debug_fixed (report_id, title, description, route, issue_url, issue_number, resolved_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		n.ReportID, n.Title, n.Description, n.Route, n.IssueURL, n.IssueNumber, n.ResolvedAt)
 	if err != nil {
 		return FixNotice{}, err
 	}
 	n.ID, err = res.LastInsertId()
+	if err == nil {
+		s.changed("dev_ai_debug_fixed")
+	}
 	return n, err
 }
 
@@ -198,15 +226,15 @@ func (s *Store) insertFixNotice(n FixNotice) (FixNotice, error) {
 // they were resolved in is the order they should be read in.
 func (s *Store) listFixNotices() ([]FixNotice, error) {
 	rows, err := s.db.Query(
-		`SELECT id, title, route, resolved_at FROM dev_ai_debug_fixed ORDER BY id`)
+		`SELECT ` + fixNoticeColumns + ` FROM dev_ai_debug_fixed WHERE read = 0 ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []FixNotice{}
 	for rows.Next() {
-		var n FixNotice
-		if err := rows.Scan(&n.ID, &n.Title, &n.Route, &n.ResolvedAt); err != nil {
+		n, err := scanFixNotice(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, n)
@@ -214,15 +242,36 @@ func (s *Store) listFixNotices() ([]FixNotice, error) {
 	return out, rows.Err()
 }
 
-// deleteFixNotice removes a notice (it was read).
-func (s *Store) deleteFixNotice(id int64) error {
-	res, err := s.db.Exec(`DELETE FROM dev_ai_debug_fixed WHERE id = ?`, id)
+// listResolvedReports returns the whole resolution history, newest first.
+func (s *Store) listResolvedReports() ([]FixNotice, error) {
+	rows, err := s.db.Query(
+		`SELECT ` + fixNoticeColumns + ` FROM dev_ai_debug_fixed ORDER BY id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []FixNotice{}
+	for rows.Next() {
+		n, err := scanFixNotice(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
+// markFixNoticeRead flags a notice as seen. The row stays: it is the
+// resolution history entry for its report.
+func (s *Store) markFixNoticeRead(id int64) error {
+	res, err := s.db.Exec(`UPDATE dev_ai_debug_fixed SET read = 1 WHERE id = ?`, id)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return fmt.Errorf("no fix notice with id %d", id)
 	}
+	s.changed("dev_ai_debug_fixed")
 	return nil
 }
 
@@ -302,6 +351,14 @@ func (a *App) SaveDebugReport(r DebugReport) (DebugReport, error) {
 		return DebugReport{}, err
 	}
 	r.CreatedAt = existing.CreatedAt
+	// An update that doesn't mention the issue keeps the recorded reference —
+	// appending findings must not detach the report from its issue.
+	if r.IssueURL == "" {
+		r.IssueURL = existing.IssueURL
+	}
+	if r.IssueNumber == 0 {
+		r.IssueNumber = existing.IssueNumber
+	}
 	if err := a.store.updateDebugReport(r); err != nil {
 		return DebugReport{}, err
 	}
@@ -317,9 +374,10 @@ func (a *App) DeleteDebugReport(id int64) error {
 	return a.store.deleteDebugReport(id)
 }
 
-// ResolveDebugReport removes a fixed report and leaves a read-once notice
-// behind, so the person who filed it hears the bug is resolved and can jump
-// to the page to review the fix. This is the MCP delete path; a withdrawal
+// ResolveDebugReport removes a fixed report and leaves its history entry
+// behind — unread, it doubles as the notice so the person who filed it hears
+// the bug is resolved; read, it stays as the record of when and under which
+// GitHub issue the fix landed. This is the MCP delete path; a withdrawal
 // from the Development tab uses DeleteDebugReport and stays silent.
 func (a *App) ResolveDebugReport(id int64) error {
 	if a.store == nil {
@@ -333,9 +391,13 @@ func (a *App) ResolveDebugReport(id int64) error {
 		return err
 	}
 	notice, err := a.store.insertFixNotice(FixNotice{
-		Title:      report.Title,
-		Route:      report.Route,
-		ResolvedAt: time.Now().UTC().Format(time.RFC3339),
+		ReportID:    report.ID,
+		Title:       report.Title,
+		Description: report.Description,
+		Route:       report.Route,
+		IssueURL:    report.IssueURL,
+		IssueNumber: report.IssueNumber,
+		ResolvedAt:  time.Now().UTC().Format(time.RFC3339),
 	})
 	if err != nil {
 		// The resolve itself succeeded; a lost notice is worth a log line,
@@ -362,12 +424,28 @@ func (a *App) ListFixNotices() []FixNotice {
 	return notices
 }
 
-// DismissFixNotice deletes a notice once it has been read.
+// DismissFixNotice marks a notice read. The entry stays in the resolution
+// history (see ListResolvedReports); only the status-bar notification goes.
 func (a *App) DismissFixNotice(id int64) error {
 	if a.store == nil {
 		return fmt.Errorf("store is not open")
 	}
-	return a.store.deleteFixNotice(id)
+	return a.store.markFixNoticeRead(id)
+}
+
+// ListResolvedReports returns the full resolution history, newest first —
+// every report resolved over MCP, with its GitHub issue reference and when
+// the fix landed.
+func (a *App) ListResolvedReports() []FixNotice {
+	if a.store == nil {
+		return []FixNotice{}
+	}
+	history, err := a.store.listResolvedReports()
+	if err != nil {
+		log.Printf("jax: ListResolvedReports: %v", err)
+		return []FixNotice{}
+	}
+	return history
 }
 
 // CountDebugReports returns how many debug reports are open.

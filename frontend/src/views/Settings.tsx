@@ -10,7 +10,7 @@ import {SkillsTab} from './settings/SkillsTab'
 import {StreamsTab} from './settings/StreamsTab'
 import {VideosTab} from './settings/VideosTab'
 
-type TabId =
+export type SettingsTab =
   | 'preferences'
   | 'services'
   | 'ai'
@@ -19,6 +19,8 @@ type TabId =
   | 'videos'
   | 'development'
   | 'about'
+
+type TabId = SettingsTab
 
 const TABS: {id: TabId; label: string}[] = [
   {id: 'preferences', label: 'Preferences'},
@@ -31,8 +33,8 @@ const TABS: {id: TabId; label: string}[] = [
   {id: 'about', label: 'About'},
 ]
 
-export function Settings() {
-  const [tab, setTab] = useState<TabId>('preferences')
+export function Settings({initialTab}: {initialTab?: SettingsTab}) {
+  const [tab, setTab] = useState<TabId>(initialTab ?? 'preferences')
 
   return (
     <div className="flex h-full flex-col">

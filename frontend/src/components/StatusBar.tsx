@@ -926,7 +926,7 @@ function FixNoticeChip({onOpen}: {onOpen: (notice: main.FixNotice) => void}) {
     <button
       type="button"
       onClick={read}
-      title={`“${first.title || 'Your bug report'}” was resolved — click to open the page it was filed on and clear this notice`}
+      title={`“${first.title || 'Your bug report'}” was resolved — click to open the report history and clear this notice`}
       className="inline-flex min-w-0 items-center gap-1.5 font-medium text-green-600 transition-colors hover:text-accent dark:text-green-400"
     >
       <BugOff size={12} aria-hidden />

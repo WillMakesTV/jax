@@ -14,6 +14,7 @@ import {
   DisconnectGitHub,
   GetGitHubConnection,
   ListDebugReports,
+  ListResolvedReports,
   PollGitHubDeviceAuth,
   SetGitHubRepo,
   StartGitHubDeviceAuth,
@@ -21,6 +22,7 @@ import {
 import {main} from '../../../wailsjs/go/models'
 import {GitHubIcon} from '../../components/brand/BrandIcons'
 import {DebugReportModal} from '../../components/DebugReportModal'
+import {openExternal} from '../../lib/browser'
 import {useDataChanged} from '../../lib/dataChanged'
 import {SETTING_KEYS, loadSetting, saveSetting} from '../../lib/settings'
 
@@ -56,6 +58,7 @@ export function DevelopmentTab() {
       <SkillToggleSection enabled={skillEnabled} onToggle={toggleSkill} />
       {skillEnabled && <GitHubSection />}
       <DebugReportsSection />
+      <ResolvedReportsSection />
     </div>
   )
 }
@@ -560,6 +563,16 @@ function DebugReportsSection() {
                       {new Date(r.createdAt).toLocaleDateString()}
                     </span>
                   </button>
+                  {r.issueUrl && (
+                    <button
+                      type="button"
+                      onClick={() => openExternal(r.issueUrl)}
+                      title={r.issueUrl}
+                      className="shrink-0 rounded-full bg-surface-hover px-2 py-0.5 text-xs font-medium text-fg-muted transition-colors hover:text-fg"
+                    >
+                      {r.issueNumber ? `#${r.issueNumber}` : 'issue'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
@@ -611,6 +624,109 @@ function DebugReportsSection() {
         report={editing}
         onSaved={reload}
       />
+    </section>
+  )
+}
+
+/**
+ * The resolution history: every report resolved over MCP, kept for good with
+ * its GitHub issue reference and when the fix landed. The bug-fixed notice
+ * in the status bar links here.
+ */
+function ResolvedReportsSection() {
+  const [history, setHistory] = useState<main.FixNotice[] | null>(null)
+  const [expanded, setExpanded] = useState<number | null>(null)
+
+  const reload = () => {
+    ListResolvedReports()
+      .then((h) => setHistory(h ?? []))
+      .catch(() => {})
+  }
+
+  useEffect(reload, [])
+  // Entries arrive when an AI client resolves a report over MCP.
+  useDataChanged(['dev_ai_debug_fixed'], reload)
+
+  if (!history || history.length === 0) return null
+
+  return (
+    <section
+      aria-labelledby="resolved-reports-heading"
+      className="rounded-xl border border-edge bg-surface p-6"
+    >
+      <h2
+        id="resolved-reports-heading"
+        className="text-base font-semibold text-fg"
+      >
+        Resolved reports
+      </h2>
+      <p className="mt-1 text-sm text-fg-muted">
+        Every report the AI workflow has fixed, with the GitHub issue that
+        tracked it and when the fix landed.
+      </p>
+
+      <ul className="mt-4 flex flex-col divide-y divide-edge">
+        {history.map((n) => {
+          const open = expanded === n.id
+          return (
+            <li key={n.id} className="py-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setExpanded(open ? null : n.id)}
+                  aria-expanded={open}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                >
+                  {open ? (
+                    <ChevronDown
+                      size={16}
+                      aria-hidden
+                      className="shrink-0 text-fg-muted"
+                    />
+                  ) : (
+                    <ChevronRight
+                      size={16}
+                      aria-hidden
+                      className="shrink-0 text-fg-muted"
+                    />
+                  )}
+                  <Check
+                    size={14}
+                    aria-hidden
+                    className="shrink-0 text-green-600 dark:text-green-400"
+                  />
+                  <span className="truncate text-sm font-medium text-fg">
+                    {n.title || n.description}
+                  </span>
+                  {n.route && (
+                    <span className="shrink-0 rounded-full bg-surface-hover px-2 py-0.5 text-xs text-fg-muted">
+                      {n.route}
+                    </span>
+                  )}
+                  <span className="ml-auto shrink-0 text-xs text-fg-muted">
+                    {new Date(n.resolvedAt).toLocaleDateString()}
+                  </span>
+                </button>
+                {n.issueUrl && (
+                  <button
+                    type="button"
+                    onClick={() => openExternal(n.issueUrl)}
+                    title={n.issueUrl}
+                    className="shrink-0 rounded-full bg-surface-hover px-2 py-0.5 text-xs font-medium text-fg-muted transition-colors hover:text-fg"
+                  >
+                    {n.issueNumber ? `#${n.issueNumber}` : 'issue'}
+                  </button>
+                )}
+              </div>
+              {open && (
+                <p className="mt-2 ml-6 whitespace-pre-wrap text-sm text-fg-muted">
+                  {n.description || 'No description was recorded.'}
+                </p>
+              )}
+            </li>
+          )
+        })}
+      </ul>
     </section>
   )
 }
