@@ -247,11 +247,11 @@ export function PlanVideo({
       </button>
 
       {step === 1 ? (
-        /* Step 1: the format, nothing else. */
+        /* Step 1: the format and the idea. */
         <div className="flex max-w-2xl flex-col gap-5">
           <p className="text-sm text-fg-muted">
-            Plan a produced video — start by picking its shape. The content
-            comes next.
+            Plan a produced video — pick its shape and describe the idea. The
+            content comes next.
           </p>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -291,6 +291,20 @@ export function PlanVideo({
             ))}
           </div>
 
+          <div>
+            <label htmlFor="video-plan-idea" className={labelCls}>
+              Video idea
+            </label>
+            <textarea
+              id="video-plan-idea"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              rows={2}
+              placeholder="A short description of the video — e.g. top 5 moments from the launch stream"
+              className={`${field} resize-none`}
+            />
+          </div>
+
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -316,22 +330,9 @@ export function PlanVideo({
           className="flex max-w-2xl flex-col gap-5"
         >
           <p className="text-sm text-fg-muted">
-            A {format === 'short' ? 'short' : 'long'}-form video — give it a
-            title and pick what it&apos;s made from.
+            A {format === 'short' ? 'short' : 'long'}-form video — pick what
+            it&apos;s made from.
           </p>
-
-          <div>
-            <label htmlFor="video-plan-title" className={labelCls}>
-              Title
-            </label>
-            <input
-              id="video-plan-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Top 5 moments from the launch stream"
-              className={field}
-            />
-          </div>
 
           {/* No description or thumbnail here: both belong to publishing, and
               are drafted (with AI) on the plan's Publish tab against the video
