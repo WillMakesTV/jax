@@ -271,11 +271,16 @@ function OverviewSection({
 
   // Adopt the freshly reloaded record (see ProjectDetails) once, but never
   // clobber in-progress typing: only sync when the record itself changes.
+  // A saved repository reads as a link until Edit is clicked (like the
+  // title); changes are committed by the inline Save, never implicitly.
+  const [editingRepo, setEditingRepo] = useState(false)
+
   const [synced, setSynced] = useState(project)
   if (project !== synced) {
     setSynced(project)
     setDescription(project.description)
     setRepository(project.repository ?? '')
+    setEditingRepo(false)
   }
 
   // Assets/docs are preserved by the backend regardless of what is sent.
@@ -376,10 +381,14 @@ function OverviewSection({
 
   const dirty = description !== project.description
 
+  const savedRepository = (project.repository ?? '').trim()
+  const repoDirty = repository.trim() !== savedRepository
+
   const saveRepository = async () => {
     setError('')
     try {
       await persist({repository: repository.trim()})
+      setEditingRepo(false)
     } catch (err) {
       setError(
         err instanceof Error && err.message
@@ -411,29 +420,69 @@ function OverviewSection({
 
         <div>
           <span className={labelCls}>Repository</span>
-          <div className="flex items-center gap-2">
-            <input
-              value={repository}
-              onChange={(e) => setRepository(e.target.value)}
-              onBlur={() => {
-                if (repository.trim() !== (project.repository ?? '').trim())
-                  void saveRepository()
-              }}
-              placeholder="owner/repo or a full URL"
-              className={field}
-            />
-            {repoURL && (
+          {savedRepository && !editingRepo ? (
+            // Read-only until Edit, like the title.
+            <div className="group flex items-center gap-2">
+              <div className="flex h-9 min-w-0 flex-1 items-center rounded-lg border border-edge bg-surface px-3">
+                <span className="truncate text-sm text-fg">
+                  {savedRepository}
+                </span>
+              </div>
               <button
                 type="button"
-                onClick={() => openExternal(repoURL)}
-                title={`Open ${repoURL}`}
-                aria-label="Open the repository"
+                onClick={() => setEditingRepo(true)}
+                title="Edit the repository"
+                aria-label="Edit the repository"
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-edge bg-surface text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
               >
-                <ExternalLink size={14} aria-hidden />
+                <Pencil size={14} aria-hidden />
               </button>
-            )}
-          </div>
+              {repoURL && (
+                <button
+                  type="button"
+                  onClick={() => openExternal(repoURL)}
+                  title={`Open ${repoURL}`}
+                  aria-label="Open the repository"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-edge bg-surface text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                >
+                  <ExternalLink size={14} aria-hidden />
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <input
+                value={repository}
+                onChange={(e) => setRepository(e.target.value)}
+                placeholder="owner/repo or a full URL"
+                autoFocus={editingRepo}
+                className={field}
+              />
+              {repoDirty && (
+                <button
+                  type="button"
+                  onClick={() => void saveRepository()}
+                  className="h-9 shrink-0 rounded-lg bg-accent px-4 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90"
+                >
+                  Save
+                </button>
+              )}
+              {editingRepo && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRepository(project.repository ?? '')
+                    setEditingRepo(false)
+                  }}
+                  title="Cancel"
+                  aria-label="Cancel editing the repository"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-edge bg-surface text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                >
+                  <X size={14} aria-hidden />
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <div>
