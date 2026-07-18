@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   Check,
   CornerDownRight,
   ExternalLink,
@@ -91,15 +90,7 @@ export function ProjectDetails({
 
   return (
     <div className="flex flex-col">
-      <button
-        type="button"
-        onClick={onBack}
-        className="mb-4 inline-flex w-fit items-center gap-1.5 text-sm text-fg-muted transition-colors hover:text-fg"
-      >
-        <ArrowLeft size={16} aria-hidden />
-        Back to Projects
-      </button>
-
+      {/* No local back link: the top bar's global back covers it. */}
       {!proj ? (
         <CreateProjectForm onCreated={setProj} onCancel={onBack} />
       ) : (

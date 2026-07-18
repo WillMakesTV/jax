@@ -84,8 +84,11 @@ export function SponsorDetails({
         <CreateSponsorForm onCreated={setSp} onCancel={onBack} />
       ) : (
         <div className="flex flex-col gap-8 lg:flex-row">
-          {/* Branding with the campaigns beneath it, to the left of the
-              description column. */}
+          {/* Name, website, and description on the left; branding with the
+              campaigns beneath it on the right. */}
+          <div className="min-w-0 max-w-3xl flex-1">
+            <DetailsSection sponsor={sp} onChange={setSp} />
+          </div>
           <aside className="flex w-full shrink-0 flex-col gap-6 lg:w-80">
             <BrandingSection sponsor={sp} onChange={setSp} />
             <CampaignsSection
@@ -94,9 +97,6 @@ export function SponsorDetails({
               onOpenCampaign={onOpenCampaign}
             />
           </aside>
-          <div className="min-w-0 max-w-3xl flex-1">
-            <DetailsSection sponsor={sp} onChange={setSp} />
-          </div>
         </div>
       )}
     </div>

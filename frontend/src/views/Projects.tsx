@@ -2,6 +2,7 @@ import {FileText, FolderKanban, Paperclip, Plus} from 'lucide-react'
 import {useCallback, useEffect, useState} from 'react'
 import {GetProjects} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
+import {Markdown} from '../components/markdown/Markdown'
 import {PageHeader} from '../components/PageHeader'
 import {useDataChanged} from '../lib/dataChanged'
 
@@ -69,7 +70,8 @@ export function Projects({
           </div>
         </button>
       ) : (
-        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        // Scale with the viewport: 3 across on medium, 5 across on wide.
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
           {projects.map((p) => (
             <ProjectCard
               key={p.id}
@@ -130,9 +132,9 @@ function ProjectCard({
           </div>
 
           {project.description && (
-            <p className="mt-2 line-clamp-2 text-sm text-fg-muted">
-              {project.description}
-            </p>
+            <div className="mt-2 line-clamp-3 text-sm text-fg-muted">
+              <Markdown>{project.description}</Markdown>
+            </div>
           )}
 
           <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-3">
