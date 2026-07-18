@@ -269,6 +269,22 @@ func (a *App) GenerateVideoPlanThumbnail(planID, title, description, feedback, c
 	)
 }
 
+// GenerateProjectThumbnail creates (or revises) a project's cover image from
+// its title and description. Same engine as the plan thumbnails; the context
+// note keeps stream-specific dressing (LIVE badges, platform UI) out of what
+// is a project cover, not a broadcast card.
+func (a *App) GenerateProjectThumbnail(projectID, feedback, currentFile string) (PlanThumbnail, error) {
+	for _, p := range a.getProjects() {
+		if p.ID == projectID {
+			return a.generateThumbnail(p.Title, p.Description,
+				"This is the cover image of a project — a body of work such as a launch, build, or campaign — "+
+					"not a stream thumbnail: no LIVE badges, viewer counts, or platform UI.",
+				feedback, currentFile, landscapeThumb)
+		}
+	}
+	return PlanThumbnail{}, fmt.Errorf("no project with id %q", projectID)
+}
+
 // generateThumbnail is the shared thumbnail engine behind plan and
 // past-stream thumbnails: the "stream-thumbnails" skill brief, the title and
 // description, an optional caller context section (e.g. "this is a finished

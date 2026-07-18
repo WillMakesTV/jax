@@ -1444,6 +1444,8 @@ export namespace main {
 	    title: string;
 	    description: string;
 	    repository: string;
+	    thumbnailFile: string;
+	    thumbnailUrl: string;
 	    createdAt: string;
 	    assets: ProjectAsset[];
 	    docs: ProjectDoc[];
@@ -1458,6 +1460,8 @@ export namespace main {
 	        this.title = source["title"];
 	        this.description = source["description"];
 	        this.repository = source["repository"];
+	        this.thumbnailFile = source["thumbnailFile"];
+	        this.thumbnailUrl = source["thumbnailUrl"];
 	        this.createdAt = source["createdAt"];
 	        this.assets = this.convertValues(source["assets"], ProjectAsset);
 	        this.docs = this.convertValues(source["docs"], ProjectDoc);

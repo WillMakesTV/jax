@@ -54,10 +54,15 @@ type Project struct {
 	Description string `json:"description"`
 	// Repository is the project's code home ("owner/repo" or a full URL);
 	// optional, shown as a link on the Overview.
-	Repository string         `json:"repository"`
-	CreatedAt  string         `json:"createdAt"`
-	Assets     []ProjectAsset `json:"assets"`
-	Docs       []ProjectDoc   `json:"docs"`
+	Repository string `json:"repository"`
+	// ThumbnailFile is the project's cover image, stored as a bare file name
+	// in the shared plan-thumbs folder (uploaded or AI-generated);
+	// ThumbnailURL is derived per launch, never persisted.
+	ThumbnailFile string         `json:"thumbnailFile"`
+	ThumbnailURL  string         `json:"thumbnailUrl"`
+	CreatedAt     string         `json:"createdAt"`
+	Assets        []ProjectAsset `json:"assets"`
+	Docs          []ProjectDoc   `json:"docs"`
 }
 
 // projectsDir returns the root directory holding per-project files
@@ -104,6 +109,7 @@ func (a *App) fillAssetURLs(p *Project) {
 		p.Assets[i].MediaURL = base + projectFilesPrefix +
 			url.PathEscape(p.ID) + "/assets/" + url.PathEscape(p.Assets[i].Name)
 	}
+	p.ThumbnailURL = a.planThumbURL(p.ThumbnailFile)
 }
 
 // getProjects reads the raw stored project list (no URL filling). Never nil.
@@ -141,6 +147,10 @@ func (a *App) SaveProject(p Project) (Project, error) {
 	if strings.TrimSpace(p.Title) == "" {
 		return p, fmt.Errorf("a title is required")
 	}
+	// Stored as a bare file name in the plan-thumbs folder; the URL is
+	// derived per launch, never persisted.
+	p.ThumbnailFile = sanitizeThumbFile(p.ThumbnailFile)
+	p.ThumbnailURL = ""
 
 	all := a.getProjects()
 	if p.ID == "" {

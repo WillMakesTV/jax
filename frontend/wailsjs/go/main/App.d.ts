@@ -112,6 +112,8 @@ export function GeneratePlanSuggestion(arg1:string,arg2:string,arg3:number):Prom
 
 export function GeneratePlanThumbnail(arg1:string,arg2:string,arg3:string,arg4:string):Promise<main.PlanThumbnail>;
 
+export function GenerateProjectThumbnail(arg1:string,arg2:string,arg3:string):Promise<main.PlanThumbnail>;
+
 export function GenerateStreamDescription(arg1:string,arg2:string,arg3:string,arg4:number):Promise<string>;
 
 export function GenerateStreamOutline(arg1:string,arg2:number):Promise<main.StreamOutline>;

@@ -222,6 +222,10 @@ export function GeneratePlanThumbnail(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['GeneratePlanThumbnail'](arg1, arg2, arg3, arg4);
 }
 
+export function GenerateProjectThumbnail(arg1, arg2, arg3) {
+  return window['go']['main']['App']['GenerateProjectThumbnail'](arg1, arg2, arg3);
+}
+
 export function GenerateStreamDescription(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['GenerateStreamDescription'](arg1, arg2, arg3, arg4);
 }
