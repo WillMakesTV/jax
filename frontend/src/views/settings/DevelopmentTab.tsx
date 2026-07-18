@@ -58,7 +58,6 @@ export function DevelopmentTab() {
       <SkillToggleSection enabled={skillEnabled} onToggle={toggleSkill} />
       {skillEnabled && <GitHubSection />}
       <DebugReportsSection />
-      <ResolvedReportsSection />
     </div>
   )
 }
@@ -446,9 +445,15 @@ function GitHubSection() {
   )
 }
 
-/** The open debug reports: expandable descriptions, edit, and delete. */
+/**
+ * The debug reports, in two tabs: Open (expandable descriptions, edit, and
+ * delete) and Resolved — the permanent history of fixed reports with their
+ * GitHub issue references.
+ */
 function DebugReportsSection() {
+  const [tab, setTab] = useState<'open' | 'resolved'>('open')
   const [reports, setReports] = useState<main.DebugReport[] | null>(null)
+  const [history, setHistory] = useState<main.FixNotice[]>([])
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState<number | null>(null)
   // The report being edited, or undefined when the modal is closed.
@@ -461,12 +466,16 @@ function DebugReportsSection() {
     ListDebugReports()
       .then(setReports)
       .catch((err) => setError(String(err)))
+    ListResolvedReports()
+      .then((h) => setHistory(h ?? []))
+      .catch(() => {})
   }
 
   useEffect(reload, [])
   // Reports come and go behind this page's back — filed from the top-bar
-  // debug button, resolved by an AI client over MCP — so track the queue.
-  useDataChanged(['dev_ai_debug'], reload)
+  // debug button, resolved by an AI client over MCP — so track both the
+  // queue and the history it feeds.
+  useDataChanged(['dev_ai_debug', 'dev_ai_debug_fixed'], reload)
 
   const remove = async (id: number) => {
     try {
@@ -493,10 +502,20 @@ function DebugReportsSection() {
             Debug reports
           </h2>
           <p className="mt-1 text-sm text-fg-muted">
-            Bugs filed from the <Bug size={13} aria-hidden className="inline" />{' '}
-            button in the top bar. Each stays in the queue until an AI client
-            (or you) resolves and removes it — an empty list means nothing is
-            known to be broken.
+            {tab === 'open' ? (
+              <>
+                Bugs filed from the{' '}
+                <Bug size={13} aria-hidden className="inline" /> button in the
+                top bar. Each stays in the queue until an AI client (or you)
+                resolves and removes it — an empty list means nothing is known
+                to be broken.
+              </>
+            ) : (
+              <>
+                Every report the AI workflow has fixed, with the GitHub issue
+                that tracked it and when the fix landed.
+              </>
+            )}
           </p>
         </div>
         <button
@@ -511,15 +530,60 @@ function DebugReportsSection() {
         </button>
       </div>
 
+      <div
+        role="tablist"
+        aria-label="Debug report lists"
+        className="mt-4 flex w-fit items-center gap-1 rounded-lg border border-edge bg-bg p-1"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'open'}
+          onClick={() => setTab('open')}
+          className={clsx(
+            'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+            tab === 'open'
+              ? 'bg-accent text-accent-fg'
+              : 'text-fg-muted hover:bg-surface-hover hover:text-fg',
+          )}
+        >
+          <Bug size={14} aria-hidden />
+          Open{reports && reports.length > 0 ? ` (${reports.length})` : ''}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'resolved'}
+          onClick={() => setTab('resolved')}
+          className={clsx(
+            'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+            tab === 'resolved'
+              ? 'bg-accent text-accent-fg'
+              : 'text-fg-muted hover:bg-surface-hover hover:text-fg',
+          )}
+        >
+          <Check size={14} aria-hidden />
+          Resolved{history.length > 0 ? ` (${history.length})` : ''}
+        </button>
+      </div>
+
       {error && (
         <p className="mt-3 text-xs text-red-600 dark:text-red-400">{error}</p>
       )}
 
-      {reports && reports.length === 0 && (
+      {tab === 'open' && reports && reports.length === 0 && (
         <p className="mt-4 text-sm text-fg-muted">No open reports.</p>
       )}
 
-      {reports && reports.length > 0 && (
+      {tab === 'resolved' && history.length === 0 && (
+        <p className="mt-4 text-sm text-fg-muted">Nothing resolved yet.</p>
+      )}
+
+      {tab === 'resolved' && history.length > 0 && (
+        <ResolvedReportsList history={history} />
+      )}
+
+      {tab === 'open' && reports && reports.length > 0 && (
         <ul className="mt-4 flex flex-col divide-y divide-edge">
           {reports.map((r) => {
             const open = expanded === r.id
@@ -629,104 +693,76 @@ function DebugReportsSection() {
 }
 
 /**
- * The resolution history: every report resolved over MCP, kept for good with
- * its GitHub issue reference and when the fix landed. The bug-fixed notice
- * in the status bar links here.
+ * The resolution history rows: every report resolved over MCP, kept for good
+ * with its GitHub issue reference and when the fix landed. Shown under the
+ * Debug reports section's Resolved tab; the bug-fixed notice in the status
+ * bar links here.
  */
-function ResolvedReportsSection() {
-  const [history, setHistory] = useState<main.FixNotice[] | null>(null)
+function ResolvedReportsList({history}: {history: main.FixNotice[]}) {
   const [expanded, setExpanded] = useState<number | null>(null)
 
-  const reload = () => {
-    ListResolvedReports()
-      .then((h) => setHistory(h ?? []))
-      .catch(() => {})
-  }
-
-  useEffect(reload, [])
-  // Entries arrive when an AI client resolves a report over MCP.
-  useDataChanged(['dev_ai_debug_fixed'], reload)
-
-  if (!history || history.length === 0) return null
-
   return (
-    <section
-      aria-labelledby="resolved-reports-heading"
-      className="rounded-xl border border-edge bg-surface p-6"
-    >
-      <h2
-        id="resolved-reports-heading"
-        className="text-base font-semibold text-fg"
-      >
-        Resolved reports
-      </h2>
-      <p className="mt-1 text-sm text-fg-muted">
-        Every report the AI workflow has fixed, with the GitHub issue that
-        tracked it and when the fix landed.
-      </p>
-
-      <ul className="mt-4 flex flex-col divide-y divide-edge">
-        {history.map((n) => {
-          const open = expanded === n.id
-          return (
-            <li key={n.id} className="py-2">
-              <div className="flex items-center gap-2">
+    <ul className="mt-4 flex flex-col divide-y divide-edge">
+      {history.map((n) => {
+        const open = expanded === n.id
+        return (
+          <li key={n.id} className="py-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setExpanded(open ? null : n.id)}
+                aria-expanded={open}
+                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+              >
+                {open ? (
+                  <ChevronDown
+                    size={16}
+                    aria-hidden
+                    className="shrink-0 text-fg-muted"
+                  />
+                ) : (
+                  <ChevronRight
+                    size={16}
+                    aria-hidden
+                    className="shrink-0 text-fg-muted"
+                  />
+                )}
+                <Check
+                  size={14}
+                  aria-hidden
+                  className="shrink-0 text-green-600 dark:text-green-400"
+                />
+                <span className="truncate text-sm font-medium text-fg">
+                  {n.title || n.description}
+                </span>
+                {n.route && (
+                  <span className="shrink-0 rounded-full bg-surface-hover px-2 py-0.5 text-xs text-fg-muted">
+                    {n.route}
+                  </span>
+                )}
+                <span className="ml-auto shrink-0 text-xs text-fg-muted">
+                  {new Date(n.resolvedAt).toLocaleDateString()}
+                </span>
+              </button>
+              {n.issueUrl && (
                 <button
                   type="button"
-                  onClick={() => setExpanded(open ? null : n.id)}
-                  aria-expanded={open}
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  onClick={() => openExternal(n.issueUrl)}
+                  title={n.issueUrl}
+                  className="shrink-0 rounded-full bg-surface-hover px-2 py-0.5 text-xs font-medium text-fg-muted transition-colors hover:text-fg"
                 >
-                  {open ? (
-                    <ChevronDown
-                      size={16}
-                      aria-hidden
-                      className="shrink-0 text-fg-muted"
-                    />
-                  ) : (
-                    <ChevronRight
-                      size={16}
-                      aria-hidden
-                      className="shrink-0 text-fg-muted"
-                    />
-                  )}
-                  <Check
-                    size={14}
-                    aria-hidden
-                    className="shrink-0 text-green-600 dark:text-green-400"
-                  />
-                  <span className="truncate text-sm font-medium text-fg">
-                    {n.title || n.description}
-                  </span>
-                  {n.route && (
-                    <span className="shrink-0 rounded-full bg-surface-hover px-2 py-0.5 text-xs text-fg-muted">
-                      {n.route}
-                    </span>
-                  )}
-                  <span className="ml-auto shrink-0 text-xs text-fg-muted">
-                    {new Date(n.resolvedAt).toLocaleDateString()}
-                  </span>
+                  {n.issueNumber ? `#${n.issueNumber}` : 'issue'}
                 </button>
-                {n.issueUrl && (
-                  <button
-                    type="button"
-                    onClick={() => openExternal(n.issueUrl)}
-                    title={n.issueUrl}
-                    className="shrink-0 rounded-full bg-surface-hover px-2 py-0.5 text-xs font-medium text-fg-muted transition-colors hover:text-fg"
-                  >
-                    {n.issueNumber ? `#${n.issueNumber}` : 'issue'}
-                  </button>
-                )}
-              </div>
-              {open && (
-                <p className="mt-2 ml-6 whitespace-pre-wrap text-sm text-fg-muted">
-                  {n.description || 'No description was recorded.'}
-                </p>
               )}
-            </li>
-          )
-        })}
-      </ul>
-    </section>
+            </div>
+            {open && (
+              <p className="mt-2 ml-6 whitespace-pre-wrap text-sm text-fg-muted">
+                {n.description || 'No description was recorded.'}
+              </p>
+            )}
+          </li>
+        )
+      })}
+    </ul>
   )
 }
