@@ -398,6 +398,8 @@ export function SetBrandGuidelines(arg1:string):Promise<void>;
 
 export function SetGitHubRepo(arg1:string):Promise<void>;
 
+export function SetProjectThumbnail(arg1:string,arg2:string):Promise<main.Project>;
+
 export function SetSetting(arg1:string,arg2:string):Promise<void>;
 
 export function SetStreamDescription(arg1:string,arg2:string):Promise<void>;

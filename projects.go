@@ -229,6 +229,17 @@ func (a *App) mutateProject(id string, fn func(p *Project) error) (Project, erro
 	return Project{}, fmt.Errorf("that project no longer exists")
 }
 
+// SetProjectThumbnail records a project's cover image (a bare file name in
+// the shared plan-thumbs folder) and returns the updated project. Split out
+// from SaveProject so a background generation can land its result without
+// racing edits to the other fields.
+func (a *App) SetProjectThumbnail(projectID, file string) (Project, error) {
+	return a.mutateProject(projectID, func(p *Project) error {
+		p.ThumbnailFile = sanitizeThumbFile(file)
+		return nil
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Assets
 // ---------------------------------------------------------------------------

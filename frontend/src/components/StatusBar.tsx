@@ -8,6 +8,7 @@ import {
   Eye,
   EyeOff,
   Gauge,
+  Image as ImageIcon,
   Loader2,
   MessageSquare,
   Mic,
@@ -60,6 +61,11 @@ import {
   type PlanAiNotice,
 } from '../plans/PlanAiProvider'
 import {
+  useProjectThumbs,
+  type ProjectThumbJob,
+  type ProjectThumbNotice,
+} from '../projects/ProjectThumbsProvider'
+import {
   useVodTranscribe,
   type VodJob,
   type VodNotice,
@@ -81,6 +87,8 @@ interface StatusBarProps {
   onOpenClipIdeas: (startedAt: string) => void
   /** Open the Publish tab of the plan whose thumbnail/listing is generating. */
   onOpenPlanAi: (planId: string) => void
+  /** Open the project whose cover image is generating. */
+  onOpenProjectThumb: (projectId: string) => void
   /** Open the Editor tab of the video plan with the active edit session. */
   onOpenEditSession: (planId: string) => void
   /** Open the past stream the post-stream wrap-up is processing, on the tab
@@ -103,6 +111,7 @@ export function StatusBar({
   onOpenOutline,
   onOpenClipIdeas,
   onOpenPlanAi,
+  onOpenProjectThumb,
   onOpenEditSession,
   onOpenPostStream,
   onOpenFixNotice,
@@ -116,6 +125,7 @@ export function StatusBar({
   const outline = useOutlineJobs()
   const clipIdeas = useClipIdeas()
   const planAi = usePlanAi()
+  const projectThumbs = useProjectThumbs()
   const editSession = useEditSession()
 
   // Prefer the designated primary mic; otherwise "on" when any mic is
@@ -306,6 +316,15 @@ export function StatusBar({
         jobs={planAi.jobs}
         notice={planAi.notice}
         onOpen={onOpenPlanAi}
+      />
+
+      {/* AI cover-image generation for a project; click through to the
+          project's page. */}
+      <ProjectThumbStatus
+        jobs={projectThumbs.jobs}
+        notice={projectThumbs.notice}
+        onOpen={onOpenProjectThumb}
+        onDismiss={projectThumbs.dismissNotice}
       />
 
       {/* Post-stream wrap-up pipeline (download → transcribe → outline →
@@ -596,6 +615,69 @@ function PlanAiStatus({
       }
     >
       <WandSparkles size={12} aria-hidden />
+      <span className="max-w-[22rem] truncate">
+        {notice.state === 'done' ? '✓ ' : ''}
+        {notice.detail}
+      </span>
+    </button>
+  )
+}
+
+/**
+ * Project cover-image chip: while the AI paints a project's cover the chip
+ * jumps back to the project's page; the run is owned by its provider, so
+ * navigating away costs nothing. The done notice goes green and lingers,
+ * still clickable, so the finished image is one click away.
+ */
+function ProjectThumbStatus({
+  jobs,
+  notice,
+  onOpen,
+  onDismiss,
+}: {
+  jobs: ProjectThumbJob[]
+  notice: ProjectThumbNotice | null
+  onOpen: (projectId: string) => void
+  onDismiss: () => void
+}) {
+  if (jobs.length > 0) {
+    const label =
+      jobs.length === 1
+        ? `Generating project image — ${jobs[0].title || 'project'}`
+        : `Generating ${jobs.length} project images`
+    return (
+      <button
+        type="button"
+        onClick={() => onOpen(jobs[0].projectId)}
+        title="Open the project — generation keeps going in the background"
+        className="inline-flex min-w-0 items-center gap-1.5 font-medium text-fg transition-colors hover:text-accent"
+      >
+        <Loader2 size={12} aria-hidden className="animate-spin" />
+        <span className="max-w-[22rem] truncate">{label}</span>
+      </button>
+    )
+  }
+
+  if (!notice) return null
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onDismiss()
+        onOpen(notice.projectId)
+      }}
+      title={
+        notice.state === 'done'
+          ? 'Open the project to see the generated image'
+          : notice.detail
+      }
+      className={
+        notice.state === 'error'
+          ? 'inline-flex min-w-0 items-center gap-1.5 font-medium text-red-500 transition-colors hover:text-accent dark:text-red-400'
+          : 'inline-flex min-w-0 items-center gap-1.5 font-medium text-green-600 transition-colors hover:text-accent dark:text-green-400'
+      }
+    >
+      <ImageIcon size={12} aria-hidden />
       <span className="max-w-[22rem] truncate">
         {notice.state === 'done' ? '✓ ' : ''}
         {notice.detail}

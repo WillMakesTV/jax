@@ -2,6 +2,7 @@ import {useCallback, useEffect, useMemo, useState} from 'react'
 import {
   GetDownloads,
   GetPastStreams,
+  GetProjects,
   GetVideoPlans,
 } from '../wailsjs/go/main/App'
 import {main} from '../wailsjs/go/models'
@@ -430,6 +431,22 @@ function App() {
     [navigate],
   )
 
+  // Status-bar chip for a project's cover-image generation: resolve the
+  // project by id and open its page.
+  const openProjectById = useCallback(
+    async (projectId: string) => {
+      try {
+        const projects = await GetProjects()
+        const project = (projects ?? []).find((p) => p.id === projectId)
+        if (!project) return
+        navigate({view: 'project-details', project})
+      } catch {
+        // Lookup failed; stay where we are.
+      }
+    },
+    [navigate],
+  )
+
   // Mouse buttons 4/5 (back/forward) navigate history.
   useEffect(() => {
     const onMouseUp = (e: MouseEvent) => {
@@ -757,6 +774,7 @@ function App() {
           void openStreamByStart(startedAt, 'clips')
         }
         onOpenPlanAi={(planId) => void openVideoPlanById(planId, 'publish')}
+        onOpenProjectThumb={(projectId) => void openProjectById(projectId)}
         onOpenEditSession={(planId) => void openVideoPlanById(planId, 'editor')}
         onOpenPostStream={(startedAt, streamTab) =>
           void openStreamByStart(startedAt, streamTab)

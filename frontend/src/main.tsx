@@ -14,6 +14,7 @@ import {DownloadProvider} from './downloads/DownloadProvider'
 import {OutlineProvider} from './outline/OutlineProvider'
 import {ClipIdeasProvider} from './clips/ClipIdeasProvider'
 import {PlanAiProvider} from './plans/PlanAiProvider'
+import {ProjectThumbsProvider} from './projects/ProjectThumbsProvider'
 import {EditSessionProvider} from './editor/EditSessionProvider'
 
 const container = document.getElementById('root')
@@ -34,9 +35,11 @@ root.render(
                                             <OutlineProvider>
                                                 <ClipIdeasProvider>
                                                     <PlanAiProvider>
-                                                        <EditSessionProvider>
-                                                            <App/>
-                                                        </EditSessionProvider>
+                                                        <ProjectThumbsProvider>
+                                                            <EditSessionProvider>
+                                                                <App/>
+                                                            </EditSessionProvider>
+                                                        </ProjectThumbsProvider>
                                                     </PlanAiProvider>
                                                 </ClipIdeasProvider>
                                             </OutlineProvider>

@@ -794,6 +794,10 @@ export function SetGitHubRepo(arg1) {
   return window['go']['main']['App']['SetGitHubRepo'](arg1);
 }
 
+export function SetProjectThumbnail(arg1, arg2) {
+  return window['go']['main']['App']['SetProjectThumbnail'](arg1, arg2);
+}
+
 export function SetSetting(arg1, arg2) {
   return window['go']['main']['App']['SetSetting'](arg1, arg2);
 }
