@@ -13,6 +13,7 @@ import {VodTranscribeProvider} from './transcript/VodTranscribeProvider'
 import {DownloadProvider} from './downloads/DownloadProvider'
 import {OutlineProvider} from './outline/OutlineProvider'
 import {ClipIdeasProvider} from './clips/ClipIdeasProvider'
+import {PlanAiProvider} from './plans/PlanAiProvider'
 import {EditSessionProvider} from './editor/EditSessionProvider'
 
 const container = document.getElementById('root')
@@ -32,9 +33,11 @@ root.render(
                                         <VodTranscribeProvider>
                                             <OutlineProvider>
                                                 <ClipIdeasProvider>
-                                                    <EditSessionProvider>
-                                                        <App/>
-                                                    </EditSessionProvider>
+                                                    <PlanAiProvider>
+                                                        <EditSessionProvider>
+                                                            <App/>
+                                                        </EditSessionProvider>
+                                                    </PlanAiProvider>
                                                 </ClipIdeasProvider>
                                             </OutlineProvider>
                                         </VodTranscribeProvider>

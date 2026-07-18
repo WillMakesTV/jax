@@ -30,7 +30,11 @@ import {
 } from '../components/PlanThumbnailEditor'
 import {pushEpisodeText} from '../lib/smartSources'
 import {END_ROUTINE, START_ROUTINE, runStreamRoutine} from '../obs/routines'
-import {anyChannelConnected, platformName, type ServiceId} from '../services/services'
+import {
+  anyChannelConnected,
+  platformName,
+  type ServiceId,
+} from '../services/services'
 import {useServices} from '../services/ServicesProvider'
 import {useLiveData} from '../live/LiveDataProvider'
 
@@ -52,16 +56,18 @@ import {useLiveData} from '../live/LiveDataProvider'
 export function BroadcastPlan({
   plan,
   onBack,
+  onEdit,
 }: {
   plan: main.PlannedStream
   onBack: () => void
+  /** Open this plan's edit form (title, series, channels, description). */
+  onEdit: (plan: main.PlannedStream) => void
 }) {
   const {statuses, obsRequest} = useServices()
   const {obs, refreshObs, refreshPlatforms} = useLiveData()
 
   const obsConnected = statuses.obs.connected
-  const channelConnected =
-    anyChannelConnected(statuses)
+  const channelConnected = anyChannelConnected(statuses)
   const streaming = Boolean(obs?.outputActive)
 
   const [seriesTitle, setSeriesTitle] = useState('')
@@ -125,7 +131,9 @@ export function BroadcastPlan({
         .catch(() => {})
     }
     GetPlanSessions()
-      .then((s) => setSession((s ?? []).find((x) => x.planId === plan.id) ?? null))
+      .then((s) =>
+        setSession((s ?? []).find((x) => x.planId === plan.id) ?? null),
+      )
       .catch(() => {})
     try {
       setInfoStatus((await GetPlanInfoStatus(plan.id)) ?? [])
@@ -149,8 +157,7 @@ export function BroadcastPlan({
   const checkingInfo = infoStatus === null
   const infoReady = !checkingInfo && mismatches.length === 0
 
-  const canGoLive =
-    obsConnected && channelConnected && !streaming && infoReady
+  const canGoLive = obsConnected && channelConnected && !streaming && infoReady
   // This plan is the broadcast on the air: its session is still open while
   // OBS streams. The page's primary action is then Stop Stream.
   const liveWithThisPlan =
@@ -314,14 +321,24 @@ export function BroadcastPlan({
 
   return (
     <div className="flex flex-col">
-      <button
-        type="button"
-        onClick={onBack}
-        className="mb-4 inline-flex w-fit items-center gap-1.5 text-sm text-fg-muted transition-colors hover:text-fg"
-      >
-        <ArrowLeft size={16} aria-hidden />
-        Back to Broadcast
-      </button>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex w-fit items-center gap-1.5 text-sm text-fg-muted transition-colors hover:text-fg"
+        >
+          <ArrowLeft size={16} aria-hidden />
+          Back to Broadcast
+        </button>
+        <button
+          type="button"
+          onClick={() => onEdit(plan)}
+          className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-edge px-3 py-1.5 text-sm text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+        >
+          <Pencil size={14} aria-hidden />
+          Edit plan
+        </button>
+      </div>
 
       <div className="flex max-w-3xl flex-col gap-6">
         {/* The episode's identity on the left, the broadcast actions
@@ -344,125 +361,125 @@ export function BroadcastPlan({
               </h1>
             </header>
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-            {canConclude &&
-              (confirmConclude ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => void conclude()}
-                    disabled={busy !== ''}
-                    className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
-                  >
-                    {busy === 'conclude' ? 'Working…' : 'Confirm conclude'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmConclude(false)}
-                    disabled={busy !== ''}
-                    className="rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : confirmReset ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => void resetStream()}
-                    disabled={busy !== ''}
-                    className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
-                  >
-                    {busy === 'reset' ? 'Resetting…' : 'Confirm reset'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmReset(false)}
-                    disabled={busy !== ''}
-                    className="rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <>
-                  {/* A matched (session-less) broadcast has nothing to
-                      reset; only Conclude applies. */}
-                  {!session?.matched && (
+              {canConclude &&
+                (confirmConclude ? (
+                  <>
                     <button
                       type="button"
-                      onClick={() => setConfirmReset(true)}
+                      onClick={() => void conclude()}
                       disabled={busy !== ''}
-                      title="False start? Forget this broadcast — sessions and go-live assignments are cleared, the plan stays for a future stream."
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
+                      className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
                     >
-                      <RotateCcw size={14} aria-hidden />
-                      Reset broadcast
+                      {busy === 'conclude' ? 'Working…' : 'Confirm conclude'}
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setConfirmConclude(true)}
-                    disabled={busy !== ''}
-                    title="Wrap this episode up: keep its details on the past stream and remove the plan."
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-semibold text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
-                  >
-                    <CheckCircle2 size={14} aria-hidden />
-                    Conclude episode
-                  </button>
-                </>
-              ))}
-            {/* One primary action at a time: on the air with this plan offers
+                    <button
+                      type="button"
+                      onClick={() => setConfirmConclude(false)}
+                      disabled={busy !== ''}
+                      className="rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : confirmReset ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void resetStream()}
+                      disabled={busy !== ''}
+                      className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+                    >
+                      {busy === 'reset' ? 'Resetting…' : 'Confirm reset'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmReset(false)}
+                      disabled={busy !== ''}
+                      className="rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {/* A matched (session-less) broadcast has nothing to
+                      reset; only Conclude applies. */}
+                    {!session?.matched && (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmReset(true)}
+                        disabled={busy !== ''}
+                        title="False start? Forget this broadcast — sessions and go-live assignments are cleared, the plan stays for a future stream."
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
+                      >
+                        <RotateCcw size={14} aria-hidden />
+                        Reset broadcast
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setConfirmConclude(true)}
+                      disabled={busy !== ''}
+                      title="Wrap this episode up: keep its details on the past stream and remove the plan."
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-semibold text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
+                    >
+                      <CheckCircle2 size={14} aria-hidden />
+                      Conclude episode
+                    </button>
+                  </>
+                ))}
+              {/* One primary action at a time: on the air with this plan offers
                 "Stop Stream"; out-of-date info offers only "Update Stream
                 Info"; the post-update re-check swaps it for "Go Live" once
                 every channel carries the plan's title. */}
-            {liveWithThisPlan ? (
-              <button
-                type="button"
-                onClick={() => void stopStream()}
-                disabled={!obsConnected || busy !== ''}
-                title="Run the End Stream routine and go off the air."
-                className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Square size={14} aria-hidden />
-                {busy === 'stop' ? 'Stopping…' : 'Stop Stream'}
-              </button>
-            ) : checkingInfo ? (
-              <button
-                type="button"
-                disabled
-                className="inline-flex cursor-wait items-center gap-1.5 rounded-lg border border-edge bg-bg px-4 py-2 text-sm font-semibold text-fg-muted opacity-70"
-              >
-                Checking stream info…
-              </button>
-            ) : mismatches.length > 0 ? (
-              <button
-                type="button"
-                onClick={() => void applyInfo()}
-                disabled={busy !== ''}
-                title="Push this plan’s title, description, category, and tags to its channels, then re-check them."
-                className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Megaphone size={14} aria-hidden />
-                {busy === 'apply' ? 'Updating…' : 'Update Stream Info'}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void goLive()}
-                disabled={!canGoLive || busy !== ''}
-                title={
-                  canGoLive
-                    ? 'Run the Start Stream routine and go on the air.'
-                    : streaming
-                      ? 'Already live — end the current broadcast first.'
-                      : 'Connect OBS and a channel in Settings → Services to go live.'
-                }
-                className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Radio size={14} aria-hidden />
-                {busy === 'golive' ? 'Going live…' : 'Go Live'}
-              </button>
-            )}
+              {liveWithThisPlan ? (
+                <button
+                  type="button"
+                  onClick={() => void stopStream()}
+                  disabled={!obsConnected || busy !== ''}
+                  title="Run the End Stream routine and go off the air."
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Square size={14} aria-hidden />
+                  {busy === 'stop' ? 'Stopping…' : 'Stop Stream'}
+                </button>
+              ) : checkingInfo ? (
+                <button
+                  type="button"
+                  disabled
+                  className="inline-flex cursor-wait items-center gap-1.5 rounded-lg border border-edge bg-bg px-4 py-2 text-sm font-semibold text-fg-muted opacity-70"
+                >
+                  Checking stream info…
+                </button>
+              ) : mismatches.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => void applyInfo()}
+                  disabled={busy !== ''}
+                  title="Push this plan’s title, description, category, and tags to its channels, then re-check them."
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Megaphone size={14} aria-hidden />
+                  {busy === 'apply' ? 'Updating…' : 'Update Stream Info'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void goLive()}
+                  disabled={!canGoLive || busy !== ''}
+                  title={
+                    canGoLive
+                      ? 'Run the Start Stream routine and go on the air.'
+                      : streaming
+                        ? 'Already live — end the current broadcast first.'
+                        : 'Connect OBS and a channel in Settings → Services to go live.'
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Radio size={14} aria-hidden />
+                  {busy === 'golive' ? 'Going live…' : 'Go Live'}
+                </button>
+              )}
             </div>
           </div>
           {note && (
@@ -591,7 +608,6 @@ export function BroadcastPlan({
             </div>
           </section>
         )}
-
       </div>
     </div>
   )

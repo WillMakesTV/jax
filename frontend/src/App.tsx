@@ -1,5 +1,9 @@
 import {useCallback, useEffect, useMemo, useState} from 'react'
-import {GetDownloads, GetPastStreams, GetVideoPlans} from '../wailsjs/go/main/App'
+import {
+  GetDownloads,
+  GetPastStreams,
+  GetVideoPlans,
+} from '../wailsjs/go/main/App'
 import {main} from '../wailsjs/go/models'
 import {WindowSetTitle} from '../wailsjs/runtime/runtime'
 import {Sidebar} from './components/Sidebar'
@@ -17,7 +21,6 @@ import {Dashboard} from './views/Dashboard'
 import {DownloadVideo} from './views/DownloadVideo'
 import {EditRoutine} from './views/EditRoutine'
 import {EditSeries} from './views/EditSeries'
-import {LiveStream, type LiveStreamTab} from './views/LiveStream'
 import {LiveStreamDetails} from './views/LiveStreamDetails'
 import {Planning, type PlanningTab} from './views/Planning'
 import {PlanStream} from './views/PlanStream'
@@ -49,7 +52,6 @@ const readCollapsed = (): boolean => {
 /** One entry in the navigation history. */
 interface NavState {
   view: ViewId
-  liveTab: LiveStreamTab
   planningTab: PlanningTab
   obsTab: ObsTab
   stream: main.PastStream | null
@@ -78,7 +80,6 @@ interface NavState {
 
 const INITIAL_NAV: NavState = {
   view: 'dashboard',
-  liveTab: 'dashboard',
   planningTab: 'dashboard',
   obsTab: 'dashboard',
   stream: null,
@@ -98,7 +99,6 @@ const INITIAL_NAV: NavState = {
 
 const sameNav = (a: NavState, b: NavState) =>
   a.view === b.view &&
-  a.liveTab === b.liveTab &&
   a.planningTab === b.planningTab &&
   a.obsTab === b.obsTab &&
   a.stream === b.stream &&
@@ -125,7 +125,7 @@ function App() {
     i: 0,
   })
   const cur = nav.stack[nav.i]
-  const {view, liveTab} = cur
+  const {view} = cur
   const detailStream = cur.stream
   const detailVideo = cur.video
   const detailChannel = cur.channel
@@ -159,18 +159,13 @@ function App() {
     (v: ViewId) =>
       navigate({
         view: v,
-        liveTab: 'dashboard',
         planningTab: 'dashboard',
         obsTab: 'dashboard',
       }),
     [navigate],
   )
-  const setLiveTab = useCallback(
-    (t: LiveStreamTab) => navigate({view: 'live', liveTab: t}),
-    [navigate],
-  )
   const setPlanningTab = useCallback(
-    (t: PlanningTab) => navigate({view: 'planning', planningTab: t}),
+    (t: PlanningTab) => navigate({view: 'broadcasting', planningTab: t}),
     [navigate],
   )
   const setObsTab = useCallback(
@@ -192,7 +187,11 @@ function App() {
         const next = [...stack]
         next[i] = {
           ...cur,
-          stream: main.PastStream.createFrom({...cur.stream, title, customTitle}),
+          stream: main.PastStream.createFrom({
+            ...cur.stream,
+            title,
+            customTitle,
+          }),
         }
         return {stack: next, i}
       }),
@@ -213,7 +212,7 @@ function App() {
   )
   // Past streams now live in the Planning section; details views return there.
   const backToPastStreams = useCallback(
-    () => navigate({view: 'planning'}),
+    () => navigate({view: 'broadcasting'}),
     [navigate],
   )
   const openPlanStream = useCallback(
@@ -245,7 +244,11 @@ function App() {
   // script is chosen).
   const openVideoPlanOnTab = useCallback(
     (videoPlan: main.VideoPlan, videoPlanTab?: VideoPlanTab) =>
-      navigate({view: 'video-plan', videoPlan, videoPlanTab: videoPlanTab ?? null}),
+      navigate({
+        view: 'video-plan',
+        videoPlan,
+        videoPlanTab: videoPlanTab ?? null,
+      }),
     [navigate],
   )
   // The user menu links straight to a profile section.
@@ -263,7 +266,7 @@ function App() {
     [navigate],
   )
   const backToContentSeries = useCallback(
-    () => navigate({view: 'planning', planningTab: 'series', series: null}),
+    () => navigate({view: 'broadcasting', planningTab: 'series', series: null}),
     [navigate],
   )
   const openProject = useCallback(
@@ -276,8 +279,7 @@ function App() {
     [navigate],
   )
   const openEditRoutine = useCallback(
-    (routine: main.Routine | null) =>
-      navigate({view: 'edit-routine', routine}),
+    (routine: main.Routine | null) => navigate({view: 'edit-routine', routine}),
     [navigate],
   )
   const backToRoutines = useCallback(
@@ -293,8 +295,7 @@ function App() {
     [navigate],
   )
   const backToSmartSources = useCallback(
-    () =>
-      navigate({view: 'obs', obsTab: 'smart-sources', smartSource: null}),
+    () => navigate({view: 'obs', obsTab: 'smart-sources', smartSource: null}),
     [navigate],
   )
   // Status-bar transcription chip: jump to the stream whose downloaded video
@@ -310,7 +311,9 @@ function App() {
         if (!download) return
         const streams = await GetPastStreams(false)
         const stream = (streams ?? []).find((s) =>
-          (s.broadcasts ?? []).some((b) => (download.urls ?? []).includes(b.url)),
+          (s.broadcasts ?? []).some((b) =>
+            (download.urls ?? []).includes(b.url),
+          ),
         )
         if (stream) {
           navigate({view: 'stream-details', stream, streamTab: null})
@@ -346,25 +349,28 @@ function App() {
   const openFixedRoute = useCallback(
     (route: string) => {
       const fallbacks: Record<string, ViewId> = {
-        'stream-details': 'planning',
-        'live-details': 'live',
+        'stream-details': 'broadcasting',
+        'live-details': 'broadcasting',
         'channel-details': 'dashboard',
         'video-details': 'videos',
         'download-video': 'videos',
         'video-plan': 'videos',
         'plan-video': 'videos',
-        'plan-stream': 'planning',
-        'edit-series': 'planning',
+        'plan-stream': 'broadcasting',
+        'edit-series': 'broadcasting',
         'edit-routine': 'obs',
         'edit-smart-source': 'obs',
         'custom-tokens': 'settings',
-        'broadcast-plan': 'live',
+        'broadcast-plan': 'broadcasting',
+        // Routes retired by the Broadcasting merge/rename: reports filed on
+        // the old Broadcast section or the pre-rename planning route.
+        live: 'broadcasting',
+        planning: 'broadcasting',
         'project-details': 'projects',
       }
       const topLevel: ViewId[] = [
         'dashboard',
-        'live',
-        'planning',
+        'broadcasting',
         'projects',
         'obs',
         'videos',
@@ -379,15 +385,16 @@ function App() {
     [setView],
   )
 
-  // Status-bar edit-session chip: jump to the Editor tab of the video plan
-  // with the active (or just-finished) edit session.
-  const openEditingVideoPlan = useCallback(
-    async (planId: string) => {
+  // Status-bar chips that reference a video plan by id (edit session on the
+  // Editor tab, AI thumbnail/listing on the Publish tab) resolve it and open
+  // its page on the right tab.
+  const openVideoPlanById = useCallback(
+    async (planId: string, tab: VideoPlanTab) => {
       try {
         const plans = await GetVideoPlans()
         const videoPlan = (plans ?? []).find((p) => p.id === planId)
         if (!videoPlan) return
-        navigate({view: 'video-plan', videoPlan, videoPlanTab: 'editor'})
+        navigate({view: 'video-plan', videoPlan, videoPlanTab: tab})
       } catch {
         // Lookup failed; stay where we are.
       }
@@ -427,10 +434,8 @@ function App() {
     switch (view) {
       case 'dashboard':
         return 'Dashboard'
-      case 'live':
-        return 'Broadcast'
-      case 'planning':
-        return 'Planning'
+      case 'broadcasting':
+        return 'Broadcasting'
       case 'projects':
         return 'Projects'
       case 'obs':
@@ -474,7 +479,19 @@ function App() {
       default:
         return 'Jax'
     }
-  }, [view, detailStream, detailVideo, detailChannel, detailDownload, cur.series, cur.routine, cur.plan, cur.videoPlan, cur.project, cur.smartSource])
+  }, [
+    view,
+    detailStream,
+    detailVideo,
+    detailChannel,
+    detailDownload,
+    cur.series,
+    cur.routine,
+    cur.plan,
+    cur.videoPlan,
+    cur.project,
+    cur.smartSource,
+  ])
 
   // Reconcile with the backend store on mount (and seed it on first run).
   useEffect(() => {
@@ -512,20 +529,20 @@ function App() {
             view === 'download-video' ||
             view === 'plan-stream' ||
             view === 'edit-series'
-              ? 'planning'
+              ? 'broadcasting'
               : view === 'project-details'
                 ? 'projects'
                 : view === 'edit-routine' ||
                     view === 'edit-smart-source' ||
                     view === 'custom-tokens'
-                ? 'obs'
-                : view === 'video-details' ||
-                    view === 'plan-video' ||
-                    view === 'video-plan'
-                  ? 'videos'
-                  : view === 'channel-details'
-                    ? 'dashboard'
-                    : view
+                  ? 'obs'
+                  : view === 'video-details' ||
+                      view === 'plan-video' ||
+                      view === 'video-plan'
+                    ? 'videos'
+                    : view === 'channel-details'
+                      ? 'dashboard'
+                      : view
           }
           onNavigate={setView}
           collapsed={collapsed}
@@ -539,7 +556,7 @@ function App() {
             canForward={canForward}
             onBack={back}
             onForward={forward}
-            onOpenBroadcast={() => setView('live')}
+            onOpenObs={() => setView('obs')}
             onOpenProfile={openProfile}
           />
           <div className="flex-1 overflow-y-auto p-8">
@@ -553,25 +570,21 @@ function App() {
                 onOpenVideo={openVideoDetails}
               />
             )}
-            {view === 'live' && (
-              <LiveStream
-                tab={liveTab}
-                onTabChange={setLiveTab}
-                onOpenObs={() => setView('obs')}
-                onOpenPlan={openBroadcastPlan}
+            {view === 'broadcast-plan' && cur.plan && (
+              <BroadcastPlan
+                plan={cur.plan}
+                onBack={() => setView('broadcasting')}
+                onEdit={openPlanDetails}
               />
             )}
-            {view === 'broadcast-plan' && cur.plan && (
-              <BroadcastPlan plan={cur.plan} onBack={() => setView('live')} />
-            )}
-            {view === 'planning' && (
+            {view === 'broadcasting' && (
               <Planning
                 tab={cur.planningTab}
                 onTabChange={setPlanningTab}
                 onOpenStream={openStreamDetails}
                 onOpenLive={() => setView('live-details')}
                 onPlanStream={openPlanStream}
-                onOpenPlan={openPlanDetails}
+                onOpenBroadcast={openBroadcastPlan}
                 onEditSeries={openEditSeries}
                 onPlanVideo={() => openPlanVideo(null)}
               />
@@ -630,10 +643,7 @@ function App() {
               />
             )}
             {view === 'download-video' && detailDownload && (
-              <DownloadVideo
-                download={detailDownload}
-                onBack={() => back()}
-              />
+              <DownloadVideo download={detailDownload} onBack={() => back()} />
             )}
             {view === 'live-details' && (
               <LiveStreamDetails onBack={backToPastStreams} />
@@ -679,17 +689,22 @@ function App() {
       </div>
       {/* App-wide live status strip, spanning the full window width. */}
       <StatusBar
-        onOpenChat={() => setLiveTab('chat')}
-        onOpenEvents={() => setLiveTab('events')}
+        onOpenChat={() => setPlanningTab('chat')}
+        onOpenEvents={() => setPlanningTab('events')}
         onOpenDownloading={(startedAt) =>
           void openStreamByStart(startedAt, null)
         }
         onOpenTranscribing={(subfolder) =>
           void openTranscribingStream(subfolder)
         }
-        onOpenOutline={(startedAt) => void openStreamByStart(startedAt, 'outline')}
-        onOpenClipIdeas={(startedAt) => void openStreamByStart(startedAt, 'clips')}
-        onOpenEditSession={(planId) => void openEditingVideoPlan(planId)}
+        onOpenOutline={(startedAt) =>
+          void openStreamByStart(startedAt, 'outline')
+        }
+        onOpenClipIdeas={(startedAt) =>
+          void openStreamByStart(startedAt, 'clips')
+        }
+        onOpenPlanAi={(planId) => void openVideoPlanById(planId, 'publish')}
+        onOpenEditSession={(planId) => void openVideoPlanById(planId, 'editor')}
         onOpenPostStream={(startedAt) =>
           void openStreamByStart(startedAt, null)
         }

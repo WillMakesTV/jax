@@ -1,17 +1,23 @@
 import {
   ArrowLeft,
+  Check,
   CornerDownRight,
   File,
   FileText,
   Paperclip,
+  Pencil,
   Plus,
+  Send,
+  Sparkles,
   Trash2,
   Upload,
+  X,
 } from 'lucide-react'
-import {useEffect, useMemo, useState} from 'react'
+import {useEffect, useMemo, useRef, useState} from 'react'
 import clsx from 'clsx'
 import {
   AddProjectAssets,
+  ChatProjectDescription,
   DeleteProjectAsset,
   DeleteProjectDoc,
   GetProjects,
@@ -59,8 +65,14 @@ export function ProjectDetails({
 
   const tabs: {id: ProjectTab; label: string}[] = [
     {id: 'overview', label: 'Overview'},
-    {id: 'files', label: `Files${proj?.assets?.length ? ` (${proj.assets.length})` : ''}`},
-    {id: 'docs', label: `Docs${proj?.docs?.length ? ` (${proj.docs.length})` : ''}`},
+    {
+      id: 'files',
+      label: `Files${proj?.assets?.length ? ` (${proj.assets.length})` : ''}`,
+    },
+    {
+      id: 'docs',
+      label: `Docs${proj?.docs?.length ? ` (${proj.docs.length})` : ''}`,
+    },
   ]
 
   return (
@@ -75,11 +87,7 @@ export function ProjectDetails({
       </button>
 
       {!proj ? (
-        <OverviewForm
-          project={null}
-          onSaved={(saved) => setProj(saved)}
-          onCancel={onBack}
-        />
+        <CreateProjectForm onCreated={setProj} onCancel={onBack} />
       ) : (
         <div className="flex flex-col gap-6">
           <div
@@ -107,9 +115,11 @@ export function ProjectDetails({
           </div>
 
           {tab === 'overview' && (
-            <OverviewForm project={proj} onSaved={setProj} />
+            <OverviewSection project={proj} onChange={setProj} />
           )}
-          {tab === 'files' && <FilesSection project={proj} onChange={setProj} />}
+          {tab === 'files' && (
+            <FilesSection project={proj} onChange={setProj} />
+          )}
           {tab === 'docs' && <DocsSection project={proj} onChange={setProj} />}
         </div>
       )}
@@ -118,35 +128,21 @@ export function ProjectDetails({
 }
 
 // ---------------------------------------------------------------------------
-// Overview: title + markdown description
+// Creation: a title is all it takes
 // ---------------------------------------------------------------------------
 
-function OverviewForm({
-  project,
-  onSaved,
+function CreateProjectForm({
+  onCreated,
   onCancel,
 }: {
-  /** The project being edited, or null when creating a new one. */
-  project: main.Project | null
-  onSaved: (project: main.Project) => void
-  /** Shown as a Cancel button only during creation. */
-  onCancel?: () => void
+  onCreated: (project: main.Project) => void
+  onCancel: () => void
 }) {
-  const [title, setTitle] = useState(project?.title ?? '')
-  const [description, setDescription] = useState(project?.description ?? '')
+  const [title, setTitle] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  // Adopt the freshly reloaded record (see ProjectDetails) once, but never
-  // clobber in-progress typing: only sync while the form is untouched.
-  const [synced, setSynced] = useState(project)
-  if (project && project !== synced) {
-    setSynced(project)
-    setTitle(project.title)
-    setDescription(project.description)
-  }
-
-  const save = async () => {
+  const create = async () => {
     if (!title.trim()) {
       setError('Give the project a title.')
       return
@@ -156,20 +152,20 @@ function OverviewForm({
     try {
       const saved = await SaveProject(
         main.Project.createFrom({
-          id: project?.id ?? '',
+          id: '',
           title: title.trim(),
-          description,
-          createdAt: project?.createdAt ?? '',
-          assets: project?.assets ?? [],
-          docs: project?.docs ?? [],
+          description: '',
+          createdAt: '',
+          assets: [],
+          docs: [],
         }),
       )
-      onSaved(saved)
+      onCreated(saved)
     } catch (err) {
       setError(
         err instanceof Error && err.message
           ? err.message
-          : 'Could not save the project.',
+          : 'Could not create the project.',
       )
     } finally {
       setSaving(false)
@@ -180,16 +176,15 @@ function OverviewForm({
     <form
       onSubmit={(e) => {
         e.preventDefault()
-        void save()
+        void create()
       }}
       className="flex max-w-2xl flex-col gap-5"
     >
-      {!project && (
-        <p className="text-sm text-fg-muted">
-          A project is a body of work — a launch, a build, a campaign. Give it
-          a title and describe it; files and docs come next.
-        </p>
-      )}
+      <p className="text-sm text-fg-muted">
+        A project is a body of work — a launch, a build, a campaign. A title is
+        all it takes to start; the description is talked through with the AI
+        right after.
+      </p>
 
       <div>
         <label htmlFor="project-title" className={labelCls}>
@@ -200,20 +195,8 @@ function OverviewForm({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="e.g. Chatter Bot v2 launch"
-          autoFocus={!project}
+          autoFocus
           className={field}
-        />
-      </div>
-
-      <div>
-        <label htmlFor="project-description" className={labelCls}>
-          Description
-        </label>
-        <MarkdownField
-          id="project-description"
-          value={description}
-          onChange={setDescription}
-          placeholder="What is this project? Goals, links, context…"
         />
       </div>
 
@@ -227,19 +210,343 @@ function OverviewForm({
           disabled={saving}
           className="rounded-lg bg-accent px-5 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
         >
-          {saving ? 'Saving…' : project ? 'Save project' : 'Create project'}
+          {saving ? 'Creating…' : 'Create project'}
         </button>
-        {onCancel && (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-lg border border-edge bg-surface px-5 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
-          >
-            Cancel
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-lg border border-edge bg-surface px-5 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+        >
+          Cancel
+        </button>
       </div>
     </form>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Overview: click-to-edit title + description, and the brief chat
+// ---------------------------------------------------------------------------
+
+function OverviewSection({
+  project,
+  onChange,
+}: {
+  project: main.Project
+  onChange: (project: main.Project) => void
+}) {
+  const [description, setDescription] = useState(project.description)
+  const [error, setError] = useState('')
+
+  // Adopt the freshly reloaded record (see ProjectDetails) once, but never
+  // clobber in-progress typing: only sync when the record itself changes.
+  const [synced, setSynced] = useState(project)
+  if (project !== synced) {
+    setSynced(project)
+    setDescription(project.description)
+  }
+
+  // Assets/docs are preserved by the backend regardless of what is sent.
+  const persist = async (fields: {title?: string; description?: string}) => {
+    const saved = await SaveProject(
+      main.Project.createFrom({
+        id: project.id,
+        title: fields.title ?? project.title,
+        description: fields.description ?? description,
+        createdAt: project.createdAt,
+        assets: [],
+        docs: [],
+      }),
+    )
+    onChange(saved)
+  }
+
+  const saveDescription = async (value: string) => {
+    setError('')
+    try {
+      await persist({description: value})
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not save the description.',
+      )
+    }
+  }
+
+  const dirty = description !== project.description
+
+  return (
+    <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+      <div className="flex min-w-0 max-w-2xl flex-1 flex-col gap-5">
+        <EditableTitle
+          value={project.title}
+          onSave={(title) => persist({title})}
+        />
+
+        <div>
+          <span className={labelCls}>Description</span>
+          <MarkdownField
+            id="project-description"
+            value={description}
+            onChange={setDescription}
+            onDone={() => void saveDescription(description)}
+            placeholder="What is this project? Goals, links, context… — or talk it through in the chat."
+          />
+          {dirty && (
+            <button
+              type="button"
+              onClick={() => void saveDescription(description)}
+              className="mt-3 rounded-lg bg-accent px-4 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90"
+            >
+              Save description
+            </button>
+          )}
+        </div>
+
+        {error && (
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        )}
+      </div>
+
+      <BriefChat
+        project={project}
+        onDescription={(markdown) => {
+          setDescription(markdown)
+          void saveDescription(markdown)
+        }}
+      />
+    </div>
+  )
+}
+
+/** The project's title: read-only until the hover Edit CTA is clicked. */
+function EditableTitle({
+  value,
+  onSave,
+}: {
+  value: string
+  onSave: (title: string) => Promise<void>
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const save = async () => {
+    if (!draft.trim()) {
+      setError('Give the project a title.')
+      return
+    }
+    setSaving(true)
+    setError('')
+    try {
+      await onSave(draft.trim())
+      setEditing(false)
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not save the title.',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div className="group flex items-center gap-2">
+        <h2 className="min-w-0 break-words text-xl font-bold text-fg">
+          {value}
+        </h2>
+        <button
+          type="button"
+          onClick={() => {
+            setDraft(value)
+            setError('')
+            setEditing(true)
+          }}
+          title="Edit title"
+          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-edge bg-surface px-2 py-1 text-xs font-medium text-fg-muted opacity-0 shadow-sm transition-opacity focus-visible:opacity-100 group-hover:opacity-100 hover:bg-surface-hover hover:text-fg"
+        >
+          <Pencil size={12} aria-hidden />
+          Edit
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <label htmlFor="project-title" className={labelCls}>
+        Title
+      </label>
+      <div className="flex items-center gap-2">
+        <input
+          id="project-title"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              void save()
+            }
+            if (e.key === 'Escape') setEditing(false)
+          }}
+          autoFocus
+          className={field}
+        />
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={saving}
+          title="Save title"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
+          <Check size={15} aria-hidden />
+        </button>
+        <button
+          type="button"
+          onClick={() => setEditing(false)}
+          title="Cancel"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-edge bg-surface text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+        >
+          <X size={15} aria-hidden />
+        </button>
+      </div>
+      {error && (
+        <p className="mt-1.5 text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </div>
+  )
+}
+
+/** One prior turn of the brief chat, kept only for the session. */
+interface ChatTurn {
+  role: 'user' | 'assistant'
+  text: string
+}
+
+/**
+ * The description-building conversation: each turn goes to the connected AI
+ * service with the transcript, and the reply carries a full rewrite of the
+ * description draft, which lands in the editor (and saves) automatically.
+ */
+function BriefChat({
+  project,
+  onDescription,
+}: {
+  project: main.Project
+  onDescription: (markdown: string) => void
+}) {
+  const [messages, setMessages] = useState<ChatTurn[]>([])
+  const [input, setInput] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messages, busy])
+
+  const send = async () => {
+    const message = input.trim()
+    if (!message || busy) return
+    const history = messages
+    setMessages([...history, {role: 'user', text: message}])
+    setInput('')
+    setBusy(true)
+    setError('')
+    try {
+      const reply = await ChatProjectDescription(
+        project.id,
+        history.map((m) => main.ProjectChatMessage.createFrom(m)),
+        message,
+      )
+      setMessages((prev) => [...prev, {role: 'assistant', text: reply.reply}])
+      if (reply.description.trim()) onDescription(reply.description)
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'The chat could not respond.',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <aside className="flex w-full flex-col rounded-xl border border-edge bg-surface lg:w-96">
+      <div className="flex items-center gap-2 border-b border-edge px-4 py-3">
+        <Sparkles size={15} aria-hidden className="text-accent" />
+        <p className="text-sm font-semibold text-fg">Build the description</p>
+      </div>
+
+      <div
+        ref={scrollRef}
+        className="flex max-h-96 min-h-44 flex-col gap-2.5 overflow-y-auto px-4 py-3"
+      >
+        {messages.length === 0 && (
+          <p className="text-sm text-fg-muted">
+            Talk the project through — what it is, who it's for, what done looks
+            like. The description writes itself as you go.
+          </p>
+        )}
+        {messages.map((m, i) => (
+          <div
+            key={i}
+            className={clsx(
+              'max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm',
+              m.role === 'user'
+                ? 'self-end bg-accent text-accent-fg'
+                : 'self-start border border-edge bg-bg text-fg',
+            )}
+          >
+            {m.text}
+          </div>
+        ))}
+        {busy && <p className="self-start text-sm text-fg-muted">Thinking…</p>}
+      </div>
+
+      {error && (
+        <p className="px-4 pb-2 text-sm text-red-600 dark:text-red-400">
+          {error}
+        </p>
+      )}
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          void send()
+        }}
+        className="flex items-end gap-2 border-t border-edge p-3"
+      >
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              void send()
+            }
+          }}
+          rows={2}
+          placeholder="Describe the project…"
+          className={`${field} resize-none`}
+        />
+        <button
+          type="submit"
+          disabled={busy || !input.trim()}
+          title="Send"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
+          <Send size={15} aria-hidden />
+        </button>
+      </form>
+    </aside>
   )
 }
 
@@ -599,8 +906,8 @@ function DocsSection({
         </button>
         {docs.length === 0 ? (
           <p className="text-sm text-fg-muted">
-            No docs yet. Write the project's documentation as markdown pages
-            and nest them to build a structure.
+            No docs yet. Write the project's documentation as markdown pages and
+            nest them to build a structure.
           </p>
         ) : (
           <nav

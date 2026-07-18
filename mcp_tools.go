@@ -715,9 +715,25 @@ func mcpToolCatalog() []mcpTool {
 		// deletes it once resolved.
 		{
 			name:        "list_debug_reports",
-			description: "All open developer debug reports (bug reports filed from the app), newest first: id, title, description, route (the app view id), global flag, and timestamps. Any result is work to pick up — see the ai-debugging skill.",
+			description: "All open developer debug reports (bug reports filed from the app), newest first: id, title, description, route (the app view id), global flag, a checkedOut flag, and timestamps. Any result is work to pick up — see the ai-debugging skill. When several agents share the queue, skip reports whose checkedOut is true (another agent is on them) and claim one with check_out_debug_report before starting.",
 			handler: func(a *App, _ json.RawMessage) (any, error) {
 				return a.ListDebugReports(), nil
+			},
+		},
+		{
+			name:        "check_out_debug_report",
+			description: "Claim a debug report before working it, so multiple agents can share the same queue without duplicating effort. Call this the moment you pick a report; it fails if another agent already checked it out. On success the report's checkedOut becomes true for everyone else. Resolve it with delete_debug_report once the fix is verified.",
+			inputSchema: objSchema(map[string]any{
+				"id": prop("integer", "The report id to check out."),
+			}, "id"),
+			handler: func(a *App, args json.RawMessage) (any, error) {
+				var in struct {
+					ID int64 `json:"id"`
+				}
+				if err := decodeArgs(args, &in); err != nil {
+					return nil, err
+				}
+				return a.CheckOutDebugReport(in.ID)
 			},
 		},
 		{

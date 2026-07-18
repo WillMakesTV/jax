@@ -84,6 +84,10 @@ type MetricsSnapshot struct {
 	Growth   MetricTotals `json:"growth"`
 	// HasHistory reports whether Previous/Growth mean anything yet.
 	HasHistory bool `json:"hasHistory"`
+	// PlatformGrowth is each platform's own movement over the window,
+	// measured from the earliest day that recorded that platform. Platforms
+	// first seen today are absent — they have no past to grow from.
+	PlatformGrowth []ChannelMetrics `json:"platformGrowth"`
 }
 
 // MetricsDay is one recorded day, for the growth chart.
@@ -257,7 +261,55 @@ func (a *App) GetMetricsSnapshot(days int) MetricsSnapshot {
 		Views:      snap.Totals.Views - snap.Previous.Views,
 	}
 	snap.HasHistory = true
+
+	// Each platform against its own recorded past, over the same window.
+	if a.store != nil {
+		from := time.Now().AddDate(0, 0, -days+1).Format("2006-01-02")
+		if byDay, err := a.store.channelMetricsSince(from); err == nil {
+			snap.PlatformGrowth = platformGrowth(platforms, byDay, snap.Day)
+		}
+	}
 	return snap
+}
+
+// platformGrowth measures each current platform against its earliest recorded
+// day in the window. Today's own reading never counts as the past — a channel
+// first seen today would otherwise report a confident zero, which reads as
+// "no growth" rather than "no data yet".
+func platformGrowth(current []ChannelMetrics, byDay map[string][]ChannelMetrics, today string) []ChannelMetrics {
+	days := make([]string, 0, len(byDay))
+	for d := range byDay {
+		days = append(days, d)
+	}
+	sort.Strings(days)
+	earliest := map[string]ChannelMetrics{}
+	for _, d := range days {
+		if d == today {
+			continue
+		}
+		for _, m := range byDay[d] {
+			if _, ok := earliest[m.Platform]; !ok {
+				earliest[m.Platform] = m
+			}
+		}
+	}
+
+	out := []ChannelMetrics{}
+	for _, cur := range current {
+		prev, ok := earliest[cur.Platform]
+		if !ok {
+			continue
+		}
+		out = append(out, ChannelMetrics{
+			Platform:   cur.Platform,
+			Audience:   cur.Audience - prev.Audience,
+			Supporters: cur.Supporters - prev.Supporters,
+			Likes:      cur.Likes - prev.Likes,
+			Content:    cur.Content - prev.Content,
+			Views:      cur.Views - prev.Views,
+		})
+	}
+	return out
 }
 
 // recordMetrics files today's numbers, replacing any earlier reading from the

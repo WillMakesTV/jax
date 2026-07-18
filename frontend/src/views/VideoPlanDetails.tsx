@@ -1,7 +1,9 @@
 import {
   ArrowLeft,
+  Check,
   CheckCircle2,
   Clapperboard,
+  Copy,
   ExternalLink,
   Film,
   Link2,
@@ -55,6 +57,74 @@ const shareHost = (url: string) => {
   } catch {
     return url
   }
+}
+
+/** One tracked posting in the Shares list: platform, host, views, and the
+ *  Copy / Open actions for its remote URL. */
+function ShareRow({share: s}: {share: main.TrackedShare}) {
+  const [copied, setCopied] = useState(false)
+
+  const copy = () => {
+    navigator.clipboard
+      ?.writeText(s.url)
+      .then(() => {
+        setCopied(true)
+        window.setTimeout(() => setCopied(false), 1500)
+      })
+      .catch(() => {})
+  }
+
+  return (
+    <li className="flex items-center gap-3 rounded-lg border border-edge bg-surface px-3 py-2">
+      {s.platform ? (
+        <PlatformPill platform={s.platform} />
+      ) : (
+        <span className="rounded-full border border-edge px-2.5 py-1 text-xs text-fg-muted">
+          Other
+        </span>
+      )}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm text-fg">
+          {shareHost(s.url)}
+        </span>
+        <span className="block text-xs text-fg-muted">
+          {[
+            s.video
+              ? `${formatCompact(s.video.viewCount)} views`
+              : 'views unknown',
+            s.source === 'publish' ? 'published from Jax' : '',
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </span>
+      </span>
+      {s.source === 'publish' && (
+        <UploadCloud size={14} aria-hidden className="shrink-0 text-fg-muted" />
+      )}
+      <button
+        type="button"
+        onClick={copy}
+        aria-label={copied ? 'Copied' : `Copy ${shareHost(s.url)} link`}
+        title={copied ? 'Copied' : 'Copy link'}
+        className="rounded-lg p-1.5 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+      >
+        {copied ? (
+          <Check size={14} aria-hidden className="text-emerald-500" />
+        ) : (
+          <Copy size={14} aria-hidden />
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={() => openExternal(s.url)}
+        aria-label={`Open ${shareHost(s.url)}`}
+        title="Open"
+        className="rounded-lg p-1.5 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+      >
+        <ExternalLink size={14} aria-hidden />
+      </button>
+    </li>
+  )
 }
 
 /**
@@ -479,51 +549,7 @@ export function VideoPlanDetails({
                   ) : (
                     <ul className="flex max-w-xl flex-col gap-2">
                       {tracked.shares.map((s) => (
-                        <li
-                          key={s.url}
-                          className="flex items-center gap-3 rounded-lg border border-edge bg-surface px-3 py-2"
-                        >
-                          {s.platform ? (
-                            <PlatformPill platform={s.platform} />
-                          ) : (
-                            <span className="rounded-full border border-edge px-2.5 py-1 text-xs text-fg-muted">
-                              Other
-                            </span>
-                          )}
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm text-fg">
-                              {shareHost(s.url)}
-                            </span>
-                            <span className="block text-xs text-fg-muted">
-                              {[
-                                s.video
-                                  ? `${formatCompact(s.video.viewCount)} views`
-                                  : 'views unknown',
-                                s.source === 'publish'
-                                  ? 'published from Jax'
-                                  : '',
-                              ]
-                                .filter(Boolean)
-                                .join(' · ')}
-                            </span>
-                          </span>
-                          {s.source === 'publish' && (
-                            <UploadCloud
-                              size={14}
-                              aria-hidden
-                              className="shrink-0 text-fg-muted"
-                            />
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => openExternal(s.url)}
-                            aria-label={`Open ${shareHost(s.url)}`}
-                            title="Open"
-                            className="rounded-lg p-1.5 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
-                          >
-                            <ExternalLink size={14} aria-hidden />
-                          </button>
-                        </li>
+                        <ShareRow key={s.url} share={s} />
                       ))}
                     </ul>
                   )}

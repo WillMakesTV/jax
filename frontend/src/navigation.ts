@@ -2,7 +2,6 @@ import {
   LayoutDashboard,
   CalendarClock,
   FolderKanban,
-  MonitorPlay,
   Clapperboard,
   Settings,
   type LucideIcon,
@@ -11,14 +10,12 @@ import {
 /**
  * Identifiers for every routable view in the app. `profile` (user menu),
  * `stream-details`, and `video-details` are reachable outside the sidebar, so
- * they are intentionally absent from the nav lists below. Past streams live
- * inside the Go Live! section as a tab.
+ * they are intentionally absent from the nav lists below.
  */
 export type ViewId =
   | 'dashboard'
-  | 'live'
   | 'broadcast-plan'
-  | 'planning'
+  | 'broadcasting'
   | 'projects'
   | 'project-details'
   | 'obs'
@@ -46,18 +43,16 @@ export interface NavItemConfig {
 
 /**
  * Primary navigation items, rendered in order at the top of the sidebar.
- * The Broadcast section (live Dashboard, chat, events, and transcript tabs)
- * is not listed here — it is reached via the CTA in the top bar (see TopBar).
- * Planning holds stream planning and past streams; OBS Studio is its own
- * section.
+ * Broadcasting holds the whole broadcast lifecycle — stream planning, going
+ * live (dashboard, chat, events, transcript), and past streams. OBS Studio is
+ * not listed here — it is reached via the CTA in the top bar (see TopBar).
  */
 export const PRIMARY_NAV: NavItemConfig[] = [
   {id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard},
-  // Planning then Videos: the order the work actually runs in — a stream is
-  // planned and broadcast, and the videos are cut from it afterwards.
-  {id: 'planning', label: 'Planning', icon: CalendarClock},
+  // Broadcasting then Videos: the order the work actually runs in — a stream
+  // is planned and broadcast, and the videos are cut from it afterwards.
+  {id: 'broadcasting', label: 'Broadcasting', icon: CalendarClock},
   {id: 'videos', label: 'Videos', icon: Clapperboard},
-  {id: 'obs', label: 'OBS Studio', icon: MonitorPlay},
   // Projects is the writing/reference space rather than part of the pipeline,
   // so it sits at the end.
   {id: 'projects', label: 'Projects', icon: FolderKanban},

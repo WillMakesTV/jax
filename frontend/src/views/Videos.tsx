@@ -617,13 +617,13 @@ export function Videos({onOpenVideo, onOpenVideoPlan, onPlanVideo}: VideosProps)
               } long-form videos on your YouTube channel.`}
         </p>
       ) : (
-        // Shorts are tall, so they tile narrower and more to a row — up to
-        // eight across, each card an equal 1/8 slice of the grid.
+        // Shorts are tall, so they tile narrower — a four-across grid, easing
+        // down to two columns on the narrowest screens.
         <div
           className={clsx(
             'grid grid-cols-1 gap-4',
             kindTab === 'short'
-              ? 'grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8'
+              ? 'grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4'
               : 'sm:grid-cols-2 lg:grid-cols-3',
           )}
         >

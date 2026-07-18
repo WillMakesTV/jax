@@ -169,6 +169,17 @@ export function LiveDataProvider({children}: {children: ReactNode}) {
   const [pollNonce, setPollNonce] = useState(0)
   const refreshPlatforms = useCallback(() => setPollNonce((n) => n + 1), [])
 
+  // Re-read the mic list (and each mic's scene-active state) on demand, so a
+  // program-scene switch changes what the transcript follows immediately
+  // rather than waiting for the next poll.
+  const refreshMics = useCallback(async () => {
+    try {
+      setMics(await fetchObsMics(obsRequest))
+    } catch {
+      // Keep the last snapshot on a transient OBS hiccup.
+    }
+  }, [obsRequest])
+
   // Resolve the active (program) scene's designated primary camera.
   const refreshCamera = useCallback(async () => {
     try {
@@ -252,7 +263,8 @@ export function LiveDataProvider({children}: {children: ReactNode}) {
               'GetInputMute',
               {inputName: name},
             )
-            if (!cancelled) setMusic({name, muted: inputMuted})
+            // Music is app-audio, not scene-gated; active is irrelevant here.
+            if (!cancelled) setMusic({name, muted: inputMuted, active: true})
           }
         } catch {
           // Designated source missing from OBS; hide the indicator.
@@ -304,12 +316,15 @@ export function LiveDataProvider({children}: {children: ReactNode}) {
   }, [obsConnected, onObsEvent])
 
   // Keep the active scene's primary camera fresh: program-scene switches
-  // recompute it; visibility toggles of the camera item apply in place.
+  // recompute it; visibility toggles of the camera item apply in place. A
+  // scene switch also re-reads the mics, whose scene-active state (what the
+  // transcript follows) changes with the program scene.
   useEffect(() => {
     if (!obsConnected) return
     const offs = [
       onObsEvent<{sceneName: string}>('CurrentProgramSceneChanged', () => {
         void refreshCamera()
+        void refreshMics()
       }),
       onObsEvent<{
         sceneName: string
@@ -323,10 +338,12 @@ export function LiveDataProvider({children}: {children: ReactNode}) {
             ? {...prev, enabled: e.sceneItemEnabled}
             : prev,
         )
+        // Showing/hiding a mic scene item flips its program-active state.
+        void refreshMics()
       }),
     ]
     return () => offs.forEach((off) => off())
-  }, [obsConnected, onObsEvent, refreshCamera])
+  }, [obsConnected, onObsEvent, refreshCamera, refreshMics])
 
   const value = useMemo<LiveDataContextValue>(
     () => ({

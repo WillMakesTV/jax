@@ -9,10 +9,10 @@ import {
   type ReactNode,
 } from 'react'
 import {
-  GetChatHistory,
   GetFacebookLiveChat,
   GetInstagramLiveChat,
   GetKickChatIDs,
+  GetSessionChatHistory,
   GetYouTubeLiveChat,
   MarkAllChatRead,
   SaveChatMessages,
@@ -145,11 +145,13 @@ export function ChatProvider({children}: {children: ReactNode}) {
     })
   }, [])
 
-  // Seed from the local log on launch: history renders instantly, unread
-  // state carries over, and no platform API is touched to show it.
+  // Seed from the local log on launch — scoped to the active stream session,
+  // so relaunching mid-broadcast restores that broadcast's chat (unread state
+  // included) and nothing older. With no session open the feed starts empty:
+  // a finished stream's chat belongs to its past-stream page, not here.
   useEffect(() => {
     let cancelled = false
-    GetChatHistory(MAX_MESSAGES)
+    GetSessionChatHistory(MAX_MESSAGES)
       .then((stored) => {
         if (cancelled || !stored || stored.length === 0) return
         const restored: ChatItem[] = stored.map((m) => ({
@@ -304,7 +306,8 @@ export function ChatProvider({children}: {children: ReactNode}) {
     (p) => p.platform === 'facebook' && p.live,
   )
   useEffect(
-    () => (facebookLive ? pollMetaChat(GetFacebookLiveChat, append) : undefined),
+    () =>
+      facebookLive ? pollMetaChat(GetFacebookLiveChat, append) : undefined,
     [facebookLive, append],
   )
   const instagramLive = platforms.some(
@@ -368,6 +371,17 @@ export function ChatProvider({children}: {children: ReactNode}) {
     kickLive ||
     facebookLive ||
     instagramLive
+
+  // The feed follows the broadcast: when the last live channel goes offline
+  // the stream is over, and its chat now belongs to the past stream's page
+  // (GetChatForStream) — clear the live feed instead of carrying it into the
+  // next broadcast. seenKeys stays intact so nothing re-appends.
+  const wasActive = useRef(false)
+  useEffect(() => {
+    if (wasActive.current && !active) setMessages([])
+    wasActive.current = active
+  }, [active])
+
   const unreadCount = useMemo(
     () => messages.reduce((n, m) => n + (m.read ? 0 : 1), 0),
     [messages],

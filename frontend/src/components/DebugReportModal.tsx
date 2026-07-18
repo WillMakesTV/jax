@@ -3,6 +3,7 @@ import {useEffect, useState} from 'react'
 import {SaveDebugReport} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {DictationButton} from './DictationButton'
+import {MarkdownField} from './markdown/MarkdownField'
 import {Modal} from './Modal'
 
 /** Append a dictated utterance to a field's current text. */
@@ -32,21 +33,15 @@ export function DebugReportModal({
   defaultRoute = '',
   onSaved,
 }: DebugReportModalProps) {
-  const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [route, setRoute] = useState('')
   const [global, setGlobal] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  // Which field a dictation is filling; the mic serves one at a time.
-  const [dictating, setDictating] = useState<'title' | 'description' | null>(
-    null,
-  )
 
   // Reload the fields each time the dialog opens (fresh file or edit target).
   useEffect(() => {
     if (!open) return
-    setTitle(report?.title ?? '')
     setDescription(report?.description ?? '')
     setRoute(report?.route ?? defaultRoute)
     setGlobal(report?.global ?? false)
@@ -60,7 +55,8 @@ export function DebugReportModal({
       const stored = await SaveDebugReport(
         main.DebugReport.createFrom({
           id: report?.id ?? 0,
-          title,
+          // The description is the report; there's no separate title field.
+          title: report?.title ?? '',
           description,
           route,
           global,
@@ -86,45 +82,23 @@ export function DebugReportModal({
       maxWidthClass="max-w-lg"
     >
       <div className="flex flex-col gap-4">
-        <label className="flex flex-col gap-1.5">
-          <span className="flex items-center justify-between">
-            <span className="text-sm font-medium text-fg">Title</span>
-            <DictationButton
-              fieldLabel="title"
-              onText={(text) => setTitle((t) => appendUtterance(t, text))}
-              otherActive={dictating === 'description'}
-              onActiveChange={(on) => setDictating(on ? 'title' : null)}
-            />
-          </span>
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Short summary of the problem"
-            className="rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-          />
-        </label>
-
-        <label className="flex flex-col gap-1.5">
-          <span className="flex items-center justify-between">
-            <span className="text-sm font-medium text-fg">Description</span>
-            <DictationButton
-              fieldLabel="description"
-              onText={(text) =>
-                setDescription((d) => appendUtterance(d, text))
-              }
-              otherActive={dictating === 'title'}
-              onActiveChange={(on) => setDictating(on ? 'description' : null)}
-            />
-          </span>
-          <textarea
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-fg">Description</span>
+          <MarkdownField
+            id="debug-report-description"
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={6}
+            onChange={setDescription}
             placeholder="What happens, what you expected, and how to reproduce it."
-            className="resize-y rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+            actions={
+              <DictationButton
+                fieldLabel="description"
+                onText={(text) =>
+                  setDescription((d) => appendUtterance(d, text))
+                }
+              />
+            }
           />
-        </label>
+        </div>
 
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium text-fg">Page</span>

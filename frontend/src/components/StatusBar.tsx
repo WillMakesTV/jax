@@ -21,6 +21,7 @@ import {
   Video,
   VideoOff,
   VolumeX,
+  WandSparkles,
 } from 'lucide-react'
 import {useEffect, useRef, useState} from 'react'
 import {
@@ -54,6 +55,11 @@ import {
   type OutlineNotice,
 } from '../outline/OutlineProvider'
 import {
+  usePlanAi,
+  type PlanAiJob,
+  type PlanAiNotice,
+} from '../plans/PlanAiProvider'
+import {
   useVodTranscribe,
   type VodJob,
   type VodNotice,
@@ -72,6 +78,8 @@ interface StatusBarProps {
   onOpenOutline: (startedAt: string) => void
   /** Open the Clips tab of the stream whose script ideas are generating. */
   onOpenClipIdeas: (startedAt: string) => void
+  /** Open the Publish tab of the plan whose thumbnail/listing is generating. */
+  onOpenPlanAi: (planId: string) => void
   /** Open the Editor tab of the video plan with the active edit session. */
   onOpenEditSession: (planId: string) => void
   /** Open the past stream the post-stream wrap-up is processing. */
@@ -92,6 +100,7 @@ export function StatusBar({
   onOpenTranscribing,
   onOpenOutline,
   onOpenClipIdeas,
+  onOpenPlanAi,
   onOpenEditSession,
   onOpenPostStream,
   onOpenFixNotice,
@@ -104,6 +113,7 @@ export function StatusBar({
   const vodTranscribe = useVodTranscribe()
   const outline = useOutlineJobs()
   const clipIdeas = useClipIdeas()
+  const planAi = usePlanAi()
   const editSession = useEditSession()
 
   // Prefer the designated primary mic; otherwise "on" when any mic is
@@ -285,6 +295,14 @@ export function StatusBar({
         jobs={clipIdeas.jobs}
         notice={clipIdeas.notice}
         onOpen={onOpenClipIdeas}
+      />
+
+      {/* AI thumbnail/listing generation for a video plan; click through to
+          the plan's Publish tab to review the result. */}
+      <PlanAiStatus
+        jobs={planAi.jobs}
+        notice={planAi.notice}
+        onOpen={onOpenPlanAi}
       />
 
       {/* Post-stream wrap-up pipeline (download → transcribe → outline →
@@ -506,6 +524,67 @@ function ClipIdeasStatus({
       }
     >
       <Scissors size={12} aria-hidden />
+      <span className="max-w-[22rem] truncate">
+        {notice.state === 'done' ? '✓ ' : ''}
+        {notice.detail}
+      </span>
+    </button>
+  )
+}
+
+/**
+ * Plan-AI chip: while the AI produces a video plan's thumbnail or listing
+ * (title/description/tags) it is a button that jumps to that plan's Publish
+ * tab. The run is owned by PlanAiProvider and persists its own result, so
+ * navigating away costs nothing; the done notice turns green and lingers,
+ * still clickable, so the result is one click away from anywhere.
+ */
+function PlanAiStatus({
+  jobs,
+  notice,
+  onOpen,
+}: {
+  jobs: PlanAiJob[]
+  notice: PlanAiNotice | null
+  onOpen: (planId: string) => void
+}) {
+  if (jobs.length > 0) {
+    const label =
+      jobs.length === 1
+        ? `${jobs[0].kind === 'thumbnail' ? 'Generating thumbnail' : 'Drafting listing'} — ${
+            jobs[0].title || 'video plan'
+          }`
+        : `Running ${jobs.length} AI drafts`
+    return (
+      <button
+        type="button"
+        onClick={() => onOpen(jobs[0].planId)}
+        title="Open the plan's Publish tab — generation keeps going in the background"
+        className="inline-flex min-w-0 items-center gap-1.5 font-medium text-fg transition-colors hover:text-accent"
+      >
+        <Loader2 size={12} aria-hidden className="animate-spin" />
+        <span className="max-w-[22rem] truncate">{label}</span>
+      </button>
+    )
+  }
+
+  if (!notice) return null
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(notice.planId)}
+      title={
+        notice.state === 'done'
+          ? 'Open the Publish tab to review the result'
+          : notice.detail
+      }
+      className={
+        notice.state === 'error'
+          ? 'inline-flex min-w-0 items-center gap-1.5 font-medium text-red-500 transition-colors hover:text-accent dark:text-red-400'
+          : 'inline-flex min-w-0 items-center gap-1.5 font-medium text-green-600 transition-colors hover:text-accent dark:text-green-400'
+      }
+    >
+      <WandSparkles size={12} aria-hidden />
       <span className="max-w-[22rem] truncate">
         {notice.state === 'done' ? '✓ ' : ''}
         {notice.detail}

@@ -41,7 +41,8 @@ Every session must finish by writing `edit/cuts.json` — the map from the finis
 - `start`/`end` are seconds **in the finished video**, contiguous and in playback order, covering it end to end.
 - `source` is the source video's file name in the workspace root, with `sourceStart`/`sourceEnd` the span it was taken from — this is what makes a segment expandable. Omit all three for material that has no single source (title cards, generated overlays, montages); the segment still needs `start`/`end`.
 - `label` is a short human description of the beat. Keep it under ~60 characters.
-- Write the manifest last, from the cut you actually rendered — not from the plan you started with.
+- Write the manifest as soon as the cut is locked — before starting the long render, not after it. A session cancelled or killed mid-render then still leaves the segment map behind, and the timeline can pre-split the video the moment the render lands.
+- If the render changes the cut in any way (a segment dropped, a duration trimmed), re-write the manifest afterwards so it describes the video that was actually rendered — never leave it describing a plan the render diverged from.
 
 ## Rendering discipline
 

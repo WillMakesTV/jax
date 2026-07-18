@@ -1,5 +1,11 @@
 import clsx from 'clsx'
-import {Bug, ChevronLeft, ChevronRight, RadioTower} from 'lucide-react'
+import {
+  Bug,
+  ChevronLeft,
+  ChevronRight,
+  MonitorPlay,
+  RadioTower,
+} from 'lucide-react'
 import {useState} from 'react'
 import {aggregateLive, useLiveData} from '../live/LiveDataProvider'
 import type {ViewId} from '../navigation'
@@ -16,15 +22,15 @@ interface TopBarProps {
   canForward: boolean
   onBack: () => void
   onForward: () => void
-  /** Open the Broadcast section (the CTA next to the user menu). */
-  onOpenBroadcast: () => void
+  /** Open the OBS Studio section (the CTA next to the user menu). */
+  onOpenObs: () => void
   /** Open the profile page on the given tab (from the user menu). */
   onOpenProfile: (tab: ProfileTab) => void
 }
 
 /**
  * Application top bar. Left: history back/forward and the current route title.
- * Right: the Broadcast CTA and the user menu.
+ * Right: the OBS Studio CTA and the user menu.
  */
 export function TopBar({
   title,
@@ -33,7 +39,7 @@ export function TopBar({
   canForward,
   onBack,
   onForward,
-  onOpenBroadcast,
+  onOpenObs,
   onOpenProfile,
 }: TopBarProps) {
   const [debugOpen, setDebugOpen] = useState(false)
@@ -76,7 +82,7 @@ export function TopBar({
         >
           <Bug size={16} aria-hidden />
         </button>
-        <BroadcastCta onClick={onOpenBroadcast} />
+        <ObsCta onOpenObs={onOpenObs} />
         <UserMenu onOpenProfile={onOpenProfile} />
       </div>
 
@@ -90,19 +96,20 @@ export function TopBar({
 }
 
 /**
- * The Broadcast section entry point: an emerald CTA (distinct from the indigo
- * accent used across the app) that turns red and pulses while a broadcast is
- * on the air (the indicator formerly on the sidebar's Broadcast item).
+ * The OBS Studio entry point: an emerald CTA (distinct from the indigo accent
+ * used across the app) in the slot the Broadcast CTA used to occupy. It always
+ * opens the OBS Studio page; while a broadcast is on the air it turns red and
+ * pulses to signal the live state, but still links back to OBS.
  */
-function BroadcastCta({onClick}: {onClick: () => void}) {
+function ObsCta({onOpenObs}: {onOpenObs: () => void}) {
   const {platforms, obs} = useLiveData()
   const {anyLive} = aggregateLive(platforms, obs)
 
   return (
     <button
       type="button"
-      onClick={onClick}
-      title={anyLive ? 'On the air — open Broadcast' : 'Open Broadcast'}
+      onClick={onOpenObs}
+      title={anyLive ? 'On the air — open OBS Studio' : 'Open OBS Studio'}
       className={clsx(
         'inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors',
         anyLive
@@ -110,12 +117,12 @@ function BroadcastCta({onClick}: {onClick: () => void}) {
           : 'bg-emerald-700 text-white hover:bg-emerald-600 dark:bg-emerald-400 dark:text-emerald-950 dark:hover:bg-emerald-300',
       )}
     >
-      <RadioTower
-        size={16}
-        aria-hidden
-        className={clsx(anyLive && 'animate-pulse')}
-      />
-      {anyLive ? 'On air' : 'Broadcast'}
+      {anyLive ? (
+        <RadioTower size={16} aria-hidden className="animate-pulse" />
+      ) : (
+        <MonitorPlay size={16} aria-hidden />
+      )}
+      {anyLive ? 'On air' : 'OBS Studio'}
     </button>
   )
 }

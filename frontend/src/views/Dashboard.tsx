@@ -16,11 +16,9 @@ import {
   RefreshChannelInfo,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
-import {PlatformPill} from '../components/PlatformPill'
 import {openExternal} from '../lib/browser'
 import {formatCompact} from '../lib/format'
 import {aggregateLive, useLiveData} from '../live/LiveDataProvider'
-import {LiveBadge, StatusPill} from '../live/LiveOverview'
 import {SERVICES, platformName} from '../services/services'
 
 interface DashboardProps {
@@ -82,8 +80,9 @@ const TILES: {
  *
  * The hero merges the audience across every connected platform — the figure
  * nobody can read off seven separate cards — and shows how far it has moved
- * over the chosen window. Beneath it, the connected channels become tabs: one
- * platform at a time, with its live state and its own numbers.
+ * over the chosen window. Beneath it, each connected channel gets its own
+ * card with its live state and key numbers; clicking one opens the channel's
+ * full details page.
  *
  * Growth can only be shown for days that were actually recorded (see
  * metrics.go); the app never back-fills a past it didn't observe, so a fresh
@@ -289,11 +288,12 @@ export function Dashboard({onOpenChannel}: DashboardProps) {
       </section>
 
       {/* ---------------------------------------------------------------
-          The channels, one tab at a time.
+          The channels, one card each.
           --------------------------------------------------------------- */}
-      <ChannelTabs
+      <ChannelCards
         platforms={platforms}
         breakdown={snap?.platforms ?? []}
+        growth={snap?.platformGrowth ?? []}
         onOpenChannel={onOpenChannel}
       />
     </div>
@@ -406,26 +406,26 @@ function GrowthChart({
 }
 
 // ---------------------------------------------------------------------------
-// Channel tabs
+// Channel cards
+//
+// One compact card per connected channel, led by the service's logo, with the
+// channel's key numbers and how far each has moved over the chosen window.
+// The whole card is the click target; it opens the channel's full details
+// page, where the platform's self-reported details live.
 // ---------------------------------------------------------------------------
 
-function ChannelTabs({
+function ChannelCards({
   platforms,
   breakdown,
+  growth,
   onOpenChannel,
 }: {
   platforms: main.LiveStream[]
   breakdown: main.ChannelMetrics[]
+  growth: main.ChannelMetrics[]
   onOpenChannel: (platform: string) => void
 }) {
-  const [active, setActive] = useState('')
   const channels = platforms ?? []
-
-  // Land on the live channel if there is one, else the first.
-  const current =
-    channels.find((c) => c.platform === active) ??
-    channels.find((c) => c.live) ??
-    channels[0]
 
   if (channels.length === 0) {
     return (
@@ -437,170 +437,126 @@ function ChannelTabs({
     )
   }
 
-  const metrics = breakdown.find((m) => m.platform === current?.platform)
-
   return (
-    <section aria-label="Channels" className="flex flex-col gap-4">
-      <div
-        role="tablist"
-        aria-label="Connected channels"
-        className="flex w-fit max-w-full flex-wrap items-center gap-1 rounded-lg border border-edge bg-surface p-1"
-      >
+    <section aria-label="Channels">
+      <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {channels.map((c) => {
-          const selected = c.platform === current?.platform
           const def = SERVICES.find((s) => s.id === c.platform)
           const Icon = def?.Icon
+          const metrics = breakdown.find((m) => m.platform === c.platform)
+          const delta = growth.find((m) => m.platform === c.platform)
+          const stats = metrics
+            ? TILES.filter((t) => (metrics[t.key] ?? 0) > 0)
+            : []
           return (
-            <button
-              key={c.platform}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              onClick={() => setActive(c.platform)}
-              className={clsx(
-                'inline-flex items-center gap-1.5 rounded-md py-1.5 pl-1.5 pr-3 text-sm font-medium transition-colors',
-                selected
-                  ? 'bg-accent text-accent-fg'
-                  : 'text-fg-muted hover:bg-surface-hover hover:text-fg',
-              )}
-            >
-              {Icon && (
-                // The logo keeps its brand colour on both states — a Twitch
-                // purple that turns accent-coloured when selected stops being
-                // a logo and starts being decoration.
-                <span
-                  aria-hidden
-                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white"
-                  style={{backgroundColor: def?.brand}}
-                >
-                  <Icon size={12} />
-                </span>
-              )}
-              {platformName(c.platform)}
-              {c.live && (
-                <span
-                  aria-label="live"
-                  className="h-1.5 w-1.5 rounded-full bg-red-500"
-                />
-              )}
-            </button>
+            <li key={c.platform}>
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => onOpenChannel(c.platform)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    onOpenChannel(c.platform)
+                  }
+                }}
+                aria-label={`Open ${c.channelName || platformName(c.platform)} details`}
+                className="flex h-full cursor-pointer flex-col gap-2.5 rounded-xl border border-edge bg-surface p-3 text-left transition-colors hover:border-accent/50 hover:bg-surface-hover"
+              >
+                <header className="flex items-center gap-2.5">
+                  {Icon && (
+                    <span
+                      aria-hidden
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white"
+                      style={{backgroundColor: def?.brand}}
+                    >
+                      <Icon size={18} />
+                    </span>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-fg">
+                      {c.channelName || platformName(c.platform)}
+                    </p>
+                    <p className="truncate text-xs text-fg-muted">
+                      {platformName(c.platform)}
+                      {c.live &&
+                        c.viewerCount > 0 &&
+                        ` · ${formatCompact(c.viewerCount)} watching`}
+                    </p>
+                  </div>
+                  {c.live && (
+                    <span
+                      aria-label="live"
+                      title="Live now"
+                      className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500"
+                    />
+                  )}
+                  {c.channelUrl && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openExternal(c.channelUrl)
+                      }}
+                      title={`Visit ${platformName(c.platform)}`}
+                      aria-label={`Visit ${platformName(c.platform)} in the browser`}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                    >
+                      <ExternalLink size={13} aria-hidden />
+                    </button>
+                  )}
+                </header>
+
+                {c.error ? (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    {c.error}
+                  </p>
+                ) : (
+                  stats.length > 0 && (
+                    <ul className="mt-auto flex flex-wrap gap-x-4 gap-y-1">
+                      {stats.map((t) => (
+                        <li
+                          key={t.key}
+                          title={t.label}
+                          className="flex items-baseline gap-1 text-sm"
+                        >
+                          <t.icon
+                            size={12}
+                            aria-hidden
+                            className="self-center text-fg-muted"
+                          />
+                          <span className="font-semibold text-fg">
+                            {formatCompact(metrics?.[t.key] ?? 0)}
+                          </span>
+                          <GrowthDelta value={delta?.[t.key] ?? 0} />
+                        </li>
+                      ))}
+                    </ul>
+                  )
+                )}
+              </div>
+            </li>
           )
         })}
-      </div>
-
-      {current && (
-        <article className="flex flex-col gap-4 rounded-xl border border-edge bg-surface p-5">
-          <header className="flex flex-wrap items-start justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              {current.avatarUrl && (
-                <img
-                  src={current.avatarUrl}
-                  alt=""
-                  aria-hidden
-                  className="h-11 w-11 shrink-0 rounded-full border border-edge object-cover"
-                />
-              )}
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-fg">
-                  {current.channelName || platformName(current.platform)}
-                </p>
-                <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <PlatformPill platform={current.platform} />
-                  <StatusPill live={current.live} />
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {current.channelUrl && (
-                <button
-                  type="button"
-                  onClick={() => openExternal(current.channelUrl)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-edge px-3 py-1.5 text-xs font-semibold text-fg transition-colors hover:bg-surface-hover"
-                >
-                  <ExternalLink size={12} aria-hidden />
-                  Visit
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => onOpenChannel(current.platform)}
-                className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90"
-              >
-                Open channel
-              </button>
-            </div>
-          </header>
-
-          {current.error ? (
-            <p className="text-sm text-amber-600 dark:text-amber-400">
-              {current.error}
-            </p>
-          ) : (
-            <>
-              {/* Live now: what is on the air. */}
-              {current.live && (
-                <div className="flex flex-col gap-1.5 rounded-lg border border-edge bg-bg p-3">
-                  <div className="flex items-center gap-2">
-                    <LiveBadge isLive />
-                    {current.viewerCount > 0 && (
-                      <span className="text-xs text-fg-muted">
-                        {formatCompact(current.viewerCount)} watching
-                      </span>
-                    )}
-                  </div>
-                  {current.title && (
-                    <p className="text-sm font-medium text-fg">
-                      {current.title}
-                    </p>
-                  )}
-                  {current.category && (
-                    <p className="text-xs text-fg-muted">{current.category}</p>
-                  )}
-                </div>
-              )}
-
-              {/* This channel's contribution to the totals above. */}
-              {metrics && (
-                <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {TILES.filter(
-                    (t) => (metrics[t.key] ?? 0) > 0,
-                  ).map((t) => (
-                    <li
-                      key={t.key}
-                      className="rounded-lg border border-edge bg-bg p-3"
-                    >
-                      <p className="inline-flex items-center gap-1.5 text-xs text-fg-muted">
-                        <t.icon size={12} aria-hidden />
-                        {t.label}
-                      </p>
-                      <p className="mt-0.5 text-lg font-semibold text-fg">
-                        {formatCompact(metrics[t.key] ?? 0)}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {/* Whatever else the platform reports about itself. */}
-              {(current.details ?? []).length > 0 && (
-                <dl className="grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
-                  {(current.details ?? []).map((d) => (
-                    <div
-                      key={d.label}
-                      className="flex items-baseline justify-between gap-3 border-b border-edge py-1.5 last:border-0"
-                    >
-                      <dt className="text-xs text-fg-muted">{d.label}</dt>
-                      <dd className="truncate text-xs font-medium text-fg">
-                        {d.value}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
-            </>
-          )}
-        </article>
-      )}
+      </ul>
     </section>
+  )
+}
+
+/** A stat's movement over the window: green up, red down, silent at zero. */
+function GrowthDelta({value}: {value: number}) {
+  if (!value) return null
+  return (
+    <span
+      className={clsx(
+        'text-xs font-medium',
+        value > 0
+          ? 'text-emerald-600 dark:text-emerald-400'
+          : 'text-red-600 dark:text-red-400',
+      )}
+    >
+      {value > 0 ? '+' : '−'}
+      {formatCompact(Math.abs(value))}
+    </span>
   )
 }

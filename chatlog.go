@@ -62,6 +62,41 @@ func (a *App) GetChatHistory(limit int) []StoredChatMessage {
 	return messages
 }
 
+// GetSessionChatHistory returns the active stream session's stored chat — the
+// newest limit messages in chronological order. The Broadcasting page's live
+// feed seeds from this rather than GetChatHistory: the feed shows the
+// broadcast on the air, and a finished stream's chat is reached through its
+// past-stream page instead (GetChatForStream). Empty when no session is open.
+// Never returns nil.
+func (a *App) GetSessionChatHistory(limit int) []StoredChatMessage {
+	if a.store == nil {
+		return []StoredChatMessage{}
+	}
+	if limit <= 0 {
+		limit = 300
+	}
+	session := a.GetActiveStreamSession()
+	if !session.Active {
+		return []StoredChatMessage{}
+	}
+	start, err := time.Parse(time.RFC3339, session.StartedAt)
+	if err != nil {
+		return []StoredChatMessage{}
+	}
+	margin := a.pastMatchMargin()
+	lo := start.Add(-margin).UnixMilli()
+	hi := time.Now().Add(margin).UnixMilli()
+	out, err := a.store.getChatBetween(lo, hi)
+	if err != nil {
+		log.Printf("jax: GetSessionChatHistory: %v", err)
+		return []StoredChatMessage{}
+	}
+	if len(out) > limit {
+		out = out[len(out)-limit:]
+	}
+	return out
+}
+
 // GetChatForStream returns stored chat messages that fall within a broadcast's
 // window — [startedAt - margin, startedAt + duration + margin] — in
 // chronological order. Session-protected messages are found no matter how old,

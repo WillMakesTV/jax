@@ -378,6 +378,7 @@ export namespace main {
 	    description: string;
 	    route: string;
 	    global: boolean;
+	    checkedOut: boolean;
 	    createdAt: string;
 	    updatedAt: string;
 	
@@ -392,6 +393,7 @@ export namespace main {
 	        this.description = source["description"];
 	        this.route = source["route"];
 	        this.global = source["global"];
+	        this.checkedOut = source["checkedOut"];
 	        this.createdAt = source["createdAt"];
 	        this.updatedAt = source["updatedAt"];
 	    }
@@ -895,11 +897,12 @@ export namespace main {
 	    previous: MetricTotals;
 	    growth: MetricTotals;
 	    hasHistory: boolean;
-	
+	    platformGrowth: ChannelMetrics[];
+
 	    static createFrom(source: any = {}) {
 	        return new MetricsSnapshot(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.day = source["day"];
@@ -908,6 +911,7 @@ export namespace main {
 	        this.previous = this.convertValues(source["previous"], MetricTotals);
 	        this.growth = this.convertValues(source["growth"], MetricTotals);
 	        this.hasHistory = source["hasHistory"];
+	        this.platformGrowth = this.convertValues(source["platformGrowth"], ChannelMetrics);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1312,6 +1316,34 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
 	        this.email = source["email"];
+	    }
+	}
+	export class ProjectChatMessage {
+	    role: string;
+	    text: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ProjectChatMessage(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.role = source["role"];
+	        this.text = source["text"];
+	    }
+	}
+	export class ProjectChatReply {
+	    reply: string;
+	    description: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ProjectChatReply(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.reply = source["reply"];
+	        this.description = source["description"];
 	    }
 	}
 	export class ProjectDoc {
@@ -1882,6 +1914,7 @@ export namespace main {
 	    format: string;
 	    tags: string[];
 	    streams: VideoPlanStream[];
+	    files: string[];
 	    thumbnailFile: string;
 	    thumbnailUrl: string;
 	    thumbnailHistory: string[];
@@ -1903,6 +1936,7 @@ export namespace main {
 	        this.format = source["format"];
 	        this.tags = source["tags"];
 	        this.streams = this.convertValues(source["streams"], VideoPlanStream);
+	        this.files = source["files"];
 	        this.thumbnailFile = source["thumbnailFile"];
 	        this.thumbnailUrl = source["thumbnailUrl"];
 	        this.thumbnailHistory = source["thumbnailHistory"];

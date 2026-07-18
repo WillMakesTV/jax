@@ -29,7 +29,9 @@ import {
   zipThumbHistory,
   type PlanThumb,
 } from '../components/PlanThumbnailEditor'
+import {MarkdownField} from '../components/markdown/MarkdownField'
 import {formatBytes, formatDate} from '../lib/format'
+import {usePlanAi} from '../plans/PlanAiProvider'
 import {useServices} from '../services/ServicesProvider'
 import {DescriptionAiActions} from './PlanStream'
 
@@ -80,7 +82,8 @@ export function VideoPlanPublish({
   const ytConnected = Boolean(statuses.youtube?.connected)
   const ttConnected = Boolean(statuses.tiktok?.connected)
   const aiConnected =
-    Boolean(statuses.anthropic?.connected) || Boolean(statuses.openai?.connected)
+    Boolean(statuses.anthropic?.connected) ||
+    Boolean(statuses.openai?.connected)
   const openaiConnected = Boolean(statuses.openai?.connected)
 
   const [outputs, setOutputs] = useState<main.EditOutput[]>([])
@@ -94,7 +97,9 @@ export function VideoPlanPublish({
   const [privacy, setPrivacy] = useState('public')
   const [record, setRecord] = useState<main.VideoPublishRecord | null>(null)
   const [publishing, setPublishing] = useState(false)
-  const [ttRecord, setTtRecord] = useState<main.TikTokPublishRecord | null>(null)
+  const [ttRecord, setTtRecord] = useState<main.TikTokPublishRecord | null>(
+    null,
+  )
   const [ttPublishing, setTtPublishing] = useState(false)
   const [ttWarning, setTtWarning] = useState('')
   const [progress, setProgress] = useState('')
@@ -108,6 +113,9 @@ export function VideoPlanPublish({
   // Guards the draft autosave until the stored draft has been applied, so a
   // mount never clobbers it with the initial values.
   const loaded = useRef(false)
+  // Remounts the description editor once the stored draft is in, so it opens
+  // read-only when a description exists (its view/edit mode is set on mount).
+  const [ready, setReady] = useState(false)
   // The first visit pre-drafts the listing; this makes sure it happens once.
   const preDrafted = useRef(false)
 
@@ -123,23 +131,47 @@ export function VideoPlanPublish({
     privacy,
   })
 
+  const planAi = usePlanAi()
+
   /**
    * Draft fields on the connected AI service. Fields empty = the whole
    * listing; feedback carries the producer's "request edits" note. Only the
    * fields that come back are touched, so regenerating one leaves the rest of
    * the producer's work alone.
+   *
+   * The run is owned by PlanAiProvider — a status-bar chip tracks it, and it
+   * persists the result onto the stored draft itself, so navigating away
+   * mid-draft loses nothing.
    */
   const draft = useCallback(
     async (fields: PublishField[], note = '') => {
       setDrafting(fields.length === 1 ? fields[0] : 'all')
       setError('')
       try {
-        const s = await GenerateVideoPublishFields(
-          plan.id,
-          formRef.current!,
-          fields,
-          note,
-        )
+        const s = await planAi.run('listing', plan.id, plan.title, async () => {
+          const s = await GenerateVideoPublishFields(
+            plan.id,
+            formRef.current!,
+            fields,
+            note,
+          )
+          // Persist straight onto the stored draft: the mounted form below
+          // also applies it, but a run that finishes after navigating away
+          // must still land.
+          const base = formRef.current!
+          await SaveVideoPublishDraft(
+            plan.id,
+            main.VideoPublishDraft.createFrom({
+              output: base.output,
+              title: s.title || base.title,
+              description: s.description || base.description,
+              tags: (s.tags ?? []).length > 0 ? s.tags : base.tags,
+              categoryId: s.categoryId || base.categoryId,
+              privacy: base.privacy,
+            }),
+          )
+          return s
+        })
         if (s.title) setTitle(s.title)
         if (s.description) setDescription(s.description)
         if ((s.tags ?? []).length > 0) setTags(s.tags.join(', '))
@@ -152,7 +184,7 @@ export function VideoPlanPublish({
         setDrafting('')
       }
     },
-    [plan.id],
+    [plan.id, plan.title, planAi],
   )
 
   // Nothing has been written for this plan yet and there is a video to
@@ -180,7 +212,13 @@ export function VideoPlanPublish({
       setCategories(cats ?? [])
 
       if (st?.draft) {
-        if (st.draft.output) setOutput(st.draft.output)
+        const draftOutput = st.draft.output
+        // A draft can name an output that no longer exists (re-rendered under
+        // another name, workspace cleaned); honoring it would blank the
+        // player, so it only wins when the file is still there.
+        if (draftOutput && outs.some((o) => o.name === draftOutput)) {
+          setOutput(draftOutput)
+        }
         if (st.draft.title) setTitle(st.draft.title)
         setDescription(st.draft.description ?? '')
         if ((st.draft.tags ?? []).length > 0) {
@@ -196,6 +234,7 @@ export function VideoPlanPublish({
       if (st?.record) setRecord(main.VideoPublishRecord.createFrom(st.record))
       setPublishing(st?.publishing ?? false)
       loaded.current = true
+      setReady(true)
       setBlankWithVideo(!st?.draft && outs.length > 0)
     })
     return () => {
@@ -463,13 +502,26 @@ export function VideoPlanPublish({
                 plan.thumbnailHistoryUrls,
               )}
               onApply={applyThumb}
+              // The run is owned by PlanAiProvider (status-bar chip) and
+              // applies its result itself, so a generation that finishes
+              // after navigating away still lands on the plan; the mounted
+              // editor's own onApply is then a no-op for the history.
               onGenerate={(feedback, currentFile) =>
-                GenerateVideoPlanThumbnail(
+                planAi.run(
+                  'thumbnail',
                   plan.id,
                   title || plan.title,
-                  description || plan.description,
-                  feedback,
-                  currentFile,
+                  async () => {
+                    const t = await GenerateVideoPlanThumbnail(
+                      plan.id,
+                      title || plan.title,
+                      description || plan.description,
+                      feedback,
+                      currentFile,
+                    )
+                    await applyThumb({file: t.file, url: t.url})
+                    return t
+                  },
                 )
               }
               generateTip={`Generated ${
@@ -613,28 +665,38 @@ export function VideoPlanPublish({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <FieldLabel
+          <label
             htmlFor="publish-description"
-            label="Description"
-            busy={drafting === 'description'}
-            disabled={!aiConnected || busy}
-            onRegenerate={() => void draft(['description'])}
-            tip="Rewrite just the description — the title, tags, and category are left alone."
-          />
-          <textarea
+            className="text-sm font-medium text-fg"
+          >
+            Description
+          </label>
+          {/* Read-only rendered view until its Edit CTA is pressed; the
+              Regenerate CTA lives in the editor's toolbar. Keyed on ready so
+              a stored description opens in view mode, not the editor. */}
+          <MarkdownField
+            key={ready ? 'ready' : 'loading'}
             id="publish-description"
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            onSelect={(e) =>
-              setSelection([
-                e.currentTarget.selectionStart,
-                e.currentTarget.selectionEnd,
-              ])
+            onChange={setDescription}
+            onSelectionChange={(start, end) => setSelection([start, end])}
+            placeholder="The YouTube description — published verbatim. Generate it above: it summarizes the video from the source outlines and links the original full-length broadcast above your brand links."
+            actions={
+              <button
+                type="button"
+                onClick={() => void draft(['description'])}
+                disabled={!aiConnected || busy}
+                title="Rewrite just the description — the title, tags, and category are left alone."
+                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-accent disabled:opacity-40"
+              >
+                {drafting === 'description' ? (
+                  <Loader2 size={12} aria-hidden className="animate-spin" />
+                ) : (
+                  <Sparkles size={12} aria-hidden />
+                )}
+                {drafting === 'description' ? 'Drafting…' : 'Regenerate'}
+              </button>
             }
-            rows={12}
-            disabled={publishing}
-            placeholder="The YouTube description — plain text, published verbatim. Generate it above: it summarizes the video from the source outlines and links the original full-length broadcast above your brand links."
-            className="w-full resize-y rounded-lg border border-edge bg-bg px-3 py-2 font-mono text-xs leading-relaxed text-fg outline-none focus:border-accent disabled:opacity-60"
           />
           {/* Highlight a passage to rewrite just that part, or edit the whole
               text — the same AI actions the broadcast-plan form has. */}
@@ -710,7 +772,9 @@ export function VideoPlanPublish({
         </div>
       </section>
 
-      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {error && (
+        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
       {warning && (
         <p className="text-sm text-amber-600 dark:text-amber-400">{warning}</p>
       )}

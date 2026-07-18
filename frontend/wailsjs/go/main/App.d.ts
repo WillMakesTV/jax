@@ -32,6 +32,8 @@ export function CancelTranscribeDownload(arg1:string):Promise<void>;
 
 export function CancelXAuth():Promise<void>;
 
+export function ChatProjectDescription(arg1:string,arg2:main.ProjectChatMessage[],arg3:string):Promise<main.ProjectChatReply>;
+
 export function ChooseClipIdea(arg1:string,arg2:string,arg3:string,arg4:number):Promise<main.VideoPlan>;
 
 export function ClipIdeasInProgress(arg1:string,arg2:string):Promise<boolean>;
@@ -49,6 +51,8 @@ export function ConnectInstagram():Promise<main.ServiceStatus>;
 export function ConnectOpenAIAPIKey(arg1:string):Promise<main.ServiceStatus>;
 
 export function ConnectOpenAIAccount():Promise<main.ServiceStatus>;
+
+export function CheckOutDebugReport(arg1:number):Promise<main.DebugReport>;
 
 export function CountDebugReports():Promise<number>;
 
@@ -198,6 +202,8 @@ export function GetServiceConfig():Promise<main.ServiceConfig>;
 
 export function GetServiceStatuses():Promise<Array<main.ServiceStatus>>;
 
+export function GetSessionChatHistory(arg1:number):Promise<Array<main.StoredChatMessage>>;
+
 export function GetSetting(arg1:string):Promise<string>;
 
 export function GetStreamOutline(arg1:string):Promise<main.StreamOutline>;
@@ -240,6 +246,8 @@ export function ListFacebookPages():Promise<Array<main.FBPageInfo>>;
 
 export function ListFixNotices():Promise<Array<main.FixNotice>>;
 
+export function ImportVideoPlanFootage(arg1:string,arg2:Array<string>):Promise<main.VideoPlan>;
+
 export function MarkAllChatRead():Promise<void>;
 
 export function MarkAllLiveEventsRead():Promise<void>;
@@ -251,6 +259,8 @@ export function MoveEditWorkspaceFolder(arg1:string):Promise<number>;
 export function NextEpisodeNumber(arg1:string):Promise<number>;
 
 export function OutlineInProgress(arg1:string):Promise<boolean>;
+
+export function PickFootageFiles():Promise<Array<string>>;
 
 export function PollFacebookDeviceAuth(arg1:string,arg2:string,arg3:string):Promise<main.AuthPollResult>;
 
@@ -275,6 +285,8 @@ export function PublishPlanVideoToTikTok(arg1:string,arg2:string,arg3:string,arg
 export function RecycleMCPToken():Promise<main.MCPStatus>;
 
 export function RefreshChannelInfo():Promise<void>;
+
+export function RemoveVideoPlanFootage(arg1:string,arg2:string):Promise<main.VideoPlan>;
 
 export function ReopenVideoPlan(arg1:string):Promise<main.VideoPlan>;
 

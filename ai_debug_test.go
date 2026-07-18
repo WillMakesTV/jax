@@ -160,6 +160,39 @@ func TestResolveDebugReportLeavesFixNotice(t *testing.T) {
 	}
 }
 
+func TestCheckOutDebugReport(t *testing.T) {
+	a := newTestApp(t)
+
+	r, _ := a.SaveDebugReport(DebugReport{Description: "claim me"})
+	if r.CheckedOut {
+		t.Fatal("a new report should not be checked out")
+	}
+
+	// First claim succeeds and flips the flag.
+	claimed, err := a.CheckOutDebugReport(r.ID)
+	if err != nil {
+		t.Fatalf("check out: %v", err)
+	}
+	if !claimed.CheckedOut {
+		t.Fatalf("claimed report is not marked checked out: %+v", claimed)
+	}
+
+	// The flag is visible to everyone else reading the queue.
+	if got := a.ListDebugReports(); len(got) != 1 || !got[0].CheckedOut {
+		t.Fatalf("list should show the report checked out: %+v", got)
+	}
+
+	// A second claim on the same report is refused.
+	if _, err := a.CheckOutDebugReport(r.ID); err == nil {
+		t.Fatal("want error checking out an already-claimed report")
+	}
+
+	// Checking out a report that does not exist is an error.
+	if _, err := a.CheckOutDebugReport(9999); err == nil {
+		t.Fatal("want error checking out a missing report")
+	}
+}
+
 // The optional AI Debugging skill only appears while the Development toggle
 // is on — both in the Skills tab and over MCP, which share ListAppSkills.
 func TestAIDebuggingSkillGatedBySetting(t *testing.T) {

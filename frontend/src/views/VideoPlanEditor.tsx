@@ -365,7 +365,11 @@ export function VideoPlanEditor({
   const sources = ws?.sources ?? []
   const outputs = ws?.outputs ?? []
   const readySources = sources.filter((s) => s.file || s.downloaded)
-  const notReady = sources.filter((s) => !s.downloaded || !s.hasTranscript)
+  // Imported footage (no startedAt) never has a broadcast to download or
+  // transcribe, so it can't count as a not-ready source stream.
+  const notReady = sources.filter(
+    (s) => s.startedAt && (!s.downloaded || !s.hasTranscript),
+  )
   // The video the producer reviews: the session's final cut, else whatever it
   // rendered.
   const current =
@@ -622,13 +626,15 @@ export function VideoPlanEditor({
       )}
 
       {/* ---------------------------------------------------------------
-          The video the session produced, and the two ways forward from it.
-          It stands open beneath the script the moment a cut is saved: the
-          player and the timeline are the same panel (one video, scrubbed by
-          the playhead the cutting tools work against), and Request edits sends
-          the cut back to the AI for another pass.
-          --------------------------------------------------------------- */}
-      {current && !running && (
+          The video, and the two ways forward from it. It stands open beneath
+          the script the moment a cut is saved — the player and the timeline
+          are the same panel (one video, scrubbed by the playhead the cutting
+          tools work against), and Request edits sends the cut back to the AI
+          for another pass. Before the first render it plays the downloaded
+          source footage instead, so a fresh plan (long form especially, where
+          cutting the broadcast by hand is normal) is never left without a
+          player. */}
+      {(current || readySources.length > 0) && !running && (
         <section
           aria-labelledby="editor-video-heading"
           className="flex flex-col gap-3"
@@ -640,10 +646,16 @@ export function VideoPlanEditor({
             >
               The video
             </h2>
-            <p className="text-xs text-fg-muted">
-              {current.name} · {formatBytes(current.sizeBytes)} · rendered{' '}
-              {formatDate(current.modifiedAt)}
-            </p>
+            {current ? (
+              <p className="text-xs text-fg-muted">
+                {current.name} · {formatBytes(current.sizeBytes)} · rendered{' '}
+                {formatDate(current.modifiedAt)}
+              </p>
+            ) : (
+              <p className="text-xs text-fg-muted">
+                No cut rendered yet — playing the source footage.
+              </p>
+            )}
           </div>
 
           {/* Player on top, timeline beneath: split, delete, reorder, and
@@ -663,25 +675,27 @@ export function VideoPlanEditor({
           />
 
           {/* Or hand it back to the AI: the feedback is the brief for another
-              cut of the video. */}
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setRequesting((open) => !open)}
-              disabled={!canProcess}
-              title="Describe what should change and the AI makes another cut for review"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <MessageSquarePlus size={14} aria-hidden />
-              Request edits
-            </button>
-            <span className="text-xs text-fg-muted">
-              Rather have the AI redo it than cut it yourself? Describe the
-              changes and it makes another pass.
-            </span>
-          </div>
+              cut of the video. Only meaningful once a cut exists. */}
+          {current && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setRequesting((open) => !open)}
+                disabled={!canProcess}
+                title="Describe what should change and the AI makes another cut for review"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <MessageSquarePlus size={14} aria-hidden />
+                Request edits
+              </button>
+              <span className="text-xs text-fg-muted">
+                Rather have the AI redo it than cut it yourself? Describe the
+                changes and it makes another pass.
+              </span>
+            </div>
+          )}
 
-          {requesting && (
+          {current && requesting && (
             <div className="flex flex-col gap-2 rounded-xl border border-edge bg-surface p-4">
               <label
                 htmlFor="editor-feedback"
@@ -801,9 +815,7 @@ export function VideoPlanEditor({
                   className="rounded-lg border border-edge bg-bg p-2.5"
                 >
                   <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-fg-muted">
-                    {r.kind === 'timeline'
-                      ? 'Timeline pass'
-                      : 'You asked for'}{' '}
+                    {r.kind === 'timeline' ? 'Timeline pass' : 'You asked for'}{' '}
                     · {formatDate(r.at)}
                   </p>
                   <p className="whitespace-pre-wrap text-fg">{r.text}</p>
@@ -847,7 +859,9 @@ export function VideoPlanEditor({
           )}
 
           {taught && (
-            <p className="text-sm text-green-600 dark:text-green-400">{taught}</p>
+            <p className="text-sm text-green-600 dark:text-green-400">
+              {taught}
+            </p>
           )}
         </section>
       )}

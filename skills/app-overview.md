@@ -3,10 +3,9 @@ Jax is a desktop control room for a streaming creator: it plans streams, pushes 
 ## The main areas
 
 - **Dashboard** — live metrics and channel analytics at a glance.
-- **Broadcast** — the on-air view: OBS program preview, cross-channel chat, live events, and the live transcript.
-- **Planning** — upcoming stream plans, past streams, and content series (reusable show metadata).
+- **Broadcasting** — the whole broadcast lifecycle: upcoming stream plans with go-live actions, the on-air view (OBS program preview, cross-channel chat, live events, live transcript), past streams, and content series (reusable show metadata).
 - **Projects** — bodies of work (launches, campaigns) with markdown docs and asset files.
-- **OBS Studio** — scenes, audio mixer, routines (action sequences), and smart sources (token-templated text).
+- **OBS Studio** — scenes, audio mixer, routines (action sequences), and smart sources (token-templated text); opened from the top bar's CTA.
 - **Videos** — the channels' video catalogue, plus video plans that turn downloaded stream footage into edited videos.
 - **Settings** — service connections (Twitch, YouTube, Kick, Facebook, Instagram, X, TikTok, OBS, Anthropic, OpenAI), stream download preferences, and these Application Skills.
 

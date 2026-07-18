@@ -25,6 +25,7 @@ type DebugReport struct {
 	Description string `json:"description"` // long-form description of the bug
 	Route       string `json:"route"`       // app view id the bug appears on
 	Global      bool   `json:"global"`      // applies app-wide, not to one view
+	CheckedOut  bool   `json:"checkedOut"`  // an agent has claimed this report
 	CreatedAt   string `json:"createdAt"`   // RFC3339
 	UpdatedAt   string `json:"updatedAt"`   // RFC3339
 }
@@ -42,14 +43,15 @@ type FixNotice struct {
 
 // --- Store ------------------------------------------------------------------
 
-const debugReportColumns = `id, title, description, route, global, created_at, updated_at`
+const debugReportColumns = `id, title, description, route, global, checked_out, created_at, updated_at`
 
 func scanDebugReport(row interface{ Scan(...any) error }) (DebugReport, error) {
 	var r DebugReport
-	var global int
+	var global, checkedOut int
 	err := row.Scan(&r.ID, &r.Title, &r.Description, &r.Route, &global,
-		&r.CreatedAt, &r.UpdatedAt)
+		&checkedOut, &r.CreatedAt, &r.UpdatedAt)
 	r.Global = global != 0
+	r.CheckedOut = checkedOut != 0
 	return r, err
 }
 
@@ -127,6 +129,25 @@ func (s *Store) deleteDebugReport(id int64) error {
 	}
 	s.changed("dev_ai_debug")
 	return nil
+}
+
+// checkOutDebugReport atomically claims a report for an agent: it sets
+// checked_out only if it was still clear, so two agents racing for the same
+// report can't both win. It returns the number of rows it changed — 1 on a
+// successful claim, 0 when the report was already checked out (or gone).
+func (s *Store) checkOutDebugReport(id int64) (int64, error) {
+	res, err := s.db.Exec(
+		`UPDATE dev_ai_debug SET checked_out = 1, updated_at = ?
+		 WHERE id = ? AND checked_out = 0`,
+		time.Now().UTC().Format(time.RFC3339), id)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	if n > 0 {
+		s.changed("dev_ai_debug")
+	}
+	return n, nil
 }
 
 // countDebugReports returns the number of open reports.
@@ -226,6 +247,35 @@ func (a *App) GetDebugReport(id int64) (DebugReport, error) {
 		return DebugReport{}, fmt.Errorf("store is not open")
 	}
 	return a.store.getDebugReport(id)
+}
+
+// CheckOutDebugReport claims a report for the calling agent so several agents
+// can work the same queue without colliding. It fails if the report is already
+// checked out (or no longer exists); on success it returns the report with its
+// checkedOut flag set.
+func (a *App) CheckOutDebugReport(id int64) (DebugReport, error) {
+	if a.store == nil {
+		return DebugReport{}, fmt.Errorf("store is not open")
+	}
+	report, err := a.store.getDebugReport(id)
+	if err != nil {
+		return DebugReport{}, err
+	}
+	if report.CheckedOut {
+		return DebugReport{}, fmt.Errorf(
+			"debug report %d is already checked out by another agent", id)
+	}
+	n, err := a.store.checkOutDebugReport(id)
+	if err != nil {
+		return DebugReport{}, err
+	}
+	if n == 0 {
+		// Another agent claimed it between the read and the update.
+		return DebugReport{}, fmt.Errorf(
+			"debug report %d is already checked out by another agent", id)
+	}
+	report.CheckedOut = true
+	return report, nil
 }
 
 // SaveDebugReport creates (id 0) or updates a debug report and returns the

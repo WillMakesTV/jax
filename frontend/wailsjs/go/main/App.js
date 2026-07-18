@@ -62,6 +62,10 @@ export function CancelXAuth() {
   return window['go']['main']['App']['CancelXAuth']();
 }
 
+export function ChatProjectDescription(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ChatProjectDescription'](arg1, arg2, arg3);
+}
+
 export function ChooseClipIdea(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['ChooseClipIdea'](arg1, arg2, arg3, arg4);
 }
@@ -96,6 +100,10 @@ export function ConnectOpenAIAPIKey(arg1) {
 
 export function ConnectOpenAIAccount() {
   return window['go']['main']['App']['ConnectOpenAIAccount']();
+}
+
+export function CheckOutDebugReport(arg1) {
+  return window['go']['main']['App']['CheckOutDebugReport'](arg1);
 }
 
 export function CountDebugReports() {
@@ -394,6 +402,10 @@ export function GetServiceStatuses() {
   return window['go']['main']['App']['GetServiceStatuses']();
 }
 
+export function GetSessionChatHistory(arg1) {
+  return window['go']['main']['App']['GetSessionChatHistory'](arg1);
+}
+
 export function GetSetting(arg1) {
   return window['go']['main']['App']['GetSetting'](arg1);
 }
@@ -478,6 +490,10 @@ export function ListFixNotices() {
   return window['go']['main']['App']['ListFixNotices']();
 }
 
+export function ImportVideoPlanFootage(arg1, arg2) {
+  return window['go']['main']['App']['ImportVideoPlanFootage'](arg1, arg2);
+}
+
 export function MarkAllChatRead() {
   return window['go']['main']['App']['MarkAllChatRead']();
 }
@@ -500,6 +516,10 @@ export function NextEpisodeNumber(arg1) {
 
 export function OutlineInProgress(arg1) {
   return window['go']['main']['App']['OutlineInProgress'](arg1);
+}
+
+export function PickFootageFiles() {
+  return window['go']['main']['App']['PickFootageFiles']();
 }
 
 export function PollFacebookDeviceAuth(arg1, arg2, arg3) {
@@ -548,6 +568,10 @@ export function RecycleMCPToken() {
 
 export function RefreshChannelInfo() {
   return window['go']['main']['App']['RefreshChannelInfo']();
+}
+
+export function RemoveVideoPlanFootage(arg1, arg2) {
+  return window['go']['main']['App']['RemoveVideoPlanFootage'](arg1, arg2);
 }
 
 export function ReopenVideoPlan(arg1) {

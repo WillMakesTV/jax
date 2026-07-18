@@ -33,17 +33,12 @@ import {
   loadYouTubeLivePrefix,
   platformBroadcastTitle,
 } from '../lib/broadcastTitles'
-import {
-  twitchLabelName,
-  YOUTUBE_MADE_FOR_KIDS_NAME,
-} from '../lib/contentLabels'
+import {twitchLabelName, YOUTUBE_MADE_FOR_KIDS_NAME} from '../lib/contentLabels'
 import {SERVICES} from '../services/services'
 import {useServices} from '../services/ServicesProvider'
 
 /** The platforms a stream can be broadcast to. */
-const BROADCAST_SERVICES = SERVICES.filter(
-  (s) => s.category === 'channels',
-)
+const BROADCAST_SERVICES = SERVICES.filter((s) => s.category === 'channels')
 
 /**
  * The stream-plan page: create a new plan, or view and edit an existing one
@@ -99,7 +94,9 @@ export function PlanStream({
   useEffect(() => {
     if (!plan) return
     GetPlanSessions()
-      .then((s) => setSession((s ?? []).find((x) => x.planId === plan.id) ?? null))
+      .then((s) =>
+        setSession((s ?? []).find((x) => x.planId === plan.id) ?? null),
+      )
       .catch(() => {})
   }, [plan])
   // Offered from the moment the plan has gone live (it has a stream
@@ -188,7 +185,10 @@ export function PlanStream({
     setFieldError('')
   }
   /** Save one field's patch, close its editor, and flash confirmation. */
-  const saveField = async (field: string, patch: Partial<main.PlannedStream>) => {
+  const saveField = async (
+    field: string,
+    patch: Partial<main.PlannedStream>,
+  ) => {
     setFieldSaving(true)
     setFieldError('')
     try {
@@ -426,259 +426,260 @@ export function PlanStream({
           {/* Hero: identity (title + series) on the left, thumbnail on the
               right; the description spans full width below. */}
           <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_24rem]">
-          <div className="flex flex-col gap-5">
-          {/* The hero echoes the broadcast page: series kicker, the accent
+            <div className="flex flex-col gap-5">
+              {/* The hero echoes the broadcast page: series kicker, the accent
               episode number, then the title — each editable on hover. */}
-          <EditableField
-            label="Title"
-            editMode={editMode}
-            editing={editingField === 'title'}
-            saved={savedFlash === 'title'}
-            saving={fieldSaving}
-            error={editingField === 'title' ? fieldError : ''}
-            frameless
-            className="order-2"
-            onEdit={() => openField('title')}
-            onCancel={() => {
-              setTitle(savedPlan?.title ?? '')
-              closeField()
-            }}
-            onSave={() => {
-              if (!title.trim()) {
-                setFieldError('Give your stream a title.')
-                return
-              }
-              void saveField('title', {title: title.trim()})
-            }}
-            view={
-              <h1 className="pr-16 text-2xl font-semibold tracking-tight text-fg">
-                {savedPlan?.title}
-              </h1>
-            }
-          >
-            <input
-              id="plan-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (editMode && e.key === 'Enter') {
-                  e.preventDefault()
-                  if (title.trim()) void saveField('title', {title: title.trim()})
+              <EditableField
+                label="Title"
+                editMode={editMode}
+                editing={editingField === 'title'}
+                saved={savedFlash === 'title'}
+                saving={fieldSaving}
+                error={editingField === 'title' ? fieldError : ''}
+                frameless
+                className="order-2"
+                onEdit={() => openField('title')}
+                onCancel={() => {
+                  setTitle(savedPlan?.title ?? '')
+                  closeField()
+                }}
+                onSave={() => {
+                  if (!title.trim()) {
+                    setFieldError('Give your stream a title.')
+                    return
+                  }
+                  void saveField('title', {title: title.trim()})
+                }}
+                view={
+                  <h1 className="pr-16 text-2xl font-semibold tracking-tight text-fg">
+                    {savedPlan?.title}
+                  </h1>
                 }
-              }}
-              placeholder="e.g. Building the planner"
-              autoFocus
-              className="w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-            />
-          </EditableField>
+              >
+                <input
+                  id="plan-title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (editMode && e.key === 'Enter') {
+                      e.preventDefault()
+                      if (title.trim())
+                        void saveField('title', {title: title.trim()})
+                    }
+                  }}
+                  placeholder="e.g. Building the planner"
+                  autoFocus
+                  className="w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+                />
+              </EditableField>
 
-          {series.length > 0 && (
-            <EditableField
-              label="Content series"
-              labelExtra="(optional)"
-              editMode={editMode}
-              editing={editingField === 'series'}
-              saved={savedFlash === 'series'}
-              saving={fieldSaving}
-              error={editingField === 'series' ? fieldError : ''}
-              frameless
-              className="order-1"
-              onEdit={() => openField('series')}
-              onCancel={() => {
-                setSeriesId(savedPlan?.seriesId ?? '')
-                closeField()
-              }}
-              onSave={() => {
-                if (episodicPlan && episode.trim() !== '' && !episodeValid) {
-                  setFieldError(
-                    'The episode number must be a whole number of 1 or more.',
-                  )
-                  return
-                }
-                void saveField('series', {
-                  seriesId,
-                  episodeNumber:
-                    episodicPlan && episode.trim() !== '' && episodeValid
-                      ? episodeNum
-                      : 0,
-                })
-              }}
-              view={
-                <div className="pr-16">
-                  {activeSeries ? (
-                    <p className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
-                      {activeSeries.title}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-fg-muted">No series</p>
-                  )}
-                  {episodicPlan && (savedPlan?.episodeNumber ?? 0) > 0 && (
-                    <p className="mt-1 text-4xl font-bold tracking-tight text-accent">
-                      Episode {savedPlan?.episodeNumber}
-                    </p>
-                  )}
-                </div>
-              }
-            >
-              {/* Series and episode share one row; the episode column only
-                  appears for episodic series. */}
-              <div className="flex flex-wrap gap-4">
-                <div className="min-w-0 flex-1">
-                  <label
-                    htmlFor="plan-series"
-                    className="mb-1.5 block text-sm font-medium text-fg"
-                  >
-                    Content series{' '}
-                    <span className="font-normal text-fg-muted">
-                      (optional)
-                    </span>
-                  </label>
-                  <select
-                    id="plan-series"
-                    value={seriesId}
-                    onChange={(e) => setSeriesId(e.target.value)}
-                    className="w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-                  >
-                    <option value="">None</option>
-                    {series.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.title}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {episodicPlan && (
-                  <div className="w-28 shrink-0">
-                    <label
-                      htmlFor="plan-episode"
-                      className="mb-1.5 block text-sm font-medium text-fg"
-                    >
-                      Episode
-                    </label>
-                    <input
-                      id="plan-episode"
-                      type="number"
-                      inputMode="numeric"
-                      min={1}
-                      step={1}
-                      value={episode}
-                      onChange={(e) => setEpisode(e.target.value)}
-                      aria-invalid={!episodeValid}
-                      className={clsx(
-                        'w-full rounded-lg border bg-bg px-3 py-2 text-sm text-fg outline-none',
-                        !episodeValid
-                          ? 'border-red-500/60 focus:border-red-500'
-                          : 'border-edge focus:border-accent',
+              {series.length > 0 && (
+                <EditableField
+                  label="Content series"
+                  labelExtra="(optional)"
+                  editMode={editMode}
+                  editing={editingField === 'series'}
+                  saved={savedFlash === 'series'}
+                  saving={fieldSaving}
+                  error={editingField === 'series' ? fieldError : ''}
+                  frameless
+                  className="order-1"
+                  onEdit={() => openField('series')}
+                  onCancel={() => {
+                    setSeriesId(savedPlan?.seriesId ?? '')
+                    closeField()
+                  }}
+                  onSave={() => {
+                    if (
+                      episodicPlan &&
+                      episode.trim() !== '' &&
+                      !episodeValid
+                    ) {
+                      setFieldError(
+                        'The episode number must be a whole number of 1 or more.',
+                      )
+                      return
+                    }
+                    void saveField('series', {
+                      seriesId,
+                      episodeNumber:
+                        episodicPlan && episode.trim() !== '' && episodeValid
+                          ? episodeNum
+                          : 0,
+                    })
+                  }}
+                  view={
+                    <div className="pr-16">
+                      {activeSeries ? (
+                        <p className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+                          {activeSeries.title}
+                        </p>
+                      ) : (
+                        <p className="text-sm text-fg-muted">No series</p>
                       )}
-                    />
-                  </div>
-                )}
-              </div>
-
-              {episodicPlan && (
-                <p
-                  className={clsx(
-                    'mt-1.5 text-xs',
-                    !episodeValid
-                      ? 'text-red-600 dark:text-red-400'
-                      : 'text-fg-muted',
-                  )}
+                      {episodicPlan && (savedPlan?.episodeNumber ?? 0) > 0 && (
+                        <p className="mt-1 text-4xl font-bold tracking-tight text-accent">
+                          Episode {savedPlan?.episodeNumber}
+                        </p>
+                      )}
+                    </div>
+                  }
                 >
-                  {!episodeValid
-                    ? 'Enter a whole number of 1 or more.'
-                    : episodeTaken
-                      ? `Heads up: episode ${episodeNum} also appears on a past stream or plan in this series — saving anyway is fine.`
-                      : "Prefilled with the next episode in this series' sequence."}
-                </p>
-              )}
+                  {/* Series and episode share one row; the episode column only
+                  appears for episodic series. The field's heading is the
+                  visible label, so the select's own label is screen-reader
+                  only — a visible one would print "Content series" twice. */}
+                  <div className="flex flex-wrap items-end gap-4">
+                    <div className="min-w-0 flex-1">
+                      <label htmlFor="plan-series" className="sr-only">
+                        Content series
+                      </label>
+                      <select
+                        id="plan-series"
+                        value={seriesId}
+                        onChange={(e) => setSeriesId(e.target.value)}
+                        className="w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+                      >
+                        <option value="">None</option>
+                        {series.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.title}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-              {activeSeries && (
-                <div className="mt-2 rounded-lg border border-edge bg-surface p-3 text-sm">
-                  {(activeSeries.twitchCategory?.id ||
-                    activeSeries.youtubeCategory?.id ||
-                    activeSeries.kickCategory?.id) && (
-                    <p className="text-xs font-medium text-fg-muted">
-                      {[
-                        activeSeries.twitchCategory?.id
-                          ? `Twitch: ${activeSeries.twitchCategory.name}`
-                          : '',
-                        activeSeries.youtubeCategory?.id
-                          ? `YouTube: ${activeSeries.youtubeCategory.name}`
-                          : '',
-                        activeSeries.kickCategory?.id
-                          ? `Kick: ${activeSeries.kickCategory.name}`
-                          : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </p>
-                  )}
-                  {activeSeries.description && (
-                    <p className="mt-1 text-fg-muted">
-                      {activeSeries.description}
-                    </p>
-                  )}
-                  {activeSeries.notes && (
-                    <p className="mt-2 whitespace-pre-wrap text-fg">
-                      {activeSeries.notes}
-                    </p>
-                  )}
-                  {activeSeries.tags.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {activeSeries.tags.map((t) => (
-                        <span
-                          key={t}
-                          className="rounded-md bg-surface-hover px-2 py-0.5 text-xs text-fg-muted"
+                    {episodicPlan && (
+                      <div className="w-28 shrink-0">
+                        <label
+                          htmlFor="plan-episode"
+                          className="mb-1.5 block text-sm font-medium text-fg"
                         >
-                          {t}
-                        </span>
-                      ))}
+                          Episode
+                        </label>
+                        <input
+                          id="plan-episode"
+                          type="number"
+                          inputMode="numeric"
+                          min={1}
+                          step={1}
+                          value={episode}
+                          onChange={(e) => setEpisode(e.target.value)}
+                          aria-invalid={!episodeValid}
+                          className={clsx(
+                            'w-full rounded-lg border bg-bg px-3 py-2 text-sm text-fg outline-none',
+                            !episodeValid
+                              ? 'border-red-500/60 focus:border-red-500'
+                              : 'border-edge focus:border-accent',
+                          )}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {episodicPlan && (
+                    <p
+                      className={clsx(
+                        'mt-1.5 text-xs',
+                        !episodeValid
+                          ? 'text-red-600 dark:text-red-400'
+                          : 'text-fg-muted',
+                      )}
+                    >
+                      {!episodeValid
+                        ? 'Enter a whole number of 1 or more.'
+                        : episodeTaken
+                          ? `Heads up: episode ${episodeNum} also appears on a past stream or plan in this series — saving anyway is fine.`
+                          : "Prefilled with the next episode in this series' sequence."}
+                    </p>
+                  )}
+
+                  {activeSeries && (
+                    <div className="mt-2 rounded-lg border border-edge bg-surface p-3 text-sm">
+                      {(activeSeries.twitchCategory?.id ||
+                        activeSeries.youtubeCategory?.id ||
+                        activeSeries.kickCategory?.id) && (
+                        <p className="text-xs font-medium text-fg-muted">
+                          {[
+                            activeSeries.twitchCategory?.id
+                              ? `Twitch: ${activeSeries.twitchCategory.name}`
+                              : '',
+                            activeSeries.youtubeCategory?.id
+                              ? `YouTube: ${activeSeries.youtubeCategory.name}`
+                              : '',
+                            activeSeries.kickCategory?.id
+                              ? `Kick: ${activeSeries.kickCategory.name}`
+                              : '',
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </p>
+                      )}
+                      {activeSeries.description && (
+                        <p className="mt-1 text-fg-muted">
+                          {activeSeries.description}
+                        </p>
+                      )}
+                      {activeSeries.notes && (
+                        <p className="mt-2 whitespace-pre-wrap text-fg">
+                          {activeSeries.notes}
+                        </p>
+                      )}
+                      {activeSeries.tags.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {activeSeries.tags.map((t) => (
+                            <span
+                              key={t}
+                              className="rounded-md bg-surface-hover px-2 py-0.5 text-xs text-fg-muted"
+                            >
+                              {t}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
-                </div>
+                </EditableField>
               )}
-            </EditableField>
-          )}
-          </div>
+            </div>
 
-          <EditableField
-            label="Thumbnail"
-            labelExtra="(optional)"
-            editMode={editMode}
-            editing={editingField === 'thumb'}
-            saved={savedFlash === 'thumb'}
-            doneOnly
-            frameless
-            onEdit={() => openField('thumb')}
-            onCancel={closeField}
-            view={
-              thumbUrl ? (
-                <img
-                  src={thumbUrl}
-                  alt="Stream thumbnail"
-                  className="aspect-video w-full rounded-md border border-edge object-cover"
-                />
-              ) : (
-                <p className="flex aspect-video w-full items-center justify-center rounded-md border border-dashed border-edge text-sm text-fg-muted">
-                  No thumbnail yet
-                </p>
-              )
-            }
-          >
-            <PlanThumbnailEditor
-              planTitle={title}
-              planDescription={description}
-              file={thumbFile}
-              url={thumbUrl}
-              history={zipThumbHistory(
-                savedPlan?.thumbnailHistory,
-                savedPlan?.thumbnailHistoryUrls,
-              )}
-              onApply={applyThumb}
-              onOpenFull={() => setThumbOpen(true)}
-            />
-          </EditableField>
+            <EditableField
+              label="Thumbnail"
+              labelExtra="(optional)"
+              editMode={editMode}
+              editing={editingField === 'thumb'}
+              saved={savedFlash === 'thumb'}
+              doneOnly
+              frameless
+              onEdit={() => openField('thumb')}
+              onCancel={closeField}
+              view={
+                thumbUrl ? (
+                  <img
+                    src={thumbUrl}
+                    alt="Stream thumbnail"
+                    className="aspect-video w-full rounded-md border border-edge object-cover"
+                  />
+                ) : (
+                  <p className="flex aspect-video w-full items-center justify-center rounded-md border border-dashed border-edge text-sm text-fg-muted">
+                    No thumbnail yet
+                  </p>
+                )
+              }
+            >
+              <PlanThumbnailEditor
+                planTitle={title}
+                planDescription={description}
+                file={thumbFile}
+                url={thumbUrl}
+                history={zipThumbHistory(
+                  savedPlan?.thumbnailHistory,
+                  savedPlan?.thumbnailHistoryUrls,
+                )}
+                onApply={applyThumb}
+                onOpenFull={() => setThumbOpen(true)}
+              />
+            </EditableField>
           </div>
 
           <div>
@@ -839,9 +840,7 @@ export function PlanStream({
                         {svc.name}
                       </p>
                       <p className="truncate text-xs text-fg-muted">
-                        {connected
-                          ? account || 'Connected'
-                          : 'Not connected'}
+                        {connected ? account || 'Connected' : 'Not connected'}
                       </p>
                     </div>
                     <span
@@ -868,127 +867,129 @@ export function PlanStream({
                   Broadcast preview
                 </p>
                 <ul className="mt-2 flex flex-col gap-3">
-                  {BROADCAST_SERVICES.filter((svc) =>
-                    selected.has(svc.id),
-                  ).map((svc) => {
-                    const streamTitle = platformBroadcastTitle(
-                      svc.id,
-                      broadcastBaseTitle(
-                        title.trim() || 'Untitled stream',
-                        episodicPlan && episodeValid ? episodeNum : 0,
-                      ),
-                      ytPrefix,
-                    )
-                    const category =
-                      svc.id === 'twitch'
-                        ? activeSeries?.twitchCategory?.name ?? ''
-                        : svc.id === 'kick'
-                          ? activeSeries?.kickCategory?.name ?? ''
-                          : activeSeries?.youtubeCategory?.name ?? ''
-                    // The plan's own tags win; the series' are the fallback.
-                    const planTags = tags
-                      .split(',')
-                      .map((t) => t.trim())
-                      .filter(Boolean)
-                    const effectiveTags =
-                      planTags.length > 0 ? planTags : activeSeries?.tags ?? []
-                    const meta = [
-                      category && `Category: ${category}`,
-                      svc.id === 'twitch' &&
-                        effectiveTags.length > 0 &&
-                        `Tags: ${effectiveTags.join(', ')}`,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')
-                    // Content labels come from the linked series: Twitch's
-                    // classification labels, YouTube's made-for-kids flag.
-                    const contentLabels =
-                      svc.id === 'twitch'
-                        ? (activeSeries?.twitchLabels ?? []).map(
-                            twitchLabelName,
-                          )
-                        : svc.id === 'youtube' &&
-                            activeSeries?.youtubeMadeForKids
-                          ? [YOUTUBE_MADE_FOR_KIDS_NAME]
-                          : []
-                    const Logo = svc.Icon
-                    return (
-                      <li key={svc.id} className="flex items-start gap-2">
-                        <span
-                          aria-hidden
-                          className="mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded text-white"
-                          style={{backgroundColor: svc.brand}}
-                        >
-                          <Logo size={11} />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="break-words text-sm font-medium text-fg">
-                            {streamTitle}
-                          </p>
-                          {meta && (
-                            <p className="mt-0.5 text-xs text-fg-muted">
-                              {meta}
+                  {BROADCAST_SERVICES.filter((svc) => selected.has(svc.id)).map(
+                    (svc) => {
+                      const streamTitle = platformBroadcastTitle(
+                        svc.id,
+                        broadcastBaseTitle(
+                          title.trim() || 'Untitled stream',
+                          episodicPlan && episodeValid ? episodeNum : 0,
+                        ),
+                        ytPrefix,
+                      )
+                      const category =
+                        svc.id === 'twitch'
+                          ? (activeSeries?.twitchCategory?.name ?? '')
+                          : svc.id === 'kick'
+                            ? (activeSeries?.kickCategory?.name ?? '')
+                            : (activeSeries?.youtubeCategory?.name ?? '')
+                      // The plan's own tags win; the series' are the fallback.
+                      const planTags = tags
+                        .split(',')
+                        .map((t) => t.trim())
+                        .filter(Boolean)
+                      const effectiveTags =
+                        planTags.length > 0
+                          ? planTags
+                          : (activeSeries?.tags ?? [])
+                      const meta = [
+                        category && `Category: ${category}`,
+                        svc.id === 'twitch' &&
+                          effectiveTags.length > 0 &&
+                          `Tags: ${effectiveTags.join(', ')}`,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')
+                      // Content labels come from the linked series: Twitch's
+                      // classification labels, YouTube's made-for-kids flag.
+                      const contentLabels =
+                        svc.id === 'twitch'
+                          ? (activeSeries?.twitchLabels ?? []).map(
+                              twitchLabelName,
+                            )
+                          : svc.id === 'youtube' &&
+                              activeSeries?.youtubeMadeForKids
+                            ? [YOUTUBE_MADE_FOR_KIDS_NAME]
+                            : []
+                      const Logo = svc.Icon
+                      return (
+                        <li key={svc.id} className="flex items-start gap-2">
+                          <span
+                            aria-hidden
+                            className="mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded text-white"
+                            style={{backgroundColor: svc.brand}}
+                          >
+                            <Logo size={11} />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="break-words text-sm font-medium text-fg">
+                              {streamTitle}
                             </p>
-                          )}
-                          {contentLabels.length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {contentLabels.map((l) => (
-                                <span
-                                  key={l}
-                                  className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400"
-                                >
-                                  {l}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          {svc.id === 'youtube' && (
-                            <p className="mt-0.5 whitespace-pre-wrap text-xs text-fg-muted [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:4] overflow-hidden">
-                              {description.trim() ||
-                                'No description yet — it is written onto the YouTube broadcast when the stream info is applied.'}
-                            </p>
-                          )}
-                          {svc.id === 'twitch' && (
-                            <p className="mt-0.5 text-xs text-fg-muted/70">
-                              Twitch streams carry no description — title,
-                              category, and tags only.
-                            </p>
-                          )}
-                          {svc.id === 'kick' && (
-                            <p className="mt-0.5 text-xs text-fg-muted/70">
-                              Kick streams carry no description — title and
-                              category only.
-                            </p>
-                          )}
-                          {svc.id === 'facebook' && (
-                            <p className="mt-0.5 text-xs text-fg-muted/70">
-                              Retitles the Page&apos;s live video and posts a
-                              go-live announcement once on the air.
-                            </p>
-                          )}
-                          {svc.id === 'instagram' && (
-                            <p className="mt-0.5 text-xs text-fg-muted/70">
-                              Instagram&apos;s API can&apos;t set live info or
-                              post announcements — share from the app.
-                            </p>
-                          )}
-                          {svc.id === 'x' && (
-                            <p className="mt-0.5 text-xs text-fg-muted/70">
-                              Posts one go-live announcement with your watch
-                              links once the stream is on the air.
-                            </p>
-                          )}
-                          {svc.id === 'tiktok' && (
-                            <p className="mt-0.5 text-xs text-fg-muted/70">
-                              Posts one go-live announcement video (rendered
-                              from the plan thumbnail) once on the air —
-                              private until the TikTok app passes its audit.
-                            </p>
-                          )}
-                        </div>
-                      </li>
-                    )
-                  })}
+                            {meta && (
+                              <p className="mt-0.5 text-xs text-fg-muted">
+                                {meta}
+                              </p>
+                            )}
+                            {contentLabels.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {contentLabels.map((l) => (
+                                  <span
+                                    key={l}
+                                    className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400"
+                                  >
+                                    {l}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {svc.id === 'youtube' && (
+                              <p className="mt-0.5 whitespace-pre-wrap text-xs text-fg-muted [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:4] overflow-hidden">
+                                {description.trim() ||
+                                  'No description yet — it is written onto the YouTube broadcast when the stream info is applied.'}
+                              </p>
+                            )}
+                            {svc.id === 'twitch' && (
+                              <p className="mt-0.5 text-xs text-fg-muted/70">
+                                Twitch streams carry no description — title,
+                                category, and tags only.
+                              </p>
+                            )}
+                            {svc.id === 'kick' && (
+                              <p className="mt-0.5 text-xs text-fg-muted/70">
+                                Kick streams carry no description — title and
+                                category only.
+                              </p>
+                            )}
+                            {svc.id === 'facebook' && (
+                              <p className="mt-0.5 text-xs text-fg-muted/70">
+                                Retitles the Page&apos;s live video and posts a
+                                go-live announcement once on the air.
+                              </p>
+                            )}
+                            {svc.id === 'instagram' && (
+                              <p className="mt-0.5 text-xs text-fg-muted/70">
+                                Instagram&apos;s API can&apos;t set live info or
+                                post announcements — share from the app.
+                              </p>
+                            )}
+                            {svc.id === 'x' && (
+                              <p className="mt-0.5 text-xs text-fg-muted/70">
+                                Posts one go-live announcement with your watch
+                                links once the stream is on the air.
+                              </p>
+                            )}
+                            {svc.id === 'tiktok' && (
+                              <p className="mt-0.5 text-xs text-fg-muted/70">
+                                Posts one go-live announcement video (rendered
+                                from the plan thumbnail) once on the air —
+                                private until the TikTok app passes its audit.
+                              </p>
+                            )}
+                          </div>
+                        </li>
+                      )
+                    },
+                  )}
                 </ul>
                 <p className="mt-2 text-xs text-fg-muted">
                   Applied when you go live with this plan. The YouTube live
@@ -1276,8 +1277,7 @@ export function DescriptionAiActions({
   const [aiError, setAiError] = useState('')
 
   const [selStart, selEnd] = selection
-  const snippet =
-    selEnd > selStart ? description.slice(selStart, selEnd) : ''
+  const snippet = selEnd > selStart ? description.slice(selStart, selEnd) : ''
 
   const applyEdit = async () => {
     if (!instruction.trim()) {

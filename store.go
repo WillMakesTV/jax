@@ -224,6 +224,7 @@ CREATE TABLE IF NOT EXISTS dev_ai_debug (
 	description TEXT NOT NULL DEFAULT '',
 	route       TEXT NOT NULL DEFAULT '',
 	global      INTEGER NOT NULL DEFAULT 0,
+	checked_out INTEGER NOT NULL DEFAULT 0,
 	created_at  TEXT NOT NULL,
 	updated_at  TEXT NOT NULL
 );
@@ -235,8 +236,18 @@ CREATE TABLE IF NOT EXISTS dev_ai_debug_fixed (
 	route       TEXT NOT NULL DEFAULT '',
 	resolved_at TEXT NOT NULL
 );`
-	_, err := s.db.Exec(schema)
-	return err
+	if _, err := s.db.Exec(schema); err != nil {
+		return err
+	}
+	// Column added after dev_ai_debug shipped; CREATE TABLE IF NOT EXISTS
+	// leaves existing tables untouched, so add it here. A duplicate-column
+	// error just means an up-to-date database — ignore it.
+	if _, err := s.db.Exec(
+		`ALTER TABLE dev_ai_debug ADD COLUMN checked_out INTEGER NOT NULL DEFAULT 0`,
+	); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		return err
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------

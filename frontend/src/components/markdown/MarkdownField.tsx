@@ -12,7 +12,7 @@ import {
   Strikethrough,
   type LucideIcon,
 } from 'lucide-react'
-import {useRef, useState} from 'react'
+import {useRef, useState, type ReactNode} from 'react'
 import {Markdown} from './Markdown'
 
 /**
@@ -28,6 +28,7 @@ export function MarkdownField({
   placeholder,
   onSelectionChange,
   onDone,
+  actions,
 }: {
   id: string
   value: string
@@ -38,6 +39,9 @@ export function MarkdownField({
   onSelectionChange?: (start: number, end: number) => void
   /** Called when editing finishes (the Done button) — e.g. to autosave. */
   onDone?: () => void
+  /** Extra controls shown in the edit-mode toolbar, next to Done — e.g. an
+   *  AI Regenerate button that only makes sense while editing. */
+  actions?: ReactNode
 }) {
   const [mode, setMode] = useState<'view' | 'edit'>(
     value.trim() ? 'view' : 'edit',
@@ -65,7 +69,11 @@ export function MarkdownField({
 
   /** Replace the selection, then restore focus and select the new range. */
   const replaceSelection = (
-    build: (selected: string) => {text: string; selectFrom: number; selectTo: number},
+    build: (selected: string) => {
+      text: string
+      selectFrom: number
+      selectTo: number
+    },
   ) => {
     const el = textareaRef.current
     if (!el) return
@@ -104,8 +112,8 @@ export function MarkdownField({
     const block = value.slice(lineStart, lineEnd)
     const prefixed = block
       .split('\n')
-      .map((line, i) =>
-        (typeof prefix === 'string' ? prefix : prefix(i)) + line,
+      .map(
+        (line, i) => (typeof prefix === 'string' ? prefix : prefix(i)) + line,
       )
       .join('\n')
     onChange(value.slice(0, lineStart) + prefixed + value.slice(lineEnd))
@@ -171,19 +179,22 @@ export function MarkdownField({
         <span className="mx-1 text-[10px] uppercase tracking-wide text-fg-muted/70">
           Markdown
         </span>
-        {value.trim() && (
-          <button
-            type="button"
-            onClick={() => {
-              setMode('view')
-              onDone?.()
-            }}
-            className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold text-accent transition-colors hover:bg-surface-hover"
-          >
-            <Check size={12} aria-hidden />
-            Done
-          </button>
-        )}
+        <span className="ml-auto flex items-center gap-1">
+          {actions}
+          {value.trim() && (
+            <button
+              type="button"
+              onClick={() => {
+                setMode('view')
+                onDone?.()
+              }}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold text-accent transition-colors hover:bg-surface-hover"
+            >
+              <Check size={12} aria-hidden />
+              Done
+            </button>
+          )}
+        </span>
       </div>
       <textarea
         ref={textareaRef}

@@ -39,6 +39,11 @@ type VideoPlan struct {
 	Tags   []string `json:"tags"`
 	// Streams are the past streams this video is sourced from.
 	Streams []VideoPlanStream `json:"streams"`
+	// Files are imported footage files (bare names) in the plan's edit
+	// workspace root — source material that never aired as a broadcast.
+	// Owned by ImportVideoPlanFootage/RemoveVideoPlanFootage (see
+	// plan_footage.go); preserved across SaveVideoPlan.
+	Files []string `json:"files"`
 	// ThumbnailFile names the plan's thumbnail image in ~/.jax/plan_thumbs
 	// ("" = none; shared with stream-plan thumbnails, see plan_thumbs.go).
 	// ThumbnailURL is the served address, recomputed on every read.
@@ -112,6 +117,9 @@ func (a *App) SaveVideoPlan(plan VideoPlan) (VideoPlan, error) {
 	if plan.Streams == nil {
 		plan.Streams = []VideoPlanStream{}
 	}
+	if plan.Files == nil {
+		plan.Files = []string{}
+	}
 	if plan.ShareURLs == nil {
 		plan.ShareURLs = []string{}
 	}
@@ -145,6 +153,8 @@ func (a *App) SaveVideoPlan(plan VideoPlan) (VideoPlan, error) {
 			// Share links belong to SetVideoPlanShares; the edit form never
 			// carries them and must not wipe them.
 			plan.ShareURLs = p.ShareURLs
+			// Imported footage belongs to Import/RemoveVideoPlanFootage.
+			plan.Files = p.Files
 			plans[i] = plan
 			replaced = true
 			break

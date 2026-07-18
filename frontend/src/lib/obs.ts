@@ -27,7 +27,8 @@ const EVENTS_INPUT_VOLUME_METERS = 1 << 16
  * (source) changes. All are low-volume, so they stay subscribed continuously
  * to drive near-real-time UI (mixer, scene switcher, source visibility).
  */
-export const OBS_EVENTS_BASE = EVENTS_INPUTS | EVENTS_SCENES | EVENTS_SCENE_ITEMS
+export const OBS_EVENTS_BASE =
+  EVENTS_INPUTS | EVENTS_SCENES | EVENTS_SCENE_ITEMS
 /** Base plus the high-volume per-input volume meters (~20 events/s). */
 export const OBS_EVENTS_WITH_METERS =
   OBS_EVENTS_BASE | EVENTS_INPUT_VOLUME_METERS
@@ -78,6 +79,13 @@ export function onObsEvent<T = Record<string, unknown>>(
 export interface ObsMic {
   name: string
   muted: boolean
+  /**
+   * Whether the source is live in the current program output
+   * (`obs_source_active`). A global audio device is always active; a mic that
+   * is only a scene item is active only while its scene is on program. Defaults
+   * to true when OBS doesn't report it, so transcription never stops silently.
+   */
+  active: boolean
 }
 
 /** Input kinds that are microphones ("Audio Input Capture") per platform. */
@@ -112,13 +120,26 @@ export async function fetchObsMics(
   const {inputs} = await request<{
     inputs: {inputName: string; inputKind: string}[]
   }>('GetInputList')
-  const mics = (inputs ?? []).filter((i) => INPUT_CAPTURE_KINDS.has(i.inputKind))
+  const mics = (inputs ?? []).filter((i) =>
+    INPUT_CAPTURE_KINDS.has(i.inputKind),
+  )
   return Promise.all(
     mics.map(async (i) => {
-      const {inputMuted} = await request<{inputMuted: boolean}>('GetInputMute', {
-        inputName: i.inputName,
-      })
-      return {name: i.inputName, muted: inputMuted}
+      const [{inputMuted}, active] = await Promise.all([
+        request<{inputMuted: boolean}>('GetInputMute', {
+          inputName: i.inputName,
+        }),
+        // videoActive is obs_source_active — despite the name it reports audio
+        // sources too: true when the mic is live in the current program scene.
+        request<{videoActive: boolean}>('GetSourceActive', {
+          sourceName: i.inputName,
+        })
+          .then((r) => r.videoActive)
+          // Fail open: if OBS can't report activity, assume active rather than
+          // silently dropping the transcript for the whole stream.
+          .catch(() => true),
+      ])
+      return {name: i.inputName, muted: inputMuted, active}
     }),
   )
 }
@@ -259,7 +280,9 @@ export function obsRequest<T = Record<string, unknown>>(
       if (status?.result) {
         resolve((message.d.responseData ?? {}) as T)
       } else {
-        reject(new Error(status?.comment || `OBS request failed: ${requestType}`))
+        reject(
+          new Error(status?.comment || `OBS request failed: ${requestType}`),
+        )
       }
     }
     const timer = window.setTimeout(() => {
@@ -268,7 +291,12 @@ export function obsRequest<T = Record<string, unknown>>(
     }, timeoutMs)
 
     ws.addEventListener('message', onMessage)
-    ws.send(JSON.stringify({op: OP_REQUEST, d: {requestType, requestId, requestData}}))
+    ws.send(
+      JSON.stringify({
+        op: OP_REQUEST,
+        d: {requestType, requestId, requestData},
+      }),
+    )
   })
 }
 

@@ -73,6 +73,11 @@ export function PastStreamsSection({
   // missing or dead platform thumbnail can heal from the local video.
   const {byUrl} = useDownloads()
   const [past, setPast] = useState<main.PastStream[]>([])
+  // The plan currently on the air (if the live stream was started from one)
+  // and the plans themselves, so the live card can show the plan's thumbnail
+  // instead of a platform's remote-source frame.
+  const [plans, setPlans] = useState<main.PlannedStream[]>([])
+  const [sessions, setSessions] = useState<main.PlanSessionInfo[]>([])
   const [loaded, setLoaded] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
@@ -95,6 +100,19 @@ export function PastStreamsSection({
   useEffect(() => {
     void reload()
   }, [reload])
+
+  // The live card's thumbnail comes from the plan that's on the air, so keep
+  // the plans and their broadcast sessions in step with the current stream.
+  const loadPlans = useCallback(() => {
+    GetPlannedStreams()
+      .then((p) => setPlans(p ?? []))
+      .catch(() => {})
+    GetPlanSessions()
+      .then((s) => setSessions(s ?? []))
+      .catch(() => {})
+  }, [])
+
+  useDataChanged(['planned_streams'], loadPlans)
 
   const toggleSelected = useCallback((stream: main.PastStream) => {
     setError('')
@@ -151,6 +169,21 @@ export function PastStreamsSection({
   const live = platforms.filter((p) => p.live)
   const empty = loaded && past.length === 0 && live.length === 0
 
+  // Going live or concluding flips a plan's open session; refresh so the live
+  // card picks up (or drops) the plan thumbnail without a manual reload.
+  const anyLive = live.length > 0
+  useEffect(() => {
+    loadPlans()
+  }, [loadPlans, anyLive])
+
+  // The plan on the air is the one with an open broadcast session; its
+  // thumbnail leads the live card in place of a platform's remote frame.
+  const activePlanThumb = (() => {
+    const open = sessions.find((s) => s.endedAt === '')
+    if (!open) return ''
+    return plans.find((p) => p.id === open.planId)?.thumbnailUrl ?? ''
+  })()
+
   const totalViews = past.reduce((sum, s) => sum + s.totalViews, 0)
   const lastStream = past[0]
 
@@ -201,61 +234,61 @@ export function PastStreamsSection({
         </div>
 
         <div className="flex items-center gap-2">
-        {/* Selection CTA: group the checked streams into one, or dissolve a
+          {/* Selection CTA: group the checked streams into one, or dissolve a
             manual group. Timing-based matching occasionally misses, so this
             is the manual escape hatch. */}
-        {selectedStreams.length > 0 && (
-          <div className="flex items-center gap-2">
-            {error && (
-              <span className="text-xs text-red-600 dark:text-red-400">
-                {error}
+          {selectedStreams.length > 0 && (
+            <div className="flex items-center gap-2">
+              {error && (
+                <span className="text-xs text-red-600 dark:text-red-400">
+                  {error}
+                </span>
+              )}
+              <span className="text-xs text-fg-muted">
+                {selectedStreams.length} selected
               </span>
-            )}
-            <span className="text-xs text-fg-muted">
-              {selectedStreams.length} selected
-            </span>
+              <button
+                type="button"
+                onClick={() => setSelected(new Set())}
+                className="rounded-lg border border-edge bg-bg px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+              >
+                Clear
+              </button>
+              {ungroupTarget && (
+                <button
+                  type="button"
+                  onClick={onUngroup}
+                  disabled={busy}
+                  className="rounded-lg border border-edge bg-bg px-3 py-1.5 text-xs font-semibold text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+                >
+                  Ungroup
+                </button>
+              )}
+              {selectedStreams.length >= 2 && (
+                <button
+                  type="button"
+                  onClick={onGroup}
+                  disabled={busy}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+                >
+                  <Link2 size={14} aria-hidden />
+                  {busy ? 'Grouping…' : 'Group streams'}
+                </button>
+              )}
+            </div>
+          )}
+          {/* Plan a produced video (short or long form) — the Videos-page
+            counterpart of "Plan a stream"; plans surface atop that page. */}
+          {onPlanVideo && (
             <button
               type="button"
-              onClick={() => setSelected(new Set())}
-              className="rounded-lg border border-edge bg-bg px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+              onClick={onPlanVideo}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90"
             >
-              Clear
+              <Clapperboard size={14} aria-hidden />
+              Plan a video
             </button>
-            {ungroupTarget && (
-              <button
-                type="button"
-                onClick={onUngroup}
-                disabled={busy}
-                className="rounded-lg border border-edge bg-bg px-3 py-1.5 text-xs font-semibold text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
-              >
-                Ungroup
-              </button>
-            )}
-            {selectedStreams.length >= 2 && (
-              <button
-                type="button"
-                onClick={onGroup}
-                disabled={busy}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
-              >
-                <Link2 size={14} aria-hidden />
-                {busy ? 'Grouping…' : 'Group streams'}
-              </button>
-            )}
-          </div>
-        )}
-        {/* Plan a produced video (short or long form) — the Videos-page
-            counterpart of "Plan a stream"; plans surface atop that page. */}
-        {onPlanVideo && (
-          <button
-            type="button"
-            onClick={onPlanVideo}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90"
-          >
-            <Clapperboard size={14} aria-hidden />
-            Plan a video
-          </button>
-        )}
+          )}
         </div>
       </div>
 
@@ -277,7 +310,13 @@ export function PastStreamsSection({
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {live.length > 0 && <LiveNowCard live={live} onOpen={onOpenLive} />}
+          {live.length > 0 && (
+            <LiveNowCard
+              live={live}
+              planThumbnailUrl={activePlanThumb}
+              onOpen={onOpenLive}
+            />
+          )}
           {past.map((stream) => (
             <PastStreamCard
               key={streamKeyOf(stream)}
@@ -400,15 +439,24 @@ function BroadcastChip({
  */
 function LiveNowCard({
   live,
+  planThumbnailUrl,
   onOpen,
 }: {
   live: main.LiveStream[]
+  /** The on-air plan's thumbnail; preferred over the platform remote frame. */
+  planThumbnailUrl: string
   onOpen: () => void
 }) {
   const stream = main.PastStream.createFrom({
     title: live.find((p) => p.title)?.title ?? 'Live now',
-    thumbnailUrl: live.find((p) => p.thumbnailUrl)?.thumbnailUrl ?? '',
-    startedAt: live.map((p) => p.startedAt).filter(Boolean).sort()[0] ?? '',
+    thumbnailUrl:
+      planThumbnailUrl ||
+      (live.find((p) => p.thumbnailUrl)?.thumbnailUrl ?? ''),
+    startedAt:
+      live
+        .map((p) => p.startedAt)
+        .filter(Boolean)
+        .sort()[0] ?? '',
     totalViews: live.reduce((sum, p) => sum + p.viewerCount, 0),
     groupId: '',
     seriesId: '',
@@ -679,8 +727,8 @@ export function PlanningSection({
         icon={<Trash2 size={18} aria-hidden className="text-fg-muted" />}
       >
         <p className="text-sm text-fg-muted">
-          “{toDelete?.title}” will be removed from your planning. This can't
-          be undone.
+          “{toDelete?.title}” will be removed from your planning. This can't be
+          undone.
         </p>
         <div className="mt-5 flex items-center justify-end gap-2">
           <button

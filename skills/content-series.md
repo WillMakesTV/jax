@@ -4,7 +4,7 @@ Content series are reusable show definitions: the metadata a recurring show carr
 
 - `list_content_series` returns every series plus the series types that classify them (e.g. episodic show vs one-off format).
 - `save_content_series` creates or updates a series. Each connected platform needs a category from that platform's own catalogue (Twitch and Kick categories are searched; YouTube uses its fixed list), so when creating a series over MCP, copy categories from an existing similar series unless the user specifies them.
-- In the app, series are edited under **Planning → Content Series**; the edit form also maps episode info to OBS text sources.
+- In the app, series are edited under **Broadcasting → Content Series**; the edit form also maps episode info to OBS text sources.
 
 ## Episode numbering
 

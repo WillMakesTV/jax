@@ -119,8 +119,10 @@ const TranscriptContext = createContext<TranscriptContextValue | undefined>(
  * spoken. Mounted app-wide so a running capture survives navigation.
  *
  * Capture is automatic: it starts whenever a broadcast is live AND an OBS
- * microphone is enabled, and stops when either ends. A manual Stop pauses
- * the automation until the conditions reset (e.g. the next stream).
+ * microphone is unmuted and active in the current program scene, and stops
+ * when any of those ends — including switching to a scene the mic isn't part
+ * of. A manual Stop pauses the automation until the conditions reset (e.g. the
+ * next stream).
  */
 export function TranscriptProvider({children}: {children: ReactNode}) {
   const {obsRequest} = useServices()
@@ -166,7 +168,9 @@ export function TranscriptProvider({children}: {children: ReactNode}) {
         ...prev,
         {id: `${at}-${prev.length}`, text: trimmed, at, endAt},
       ]
-      return next.length > MAX_LINES ? next.slice(next.length - MAX_LINES) : next
+      return next.length > MAX_LINES
+        ? next.slice(next.length - MAX_LINES)
+        : next
     })
   }, [])
 
@@ -204,9 +208,11 @@ export function TranscriptProvider({children}: {children: ReactNode}) {
         appendText(msg.text, at, endAt)
         // Persist the raw utterance to the stream's transcript log.
         if (sessionId.current) {
-          AddTranscriptLine(sessionId.current, at, endAt, msg.text).catch(() => {
-            // Storage hiccups shouldn't interrupt live captioning.
-          })
+          AddTranscriptLine(sessionId.current, at, endAt, msg.text).catch(
+            () => {
+              // Storage hiccups shouldn't interrupt live captioning.
+            },
+          )
         }
       }
     })
@@ -230,12 +236,18 @@ export function TranscriptProvider({children}: {children: ReactNode}) {
       setDictating(false)
     }
     if (!obsConnected) {
-      setError('Connect OBS first — the transcript follows its enabled microphone.')
+      setError(
+        'Connect OBS first — the transcript follows its enabled microphone.',
+      )
       return
     }
-    const enabled = mics.find((m) => !m.muted)
+    // The mic must be both unmuted and live in the current program scene: a
+    // mic sitting in an inactive scene produces no broadcast audio to caption.
+    const enabled = mics.find((m) => !m.muted && m.active)
     if (!enabled) {
-      setError('No unmuted audio input capture device in OBS to transcribe.')
+      setError(
+        'No microphone is unmuted and active in the current OBS scene to transcribe.',
+      )
       return
     }
     try {
@@ -289,7 +301,12 @@ export function TranscriptProvider({children}: {children: ReactNode}) {
           const lastEnd = merged[merged.length - 1]?.endAt ?? 0
           for (const line of prev) {
             if (line.at > lastEnd) {
-              merged = foldTranscriptLine(merged, line.text, line.at, line.endAt)
+              merged = foldTranscriptLine(
+                merged,
+                line.text,
+                line.at,
+                line.endAt,
+              )
             }
           }
           return merged.length > MAX_LINES
@@ -348,13 +365,14 @@ export function TranscriptProvider({children}: {children: ReactNode}) {
     stopCapture()
   }, [stopCapture])
 
-  // Automation: capture whenever a broadcast is live and an OBS microphone
-  // is enabled; stop when either condition ends. Keyed on transitions so a
-  // failed start does not retry in a loop (the panel shows the error and the
-  // manual button remains).
+  // Automation: capture whenever a broadcast is live and an OBS microphone is
+  // both unmuted and active in the current program scene; stop when any of
+  // those ends (including a switch to a scene the mic isn't in). Keyed on
+  // transitions so a failed start does not retry in a loop (the panel shows
+  // the error and the manual button remains).
   const {anyLive} = aggregateLive(platforms, obs)
-  const micEnabled = mics.some((m) => !m.muted)
-  const shouldCapture = obsConnected && anyLive && micEnabled
+  const micActive = mics.some((m) => !m.muted && m.active)
+  const shouldCapture = obsConnected && anyLive && micActive
   const prevShould = useRef(false)
   useEffect(() => {
     if (shouldCapture && !prevShould.current) {

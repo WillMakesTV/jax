@@ -584,6 +584,13 @@ func (a *App) editSourceNotes(plan VideoPlan) string {
 			b.WriteString("Footage: downloaded, transcript available.\n")
 		}
 	}
+	if len(plan.Files) > 0 {
+		b.WriteString("\n## Imported footage\n")
+		b.WriteString("Source videos imported directly into the workspace root (not broadcasts — no outline or transcript unless one sits in edit/transcripts):\n")
+		for _, name := range plan.Files {
+			fmt.Fprintf(&b, "- %s\n", name)
+		}
+	}
 	return b.String()
 }
 
@@ -821,6 +828,19 @@ func (a *App) GetEditWorkspace(planID string) (EditWorkspaceInfo, error) {
 			src.HasTranscript = fileExists(filepath.Join(dir, "edit", "transcripts", stem+".json")) ||
 				len(a.GetTranscriptForStream(s.ref.StartedAt)) > 0
 		}
+		info.Sources = append(info.Sources, src)
+	}
+
+	// Imported footage rides along as sources: playable, usable as a timeline
+	// base, and visible to the edit session like any downloaded broadcast.
+	for _, name := range plan.Files {
+		src := EditSource{Title: name, Downloaded: true}
+		if fileExists(filepath.Join(dir, name)) {
+			src.File = name
+			src.MediaURL = planPrefix + "/" + url.PathEscape(name)
+		}
+		stem := strings.TrimSuffix(name, filepath.Ext(name))
+		src.HasTranscript = fileExists(filepath.Join(dir, "edit", "transcripts", stem+".json"))
 		info.Sources = append(info.Sources, src)
 	}
 
