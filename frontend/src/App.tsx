@@ -8,6 +8,7 @@ import {
 } from '../wailsjs/go/main/App'
 import {main} from '../wailsjs/go/models'
 import {WindowSetTitle} from '../wailsjs/runtime/runtime'
+import type {AiJobKind} from './ai/AiQueueProvider'
 import {Sidebar} from './components/Sidebar'
 import {StatusBar} from './components/StatusBar'
 import {TopBar} from './components/TopBar'
@@ -483,6 +484,29 @@ function App() {
     [navigate],
   )
 
+  // A job (or finished notice) in the status bar's AI queue opens the page
+  // its result lands on.
+  const openAiItem = useCallback(
+    (kind: AiJobKind, targetId: string) => {
+      switch (kind) {
+        case 'clip-ideas':
+          void openStreamByStart(targetId, 'clips')
+          break
+        case 'plan-thumbnail':
+        case 'plan-listing':
+          void openVideoPlanById(targetId, 'publish')
+          break
+        case 'project-image':
+          void openProjectById(targetId)
+          break
+        case 'sponsor-research':
+          void openSponsorById(targetId)
+          break
+      }
+    },
+    [openStreamByStart, openVideoPlanById, openProjectById, openSponsorById],
+  )
+
   // Mouse buttons 4/5 (back/forward) navigate history.
   useEffect(() => {
     const onMouseUp = (e: MouseEvent) => {
@@ -811,12 +835,7 @@ function App() {
         onOpenOutline={(startedAt) =>
           void openStreamByStart(startedAt, 'outline')
         }
-        onOpenClipIdeas={(startedAt) =>
-          void openStreamByStart(startedAt, 'clips')
-        }
-        onOpenPlanAi={(planId) => void openVideoPlanById(planId, 'publish')}
-        onOpenProjectThumb={(projectId) => void openProjectById(projectId)}
-        onOpenSponsorAi={(sponsorId) => void openSponsorById(sponsorId)}
+        onOpenAiItem={openAiItem}
         onOpenEditSession={(planId) => void openVideoPlanById(planId, 'editor')}
         onOpenPostStream={(startedAt, streamTab) =>
           void openStreamByStart(startedAt, streamTab)

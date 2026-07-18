@@ -12,6 +12,7 @@ import {TranscriptProvider} from './transcript/TranscriptProvider'
 import {VodTranscribeProvider} from './transcript/VodTranscribeProvider'
 import {DownloadProvider} from './downloads/DownloadProvider'
 import {OutlineProvider} from './outline/OutlineProvider'
+import {AiQueueProvider} from './ai/AiQueueProvider'
 import {ClipIdeasProvider} from './clips/ClipIdeasProvider'
 import {PlanAiProvider} from './plans/PlanAiProvider'
 import {ProjectThumbsProvider} from './projects/ProjectThumbsProvider'
@@ -34,17 +35,19 @@ root.render(
                                     <DownloadProvider>
                                         <VodTranscribeProvider>
                                             <OutlineProvider>
-                                                <ClipIdeasProvider>
-                                                    <PlanAiProvider>
-                                                        <ProjectThumbsProvider>
-                                                            <SponsorAiProvider>
-                                                                <EditSessionProvider>
-                                                                    <App/>
-                                                                </EditSessionProvider>
-                                                            </SponsorAiProvider>
-                                                        </ProjectThumbsProvider>
-                                                    </PlanAiProvider>
-                                                </ClipIdeasProvider>
+                                                <AiQueueProvider>
+                                                    <ClipIdeasProvider>
+                                                        <PlanAiProvider>
+                                                            <ProjectThumbsProvider>
+                                                                <SponsorAiProvider>
+                                                                    <EditSessionProvider>
+                                                                        <App/>
+                                                                    </EditSessionProvider>
+                                                                </SponsorAiProvider>
+                                                            </ProjectThumbsProvider>
+                                                        </PlanAiProvider>
+                                                    </ClipIdeasProvider>
+                                                </AiQueueProvider>
                                             </OutlineProvider>
                                         </VodTranscribeProvider>
                                     </DownloadProvider>

@@ -8,15 +8,12 @@ import {
   Eye,
   EyeOff,
   Gauge,
-  Handshake,
-  Image as ImageIcon,
   Loader2,
   MessageSquare,
   Mic,
   MicOff,
   Music,
   NotebookText,
-  Scissors,
   ScrollText,
   Sparkles,
   Users,
@@ -33,12 +30,13 @@ import {
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {EventsOn} from '../../wailsjs/runtime/runtime'
-import {useChat} from '../chat/ChatProvider'
 import {
-  useClipIdeas,
-  type ClipIdeasJob,
-  type ClipIdeasNotice,
-} from '../clips/ClipIdeasProvider'
+  useAiQueue,
+  type AiJob,
+  type AiJobKind,
+  type AiQueueNotice,
+} from '../ai/AiQueueProvider'
+import {useChat} from '../chat/ChatProvider'
 import {useDownloadStatus} from '../downloads/DownloadProvider'
 import {
   useEditSession,
@@ -57,21 +55,6 @@ import {
   type OutlineNotice,
 } from '../outline/OutlineProvider'
 import {
-  usePlanAi,
-  type PlanAiJob,
-  type PlanAiNotice,
-} from '../plans/PlanAiProvider'
-import {
-  useProjectThumbs,
-  type ProjectThumbJob,
-  type ProjectThumbNotice,
-} from '../projects/ProjectThumbsProvider'
-import {
-  useSponsorAi,
-  type SponsorAiJob,
-  type SponsorAiNotice,
-} from '../sponsors/SponsorAiProvider'
-import {
   useVodTranscribe,
   type VodJob,
   type VodNotice,
@@ -89,14 +72,8 @@ interface StatusBarProps {
   onOpenTranscribing: (subfolder: string) => void
   /** Open the Outline tab of the stream whose outline is generating. */
   onOpenOutline: (startedAt: string) => void
-  /** Open the Clips tab of the stream whose script ideas are generating. */
-  onOpenClipIdeas: (startedAt: string) => void
-  /** Open the Publish tab of the plan whose thumbnail/listing is generating. */
-  onOpenPlanAi: (planId: string) => void
-  /** Open the project whose cover image is generating. */
-  onOpenProjectThumb: (projectId: string) => void
-  /** Open the sponsor whose website research is running. */
-  onOpenSponsorAi: (sponsorId: string) => void
+  /** Open the page an AI-queue job (or its finished notice) belongs to. */
+  onOpenAiItem: (kind: AiJobKind, targetId: string) => void
   /** Open the Editor tab of the video plan with the active edit session. */
   onOpenEditSession: (planId: string) => void
   /** Open the past stream the post-stream wrap-up is processing, on the tab
@@ -117,10 +94,7 @@ export function StatusBar({
   onOpenDownloading,
   onOpenTranscribing,
   onOpenOutline,
-  onOpenClipIdeas,
-  onOpenPlanAi,
-  onOpenProjectThumb,
-  onOpenSponsorAi,
+  onOpenAiItem,
   onOpenEditSession,
   onOpenPostStream,
   onOpenFixNotice,
@@ -132,10 +106,7 @@ export function StatusBar({
   const download = useDownloadStatus()
   const vodTranscribe = useVodTranscribe()
   const outline = useOutlineJobs()
-  const clipIdeas = useClipIdeas()
-  const planAi = usePlanAi()
-  const projectThumbs = useProjectThumbs()
-  const sponsorAi = useSponsorAi()
+  const aiQueue = useAiQueue()
   const editSession = useEditSession()
 
   // Prefer the designated primary mic; otherwise "on" when any mic is
@@ -312,38 +283,14 @@ export function StatusBar({
         onOpen={onOpenOutline}
       />
 
-      {/* Clip-script pitching; click through to the stream's Clips tab. */}
-      <ClipIdeasStatus
-        jobs={clipIdeas.jobs}
-        notice={clipIdeas.notice}
-        onOpen={onOpenClipIdeas}
-        onDismiss={clipIdeas.dismissNotice}
-      />
-
-      {/* AI thumbnail/listing generation for a video plan; click through to
-          the plan's Publish tab to review the result. */}
-      <PlanAiStatus
-        jobs={planAi.jobs}
-        notice={planAi.notice}
-        onOpen={onOpenPlanAi}
-      />
-
-      {/* AI cover-image generation for a project; click through to the
-          project's page. */}
-      <ProjectThumbStatus
-        jobs={projectThumbs.jobs}
-        notice={projectThumbs.notice}
-        onOpen={onOpenProjectThumb}
-        onDismiss={projectThumbs.dismissNotice}
-      />
-
-      {/* AI website research for a sponsor; click through to the sponsor's
-          page. */}
-      <SponsorAiStatus
-        jobs={sponsorAi.jobs}
-        notice={sponsorAi.notice}
-        onOpen={onOpenSponsorAi}
-        onDismiss={sponsorAi.dismissNotice}
+      {/* The AI generation queue (clip scripts, plan thumbnails/listings,
+          project images, sponsor research): one chip, sequential jobs, and a
+          popover listing the queue when several are waiting. */}
+      <AiQueueStatus
+        jobs={aiQueue.jobs}
+        notices={aiQueue.notices}
+        onOpen={onOpenAiItem}
+        onDismiss={aiQueue.dismissNotice}
       />
 
       {/* Post-stream wrap-up pipeline (download → transcribe → outline →
@@ -514,257 +461,138 @@ function OutlineStatus({
 }
 
 /**
- * Clip-script chip: while the AI pitches scripts for a stream — reading the
- * whole broadcast, which takes a couple of minutes — it is a button that jumps
- * to that stream's Clips tab. The run is owned by ClipIdeasProvider, so it
- * keeps going when the producer navigates away; when it finishes the chip
- * turns green and lingers, still clickable, so the fresh pitches are one
- * click away from anywhere in the app.
+ * The AI generation queue chip: one chip for every "generate with AI"
+ * feature (clip scripts, plan thumbnails/listings, project images, sponsor
+ * research). Jobs run one at a time; with several queued, clicking the chip
+ * opens a popover listing the whole queue, each row jumping to its page.
+ * Finished runs linger as green (or red) notices, still clickable, so the
+ * result is one click away from anywhere in the app.
  */
-function ClipIdeasStatus({
+function AiQueueStatus({
   jobs,
-  notice,
+  notices,
   onOpen,
   onDismiss,
 }: {
-  jobs: ClipIdeasJob[]
-  notice: ClipIdeasNotice | null
-  onOpen: (startedAt: string) => void
-  /** Clear the lingering notice — following it counts as read. */
-  onDismiss: () => void
+  jobs: AiJob[]
+  notices: AiQueueNotice[]
+  onOpen: (kind: AiJobKind, targetId: string) => void
+  onDismiss: (id: number) => void
 }) {
-  if (jobs.length > 0) {
-    const label =
-      jobs.length === 1
-        ? `Pitching clip scripts — ${jobs[0].title || 'stream'}`
-        : `Pitching clip scripts for ${jobs.length} streams`
-    return (
-      <button
-        type="button"
-        onClick={() => onOpen(jobs[0].startedAt)}
-        title="Open the stream's Clips tab — generation keeps going in the background"
-        className="inline-flex min-w-0 items-center gap-1.5 font-medium text-fg transition-colors hover:text-accent"
-      >
-        <Loader2 size={12} aria-hidden className="animate-spin" />
-        <span className="max-w-[22rem] truncate">{label}</span>
-      </button>
-    )
-  }
+  const [open, setOpen] = useState(false)
+  const running = jobs[0]
 
-  if (!notice) return null
+  // The popover only makes sense while there is a queue behind it.
+  useEffect(() => {
+    if (jobs.length < 2) setOpen(false)
+  }, [jobs.length])
+
+  const notice = notices[0]
+
   return (
-    <button
-      type="button"
-      onClick={() => {
-        // Following the notice is reading it — clear it rather than letting
-        // it linger for the full timeout.
-        onDismiss()
-        onOpen(notice.startedAt)
-      }}
-      title={
-        notice.state === 'done'
-          ? 'Open the Clips tab to read the three pitched scripts'
-          : notice.detail
-      }
-      className={
-        notice.state === 'error'
-          ? 'inline-flex min-w-0 items-center gap-1.5 font-medium text-red-500 transition-colors hover:text-accent dark:text-red-400'
-          : 'inline-flex min-w-0 items-center gap-1.5 font-medium text-green-600 transition-colors hover:text-accent dark:text-green-400'
-      }
-    >
-      <Scissors size={12} aria-hidden />
-      <span className="max-w-[22rem] truncate">
-        {notice.state === 'done' ? '✓ ' : ''}
-        {notice.detail}
-      </span>
-    </button>
-  )
-}
+    <>
+      {running && (
+        <span className="relative inline-flex">
+          <button
+            type="button"
+            onClick={() => {
+              if (jobs.length > 1) {
+                setOpen((o) => !o)
+              } else {
+                onOpen(running.kind, running.targetId)
+              }
+            }}
+            title={
+              jobs.length > 1
+                ? 'Show the AI generation queue'
+                : 'Open the page — generation keeps going in the background'
+            }
+            className="inline-flex min-w-0 items-center gap-1.5 font-medium text-fg transition-colors hover:text-accent"
+          >
+            <Loader2 size={12} aria-hidden className="animate-spin" />
+            <span className="max-w-[22rem] truncate">{running.label}</span>
+            {jobs.length > 1 && (
+              <span className="rounded-full bg-surface-hover px-1.5 text-[11px] font-semibold">
+                +{jobs.length - 1} queued
+              </span>
+            )}
+          </button>
 
-/**
- * Plan-AI chip: while the AI produces a video plan's thumbnail or listing
- * (title/description/tags) it is a button that jumps to that plan's Publish
- * tab. The run is owned by PlanAiProvider and persists its own result, so
- * navigating away costs nothing; the done notice turns green and lingers,
- * still clickable, so the result is one click away from anywhere.
- */
-function PlanAiStatus({
-  jobs,
-  notice,
-  onOpen,
-}: {
-  jobs: PlanAiJob[]
-  notice: PlanAiNotice | null
-  onOpen: (planId: string) => void
-}) {
-  if (jobs.length > 0) {
-    const label =
-      jobs.length === 1
-        ? `${jobs[0].kind === 'thumbnail' ? 'Generating thumbnail' : 'Drafting listing'} — ${
-            jobs[0].title || 'video plan'
-          }`
-        : `Running ${jobs.length} AI drafts`
-    return (
-      <button
-        type="button"
-        onClick={() => onOpen(jobs[0].planId)}
-        title="Open the plan's Publish tab — generation keeps going in the background"
-        className="inline-flex min-w-0 items-center gap-1.5 font-medium text-fg transition-colors hover:text-accent"
-      >
-        <Loader2 size={12} aria-hidden className="animate-spin" />
-        <span className="max-w-[22rem] truncate">{label}</span>
-      </button>
-    )
-  }
+          {open && (
+            <div className="absolute bottom-full right-0 z-50 mb-2 w-80 rounded-xl border border-edge bg-surface p-2 shadow-lg">
+              <p className="px-2 pb-1 pt-0.5 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">
+                AI queue — one runs at a time
+              </p>
+              <ul className="flex flex-col">
+                {jobs.map((j) => (
+                  <li key={j.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpen(false)
+                        onOpen(j.kind, j.targetId)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-medium text-fg transition-colors hover:bg-surface-hover"
+                    >
+                      {j.state === 'running' ? (
+                        <Loader2
+                          size={12}
+                          aria-hidden
+                          className="shrink-0 animate-spin"
+                        />
+                      ) : (
+                        <Clock
+                          size={12}
+                          aria-hidden
+                          className="shrink-0 text-fg-muted"
+                        />
+                      )}
+                      <span className="min-w-0 flex-1 truncate">{j.label}</span>
+                      {j.state === 'queued' && (
+                        <span className="shrink-0 text-[11px] text-fg-muted">
+                          queued
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </span>
+      )}
 
-  if (!notice) return null
-  return (
-    <button
-      type="button"
-      onClick={() => onOpen(notice.planId)}
-      title={
-        notice.state === 'done'
-          ? 'Open the Publish tab to review the result'
-          : notice.detail
-      }
-      className={
-        notice.state === 'error'
-          ? 'inline-flex min-w-0 items-center gap-1.5 font-medium text-red-500 transition-colors hover:text-accent dark:text-red-400'
-          : 'inline-flex min-w-0 items-center gap-1.5 font-medium text-green-600 transition-colors hover:text-accent dark:text-green-400'
-      }
-    >
-      <WandSparkles size={12} aria-hidden />
-      <span className="max-w-[22rem] truncate">
-        {notice.state === 'done' ? '✓ ' : ''}
-        {notice.detail}
-      </span>
-    </button>
-  )
-}
-
-/**
- * Project cover-image chip: while the AI paints a project's cover the chip
- * jumps back to the project's page; the run is owned by its provider, so
- * navigating away costs nothing. The done notice goes green and lingers,
- * still clickable, so the finished image is one click away.
- */
-function ProjectThumbStatus({
-  jobs,
-  notice,
-  onOpen,
-  onDismiss,
-}: {
-  jobs: ProjectThumbJob[]
-  notice: ProjectThumbNotice | null
-  onOpen: (projectId: string) => void
-  onDismiss: () => void
-}) {
-  if (jobs.length > 0) {
-    const label =
-      jobs.length === 1
-        ? `Generating project image — ${jobs[0].title || 'project'}`
-        : `Generating ${jobs.length} project images`
-    return (
-      <button
-        type="button"
-        onClick={() => onOpen(jobs[0].projectId)}
-        title="Open the project — generation keeps going in the background"
-        className="inline-flex min-w-0 items-center gap-1.5 font-medium text-fg transition-colors hover:text-accent"
-      >
-        <Loader2 size={12} aria-hidden className="animate-spin" />
-        <span className="max-w-[22rem] truncate">{label}</span>
-      </button>
-    )
-  }
-
-  if (!notice) return null
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        onDismiss()
-        onOpen(notice.projectId)
-      }}
-      title={
-        notice.state === 'done'
-          ? 'Open the project to see the generated image'
-          : notice.detail
-      }
-      className={
-        notice.state === 'error'
-          ? 'inline-flex min-w-0 items-center gap-1.5 font-medium text-red-500 transition-colors hover:text-accent dark:text-red-400'
-          : 'inline-flex min-w-0 items-center gap-1.5 font-medium text-green-600 transition-colors hover:text-accent dark:text-green-400'
-      }
-    >
-      <ImageIcon size={12} aria-hidden />
-      <span className="max-w-[22rem] truncate">
-        {notice.state === 'done' ? '✓ ' : ''}
-        {notice.detail}
-      </span>
-    </button>
-  )
-}
-
-/**
- * Sponsor-research chip: while the AI reads a sponsor's website and writes
- * its description the chip jumps back to the sponsor's page; the run is
- * owned by its provider (and persisted by the backend), so navigating away
- * costs nothing. The done notice goes green and lingers, still clickable.
- */
-function SponsorAiStatus({
-  jobs,
-  notice,
-  onOpen,
-  onDismiss,
-}: {
-  jobs: SponsorAiJob[]
-  notice: SponsorAiNotice | null
-  onOpen: (sponsorId: string) => void
-  onDismiss: () => void
-}) {
-  if (jobs.length > 0) {
-    const label =
-      jobs.length === 1
-        ? `Researching sponsor — ${jobs[0].name || 'sponsor'}`
-        : `Researching ${jobs.length} sponsors`
-    return (
-      <button
-        type="button"
-        onClick={() => onOpen(jobs[0].sponsorId)}
-        title="Open the sponsor — research keeps going in the background"
-        className="inline-flex min-w-0 items-center gap-1.5 font-medium text-fg transition-colors hover:text-accent"
-      >
-        <Loader2 size={12} aria-hidden className="animate-spin" />
-        <span className="max-w-[22rem] truncate">{label}</span>
-      </button>
-    )
-  }
-
-  if (!notice) return null
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        onDismiss()
-        onOpen(notice.sponsorId)
-      }}
-      title={
-        notice.state === 'done'
-          ? 'Open the sponsor to review the description and branding'
-          : notice.detail
-      }
-      className={
-        notice.state === 'error'
-          ? 'inline-flex min-w-0 items-center gap-1.5 font-medium text-red-500 transition-colors hover:text-accent dark:text-red-400'
-          : 'inline-flex min-w-0 items-center gap-1.5 font-medium text-green-600 transition-colors hover:text-accent dark:text-green-400'
-      }
-    >
-      <Handshake size={12} aria-hidden />
-      <span className="max-w-[22rem] truncate">
-        {notice.state === 'done' ? '✓ ' : ''}
-        {notice.detail}
-      </span>
-    </button>
+      {notice && (
+        <button
+          type="button"
+          onClick={() => {
+            onDismiss(notice.id)
+            onOpen(notice.kind, notice.targetId)
+          }}
+          title={
+            notice.state === 'done'
+              ? 'Open the page to review the result — this clears the notice'
+              : notice.detail
+          }
+          className={
+            notice.state === 'error'
+              ? 'inline-flex min-w-0 items-center gap-1.5 font-medium text-red-500 transition-colors hover:text-accent dark:text-red-400'
+              : 'inline-flex min-w-0 items-center gap-1.5 font-medium text-green-600 transition-colors hover:text-accent dark:text-green-400'
+          }
+        >
+          <WandSparkles size={12} aria-hidden />
+          <span className="max-w-[22rem] truncate">
+            {notice.state === 'done' ? '✓ ' : ''}
+            {notice.detail}
+          </span>
+          {notices.length > 1 && (
+            <span className="rounded-full bg-green-600/15 px-1.5 text-[11px] font-semibold">
+              +{notices.length - 1}
+            </span>
+          )}
+        </button>
+      )}
+    </>
   )
 }
 

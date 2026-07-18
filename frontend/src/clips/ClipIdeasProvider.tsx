@@ -1,129 +1,67 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react'
+import {createContext, useCallback, useContext, useMemo, type ReactNode} from 'react'
 import {GenerateClipIdeas} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
+import {useAiQueue} from '../ai/AiQueueProvider'
 
-/** One clip-script generation in flight. */
+/** One clip-script generation, queued or in flight. */
 export interface ClipIdeasJob {
   /** The source stream's start time — its identity throughout the app. */
   startedAt: string
   /** "short" | "long" — one run per stream + format. */
   format: string
-  /** Stream title for status-bar copy. */
+  /** Stream title for busy-state copy. */
   title: string
-}
-
-/** End-of-run message shown after a run finishes. */
-export interface ClipIdeasNotice {
-  state: 'done' | 'error'
-  detail: string
-  startedAt: string
 }
 
 interface ClipIdeasContextValue {
   jobs: ClipIdeasJob[]
-  notice: ClipIdeasNotice | null
   /**
-   * Pitch three clip scripts for a stream + format. Owned here (not by the
-   * Clips tab) so the run — and its status-bar chip — survives navigating
-   * away. Rejects when a run for the stream + format is already in flight.
+   * Pitch three clip scripts for a stream + format. The run lives in the
+   * app-wide AI queue (see AiQueueProvider), so it survives navigating away
+   * and reports through the status bar. Rejects when a run for the stream +
+   * format is already queued or in flight.
    */
   generate: (
     startedAt: string,
     title: string,
     format: string,
   ) => Promise<main.ClipIdeaSet>
-  /** Clear the lingering done/error notice — clicking it counts as read. */
-  dismissNotice: () => void
 }
 
 const ClipIdeasContext = createContext<ClipIdeasContextValue | undefined>(
   undefined,
 )
 
-/**
- * How long the done/error notice lingers. Generation takes minutes and often
- * finishes while the producer is elsewhere, so the green chip stays around
- * long enough to be seen and clicked (like the post-stream wrap-up chip).
- */
-const NOTICE_MS = 600_000
-
 export function ClipIdeasProvider({children}: {children: ReactNode}) {
-  const [jobs, setJobs] = useState<ClipIdeasJob[]>([])
-  const [notice, setNotice] = useState<ClipIdeasNotice | null>(null)
-  const noticeTimer = useRef<number>()
+  const queue = useAiQueue()
 
-  const showNotice = useCallback((n: ClipIdeasNotice) => {
-    window.clearTimeout(noticeTimer.current)
-    setNotice(n)
-    noticeTimer.current = window.setTimeout(() => setNotice(null), NOTICE_MS)
-  }, [])
-
-  const generate = useCallback(
-    async (startedAt: string, title: string, format: string) => {
-      let added = false
-      setJobs((prev) => {
-        if (
-          prev.some((j) => j.startedAt === startedAt && j.format === format)
-        ) {
-          return prev
-        }
-        added = true
-        return [...prev, {startedAt, format, title}]
-      })
-      if (!added) {
-        throw new Error(
-          'script ideas are already being generated for this stream',
-        )
-      }
-      // A fresh run supersedes the previous run's lingering notice.
-      window.clearTimeout(noticeTimer.current)
-      setNotice(null)
-      try {
-        const result = await GenerateClipIdeas(startedAt, title, format)
-        showNotice({
-          state: 'done',
-          detail: `Script ideas ready — ${title || 'stream'}`,
-          startedAt,
-        })
-        return result
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : typeof err === 'string' ? err : ''
-        showNotice({
-          state: 'error',
-          detail: message
-            ? `Script ideas failed — ${message}`
-            : `Script ideas failed — ${title || 'stream'}`,
-          startedAt,
-        })
-        throw err
-      } finally {
-        setJobs((prev) =>
-          prev.filter(
-            (j) => !(j.startedAt === startedAt && j.format === format),
-          ),
-        )
-      }
-    },
-    [showNotice],
+  const jobs = useMemo<ClipIdeasJob[]>(
+    () =>
+      queue.jobs
+        .filter((j) => j.kind === 'clip-ideas')
+        .map((j) => ({startedAt: j.targetId, format: j.dedupe, title: j.title})),
+    [queue.jobs],
   )
 
-  const dismissNotice = useCallback(() => {
-    window.clearTimeout(noticeTimer.current)
-    setNotice(null)
-  }, [])
+  const generate = useCallback(
+    (startedAt: string, title: string, format: string) =>
+      queue.enqueue({
+        kind: 'clip-ideas',
+        targetId: startedAt,
+        dedupe: format,
+        title,
+        label: `Pitching script ideas — ${title || 'stream'}`,
+        doneDetail: `Script ideas ready — ${title || 'stream'}`,
+        failDetail: 'Script ideas failed',
+        busyError: 'script ideas are already being generated for this stream',
+        work: () => GenerateClipIdeas(startedAt, title, format),
+      }),
+    [queue],
+  )
 
   const value = useMemo<ClipIdeasContextValue>(
-    () => ({jobs, notice, generate, dismissNotice}),
-    [jobs, notice, generate, dismissNotice],
+    () => ({jobs, generate}),
+    [jobs, generate],
   )
 
   return (

@@ -1,119 +1,61 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react'
+import {createContext, useCallback, useContext, useMemo, type ReactNode} from 'react'
 import {GenerateSponsorDescription} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
+import {useAiQueue} from '../ai/AiQueueProvider'
 
-/** One sponsor website-research run in flight. */
+/** One sponsor website-research run, queued or in flight. */
 export interface SponsorAiJob {
   sponsorId: string
-  /** Sponsor name for status-bar copy. */
+  /** Sponsor name for busy-state copy. */
   name: string
-}
-
-/** End-of-run message shown after a run finishes. */
-export interface SponsorAiNotice {
-  state: 'done' | 'error'
-  detail: string
-  sponsorId: string
 }
 
 interface SponsorAiContextValue {
   jobs: SponsorAiJob[]
-  notice: SponsorAiNotice | null
   /**
-   * Research a sponsor's website and write its description. Owned here — not
-   * by the sponsor page — so the run and its status-bar chip survive
-   * navigating away; the backend persists the description and branding
-   * itself for the same reason. Rejects when a run for the sponsor is
-   * already in flight.
+   * Research a sponsor's website and write its description. The run lives
+   * in the app-wide AI queue (see AiQueueProvider), so it survives
+   * navigating away and reports through the status bar; the backend
+   * persists the description and branding itself. Rejects when a run for
+   * the sponsor is already queued or in flight.
    */
   generate: (sponsorId: string, name: string) => Promise<main.Sponsor>
-  /** Clear the lingering done/error notice — clicking it counts as read. */
-  dismissNotice: () => void
 }
 
 const SponsorAiContext = createContext<SponsorAiContextValue | undefined>(
   undefined,
 )
 
-/**
- * How long the done/error notice lingers: research often finishes while the
- * producer is elsewhere, so the green chip stays around long enough to be
- * seen and clicked (like the other AI status chips).
- */
-const NOTICE_MS = 600_000
-
 export function SponsorAiProvider({children}: {children: ReactNode}) {
-  const [jobs, setJobs] = useState<SponsorAiJob[]>([])
-  const [notice, setNotice] = useState<SponsorAiNotice | null>(null)
-  const noticeTimer = useRef<number>()
+  const queue = useAiQueue()
 
-  const showNotice = useCallback((n: SponsorAiNotice) => {
-    window.clearTimeout(noticeTimer.current)
-    setNotice(n)
-    noticeTimer.current = window.setTimeout(() => setNotice(null), NOTICE_MS)
-  }, [])
-
-  const generate = useCallback(
-    async (sponsorId: string, name: string) => {
-      let added = false
-      setJobs((prev) => {
-        if (prev.some((j) => j.sponsorId === sponsorId)) return prev
-        added = true
-        return [...prev, {sponsorId, name}]
-      })
-      if (!added) {
-        throw new Error('this sponsor is already being researched')
-      }
-      // A fresh run supersedes the previous run's lingering notice.
-      window.clearTimeout(noticeTimer.current)
-      setNotice(null)
-      try {
-        // The backend persists the description and branding itself.
-        const saved = await GenerateSponsorDescription(sponsorId)
-        showNotice({
-          state: 'done',
-          detail: `Sponsor research ready — ${name || 'sponsor'}`,
-          sponsorId,
-        })
-        return saved
-      } catch (err) {
-        const message =
-          err instanceof Error
-            ? err.message
-            : typeof err === 'string'
-              ? err
-              : ''
-        showNotice({
-          state: 'error',
-          detail: message
-            ? `Sponsor research failed — ${message}`
-            : `Sponsor research failed — ${name || 'sponsor'}`,
-          sponsorId,
-        })
-        throw err
-      } finally {
-        setJobs((prev) => prev.filter((j) => j.sponsorId !== sponsorId))
-      }
-    },
-    [showNotice],
+  const jobs = useMemo<SponsorAiJob[]>(
+    () =>
+      queue.jobs
+        .filter((j) => j.kind === 'sponsor-research')
+        .map((j) => ({sponsorId: j.targetId, name: j.title})),
+    [queue.jobs],
   )
 
-  const dismissNotice = useCallback(() => {
-    window.clearTimeout(noticeTimer.current)
-    setNotice(null)
-  }, [])
+  const generate = useCallback(
+    (sponsorId: string, name: string) =>
+      queue.enqueue({
+        kind: 'sponsor-research',
+        targetId: sponsorId,
+        title: name,
+        label: `Researching sponsor — ${name || 'sponsor'}`,
+        doneDetail: `Sponsor research ready — ${name || 'sponsor'}`,
+        failDetail: 'Sponsor research failed',
+        busyError: 'this sponsor is already being researched',
+        // The backend persists the description and branding itself.
+        work: () => GenerateSponsorDescription(sponsorId),
+      }),
+    [queue],
+  )
 
   const value = useMemo<SponsorAiContextValue>(
-    () => ({jobs, notice, generate, dismissNotice}),
-    [jobs, notice, generate, dismissNotice],
+    () => ({jobs, generate}),
+    [jobs, generate],
   )
 
   return (

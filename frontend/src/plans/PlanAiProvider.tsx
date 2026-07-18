@@ -1,39 +1,25 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react'
+import {createContext, useCallback, useContext, useMemo, type ReactNode} from 'react'
+import {useAiQueue} from '../ai/AiQueueProvider'
 
 /** What the AI is producing for the plan. */
 export type PlanAiKind = 'thumbnail' | 'listing'
 
-/** One AI generation in flight for a video plan. */
+/** One AI generation for a video plan, queued or in flight. */
 export interface PlanAiJob {
   planId: string
   kind: PlanAiKind
-  /** Plan title for status-bar copy. */
+  /** Plan title for busy-state copy. */
   title: string
-}
-
-/** End-of-run message shown after a run finishes. */
-export interface PlanAiNotice {
-  state: 'done' | 'error'
-  detail: string
-  planId: string
 }
 
 interface PlanAiContextValue {
   jobs: PlanAiJob[]
-  notice: PlanAiNotice | null
   /**
-   * Run one AI generation for a plan. Owned here (not by the page) so the
-   * run — and its status-bar chip — survives navigating away; the work
-   * function must persist its own result for the same reason. Rejects when
-   * a run of the same kind for the plan is already in flight.
+   * Run one AI generation for a plan. The run lives in the app-wide AI
+   * queue (see AiQueueProvider), so it survives navigating away and reports
+   * through the status bar; the work function must persist its own result
+   * for the same reason. Rejects when a run of the same kind for the plan
+   * is already queued or in flight.
    */
   run: <T>(
     kind: PlanAiKind,
@@ -45,84 +31,62 @@ interface PlanAiContextValue {
 
 const PlanAiContext = createContext<PlanAiContextValue | undefined>(undefined)
 
-const KIND_LABEL: Record<PlanAiKind, {doing: string; done: string}> = {
-  thumbnail: {doing: 'thumbnail', done: 'Thumbnail ready'},
-  listing: {doing: 'listing', done: 'Listing drafted'},
+const KIND_COPY: Record<
+  PlanAiKind,
+  {doing: string; done: string; failed: string}
+> = {
+  thumbnail: {
+    doing: 'Generating thumbnail',
+    done: 'Thumbnail ready',
+    failed: 'The thumbnail failed',
+  },
+  listing: {
+    doing: 'Drafting listing',
+    done: 'Listing drafted',
+    failed: 'The listing failed',
+  },
 }
 
-/**
- * How long the done/error notice lingers: generation often finishes while
- * the producer is elsewhere, so the green chip stays around long enough to
- * be seen and clicked (like the post-stream wrap-up chip).
- */
-const NOTICE_MS = 600_000
-
 export function PlanAiProvider({children}: {children: ReactNode}) {
-  const [jobs, setJobs] = useState<PlanAiJob[]>([])
-  const [notice, setNotice] = useState<PlanAiNotice | null>(null)
-  const noticeTimer = useRef<number>()
+  const queue = useAiQueue()
 
-  const showNotice = useCallback((n: PlanAiNotice) => {
-    window.clearTimeout(noticeTimer.current)
-    setNotice(n)
-    noticeTimer.current = window.setTimeout(() => setNotice(null), NOTICE_MS)
-  }, [])
+  const jobs = useMemo<PlanAiJob[]>(
+    () =>
+      queue.jobs
+        .filter((j) => j.kind === 'plan-thumbnail' || j.kind === 'plan-listing')
+        .map((j) => ({
+          planId: j.targetId,
+          kind: (j.kind === 'plan-thumbnail'
+            ? 'thumbnail'
+            : 'listing') as PlanAiKind,
+          title: j.title,
+        })),
+    [queue.jobs],
+  )
 
   const run = useCallback(
-    async <T,>(
+    <T,>(
       kind: PlanAiKind,
       planId: string,
       title: string,
       work: () => Promise<T>,
-    ): Promise<T> => {
-      let added = false
-      setJobs((prev) => {
-        if (prev.some((j) => j.planId === planId && j.kind === kind)) {
-          return prev
-        }
-        added = true
-        return [...prev, {planId, kind, title}]
+    ) => {
+      const copy = KIND_COPY[kind]
+      return queue.enqueue({
+        kind: kind === 'thumbnail' ? 'plan-thumbnail' : 'plan-listing',
+        targetId: planId,
+        title,
+        label: `${copy.doing} — ${title || 'video plan'}`,
+        doneDetail: `${copy.done} — ${title || 'video plan'}`,
+        failDetail: copy.failed,
+        busyError: `a ${kind} is already being generated for this video`,
+        work,
       })
-      if (!added) {
-        throw new Error(
-          `a ${KIND_LABEL[kind].doing} is already being generated for this video`,
-        )
-      }
-      // A fresh run supersedes the previous run's lingering notice.
-      window.clearTimeout(noticeTimer.current)
-      setNotice(null)
-      try {
-        const result = await work()
-        showNotice({
-          state: 'done',
-          detail: `${KIND_LABEL[kind].done} — ${title || 'video plan'}`,
-          planId,
-        })
-        return result
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : typeof err === 'string' ? err : ''
-        showNotice({
-          state: 'error',
-          detail: message
-            ? `The ${KIND_LABEL[kind].doing} failed — ${message}`
-            : `The ${KIND_LABEL[kind].doing} failed — ${title || 'video plan'}`,
-          planId,
-        })
-        throw err
-      } finally {
-        setJobs((prev) =>
-          prev.filter((j) => !(j.planId === planId && j.kind === kind)),
-        )
-      }
     },
-    [showNotice],
+    [queue],
   )
 
-  const value = useMemo<PlanAiContextValue>(
-    () => ({jobs, notice, run}),
-    [jobs, notice, run],
-  )
+  const value = useMemo<PlanAiContextValue>(() => ({jobs, run}), [jobs, run])
 
   return <PlanAiContext.Provider value={value}>{children}</PlanAiContext.Provider>
 }
