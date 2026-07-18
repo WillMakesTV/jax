@@ -439,7 +439,9 @@ function ChannelCards({
 
   return (
     <section aria-label="Channels">
-      <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Scale with the viewport: 3 across on medium layouts, 5 across on
+          wide/full-size ones. */}
+      <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
         {channels.map((c) => {
           const def = SERVICES.find((s) => s.id === c.platform)
           const Icon = def?.Icon
