@@ -1358,23 +1358,17 @@ export function DescriptionAiActions({
               'Editing the whole description — highlight text in the field above to scope the edit to a section.'
             )}
           </p>
+          <MarkdownField
+            id="description-edit-instruction"
+            value={instruction}
+            onChange={setInstruction}
+            placeholder={
+              snippet
+                ? 'e.g. make this punchier / mention the new overlay'
+                : 'e.g. shorten to two sentences and add a call to action'
+            }
+          />
           <div className="flex flex-wrap items-center gap-2">
-            <input
-              value={instruction}
-              onChange={(e) => setInstruction(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  void applyEdit()
-                }
-              }}
-              placeholder={
-                snippet
-                  ? 'e.g. make this punchier / mention the new overlay'
-                  : 'e.g. shorten to two sentences and add a call to action'
-              }
-              className="min-w-48 flex-1 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm text-fg outline-none focus:border-accent"
-            />
             <button
               type="button"
               onClick={() => void applyEdit()}
