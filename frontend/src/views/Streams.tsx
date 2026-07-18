@@ -309,7 +309,8 @@ export function PastStreamsSection({
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        // Three across on medium viewports, five at full width.
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
           {live.length > 0 && (
             <LiveNowCard
               live={live}
