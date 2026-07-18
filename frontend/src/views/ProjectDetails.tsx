@@ -27,6 +27,7 @@ import {
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {MarkdownField} from '../components/markdown/MarkdownField'
+import {Modal} from '../components/Modal'
 
 const field =
   'w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent'
@@ -237,6 +238,10 @@ function OverviewSection({
 }) {
   const [description, setDescription] = useState(project.description)
   const [error, setError] = useState('')
+  // The brief chat lives in a modal behind a CTA; its transcript is held
+  // here so closing the dialog doesn't lose the conversation.
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatMessages, setChatMessages] = useState<ChatTurn[]>([])
 
   // Adopt the freshly reloaded record (see ProjectDetails) once, but never
   // clobber in-progress typing: only sync when the record itself changes.
@@ -277,45 +282,63 @@ function OverviewSection({
   const dirty = description !== project.description
 
   return (
-    <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-      <div className="flex min-w-0 max-w-2xl flex-1 flex-col gap-5">
-        <EditableTitle
-          value={project.title}
-          onSave={(title) => persist({title})}
-        />
+    <div className="flex max-w-2xl flex-col gap-5">
+      <EditableTitle
+        value={project.title}
+        onSave={(title) => persist({title})}
+      />
 
-        <div>
-          <span className={labelCls}>Description</span>
-          <MarkdownField
-            id="project-description"
-            value={description}
-            onChange={setDescription}
-            onDone={() => void saveDescription(description)}
-            placeholder="What is this project? Goals, links, context… — or talk it through in the chat."
-          />
-          {dirty && (
-            <button
-              type="button"
-              onClick={() => void saveDescription(description)}
-              className="mt-3 rounded-lg bg-accent px-4 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90"
-            >
-              Save description
-            </button>
-          )}
+      <div>
+        <div className="mb-1.5 flex items-center justify-between gap-3">
+          <span className="text-sm font-medium text-fg">Description</span>
+          <button
+            type="button"
+            onClick={() => setChatOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+          >
+            <Sparkles size={14} aria-hidden className="text-accent" />
+            Build the description
+          </button>
         </div>
-
-        {error && (
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        <MarkdownField
+          id="project-description"
+          value={description}
+          onChange={setDescription}
+          onDone={() => void saveDescription(description)}
+          placeholder="What is this project? Goals, links, context… — or talk it through in the Build the description chat."
+        />
+        {dirty && (
+          <button
+            type="button"
+            onClick={() => void saveDescription(description)}
+            className="mt-3 rounded-lg bg-accent px-4 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90"
+          >
+            Save description
+          </button>
         )}
       </div>
 
-      <BriefChat
-        project={project}
-        onDescription={(markdown) => {
-          setDescription(markdown)
-          void saveDescription(markdown)
-        }}
-      />
+      {error && (
+        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+
+      <Modal
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        title="Build the description"
+        icon={<Sparkles size={18} aria-hidden className="text-accent" />}
+        maxWidthClass="max-w-xl"
+      >
+        <BriefChat
+          project={project}
+          messages={chatMessages}
+          onMessages={setChatMessages}
+          onDescription={(markdown) => {
+            setDescription(markdown)
+            void saveDescription(markdown)
+          }}
+        />
+      </Modal>
     </div>
   )
 }
@@ -429,18 +452,23 @@ interface ChatTurn {
 }
 
 /**
- * The description-building conversation: each turn goes to the connected AI
- * service with the transcript, and the reply carries a full rewrite of the
- * description draft, which lands in the editor (and saves) automatically.
+ * The description-building conversation, shown in the Overview tab's modal:
+ * each turn goes to the connected AI service with the transcript, and the
+ * reply carries a full rewrite of the description draft, which lands in the
+ * editor (and saves) automatically. The transcript lives in the parent so
+ * closing and reopening the dialog keeps the conversation.
  */
 function BriefChat({
   project,
+  messages,
+  onMessages,
   onDescription,
 }: {
   project: main.Project
+  messages: ChatTurn[]
+  onMessages: (update: (prev: ChatTurn[]) => ChatTurn[]) => void
   onDescription: (markdown: string) => void
 }) {
-  const [messages, setMessages] = useState<ChatTurn[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -455,7 +483,7 @@ function BriefChat({
     const message = input.trim()
     if (!message || busy) return
     const history = messages
-    setMessages([...history, {role: 'user', text: message}])
+    onMessages((prev) => [...prev, {role: 'user', text: message}])
     setInput('')
     setBusy(true)
     setError('')
@@ -465,7 +493,7 @@ function BriefChat({
         history.map((m) => main.ProjectChatMessage.createFrom(m)),
         message,
       )
-      setMessages((prev) => [...prev, {role: 'assistant', text: reply.reply}])
+      onMessages((prev) => [...prev, {role: 'assistant', text: reply.reply}])
       if (reply.description.trim()) onDescription(reply.description)
     } catch (err) {
       setError(
@@ -479,20 +507,16 @@ function BriefChat({
   }
 
   return (
-    <aside className="flex w-full flex-col rounded-xl border border-edge bg-surface lg:w-96">
-      <div className="flex items-center gap-2 border-b border-edge px-4 py-3">
-        <Sparkles size={15} aria-hidden className="text-accent" />
-        <p className="text-sm font-semibold text-fg">Build the description</p>
-      </div>
-
+    <div className="flex flex-col">
       <div
         ref={scrollRef}
-        className="flex max-h-96 min-h-44 flex-col gap-2.5 overflow-y-auto px-4 py-3"
+        className="flex max-h-[26rem] min-h-52 flex-col gap-2.5 overflow-y-auto pb-3"
       >
         {messages.length === 0 && (
           <p className="text-sm text-fg-muted">
             Talk the project through — what it is, who it's for, what done looks
-            like. The description writes itself as you go.
+            like. The description writes itself onto the Overview page as you
+            go, and the chat can look up any detail of the app while you talk.
           </p>
         )}
         {messages.map((m, i) => (
@@ -512,9 +536,7 @@ function BriefChat({
       </div>
 
       {error && (
-        <p className="px-4 pb-2 text-sm text-red-600 dark:text-red-400">
-          {error}
-        </p>
+        <p className="pb-2 text-sm text-red-600 dark:text-red-400">{error}</p>
       )}
 
       <form
@@ -522,7 +544,7 @@ function BriefChat({
           e.preventDefault()
           void send()
         }}
-        className="flex items-end gap-2 border-t border-edge p-3"
+        className="flex items-end gap-2 border-t border-edge pt-3"
       >
         <textarea
           value={input}
@@ -546,7 +568,7 @@ function BriefChat({
           <Send size={15} aria-hidden />
         </button>
       </form>
-    </aside>
+    </div>
   )
 }
 

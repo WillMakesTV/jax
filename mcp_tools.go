@@ -709,6 +709,55 @@ func mcpToolCatalog() []mcpTool {
 			},
 		},
 
+		// --- Live application documentation ----------------------------------
+		// Self-describing docs generated from the running build (reflection
+		// over the bound API + the embedded navigation source), so an AI
+		// client can explain any part of Jax and the docs never go stale.
+		{
+			name:        "describe_app",
+			description: "A high-level self-description of the Jax application: the app overview, every routable page, and counts of the bound functions and models. Generated from the running build, so it always reflects the app as it currently is. Start here, then drill in with list_app_functions / list_app_models / list_app_pages / search_app_docs.",
+			handler: func(a *App, _ json.RawMessage) (any, error) {
+				return a.DescribeApp(), nil
+			},
+		},
+		{
+			name:        "list_app_pages",
+			description: "Every routable view (page) of the app, parsed from the frontend's navigation source: the view id (the same ids debug reports' route field uses) and its sidebar label when it has a nav entry.",
+			handler: func(_ *App, _ json.RawMessage) (any, error) {
+				return appPageDocs(), nil
+			},
+		},
+		{
+			name:        "list_app_functions",
+			description: "Every backend function the frontend can call (the Wails bindings), reflected from the running build: name, parameter types, and result types. This is the app's full API surface.",
+			handler: func(_ *App, _ json.RawMessage) (any, error) {
+				return appFunctionDocs(), nil
+			},
+		},
+		{
+			name:        "list_app_models",
+			description: "Every data model crossing the Go↔frontend boundary, reflected from the bound API: each struct with the JSON field names the frontend sees and their Go types.",
+			handler: func(_ *App, _ json.RawMessage) (any, error) {
+				return appModelDocs(), nil
+			},
+		},
+		{
+			name:        "search_app_docs",
+			description: "Search the app's live documentation: functions, models (by name or field), and pages whose names contain the query, case-insensitively. The quick way to answer \"how does X work\" questions about the app itself.",
+			inputSchema: objSchema(map[string]any{
+				"query": prop("string", "Words to look for in function, model, field, and page names."),
+			}, "query"),
+			handler: func(_ *App, args json.RawMessage) (any, error) {
+				var in struct {
+					Query string `json:"query"`
+				}
+				if err := decodeArgs(args, &in); err != nil {
+					return nil, err
+				}
+				return searchAppDocs(in.Query), nil
+			},
+		},
+
 		// --- AI debug reports -----------------------------------------------
 		// See skills/ai-debugging.md (the ai-debugging skill). Reports are
 		// filed from the app's debug button; a client works each one and

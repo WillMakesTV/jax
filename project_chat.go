@@ -19,6 +19,24 @@ import (
 // prompt for the chat (user-tunable in Settings → Skills).
 const projectBriefSkillID = "project-brief"
 
+// projectChatTools are the app MCP tools the brief chat may call (account
+// mode only) — the live app documentation plus read access to the app's
+// state, so the chat can describe any detail of Jax and ground the brief in
+// what actually exists. Nothing that mutates state.
+const projectChatTools = "mcp__jax__describe_app," +
+	"mcp__jax__list_app_pages," +
+	"mcp__jax__list_app_functions," +
+	"mcp__jax__list_app_models," +
+	"mcp__jax__search_app_docs," +
+	"mcp__jax__get_app_status," +
+	"mcp__jax__list_projects," +
+	"mcp__jax__get_project," +
+	"mcp__jax__list_skills," +
+	"mcp__jax__get_skill," +
+	"mcp__jax__list_content_series," +
+	"mcp__jax__list_past_streams," +
+	"mcp__jax__list_brand_links"
+
 // ProjectChatMessage is one prior turn of the description-building chat.
 type ProjectChatMessage struct {
 	Role string `json:"role"` // "user" or "assistant"
@@ -89,7 +107,10 @@ func (a *App) ChatProjectDescription(projectID string, history []ProjectChatMess
 	b.WriteString(strings.TrimSpace(message))
 	b.WriteString("\n")
 
-	text, err := a.askAIText(system, b.String())
+	// Account-mode runs get the app's own MCP tools: the live application
+	// documentation and read access to app state, so the chat can answer
+	// questions about Jax itself while building the brief.
+	text, err := a.askAIText(system, b.String(), a.claudeMCPArgs(projectChatTools)...)
 	if err != nil {
 		return ProjectChatReply{}, err
 	}
