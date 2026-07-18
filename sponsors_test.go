@@ -125,6 +125,52 @@ func TestSponsorCampaignRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSponsorLogo(t *testing.T) {
+	a := newTestApp(t)
+
+	s, err := a.SaveSponsor(Sponsor{Name: "Acme"})
+	if err != nil {
+		t.Fatalf("save sponsor: %v", err)
+	}
+	s, err = a.mutateSponsor(s.ID, func(s *Sponsor) error {
+		s.Branding = append(s.Branding, SponsorFile{ID: "f1", Name: "logo.png"})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("record branding: %v", err)
+	}
+
+	if _, err := a.SetSponsorLogo(s.ID, "nope"); err == nil {
+		t.Fatal("want error for an unknown branding file")
+	}
+	s, err = a.SetSponsorLogo(s.ID, "f1")
+	if err != nil {
+		t.Fatalf("set logo: %v", err)
+	}
+	if s.LogoFileID != "f1" || s.LogoURL == "" {
+		t.Fatalf("logo not set: %+v", s)
+	}
+
+	// A plain save must not drop the pick.
+	s.Description = "# Notes"
+	s, err = a.SaveSponsor(s)
+	if err != nil {
+		t.Fatalf("resave sponsor: %v", err)
+	}
+	if s.LogoFileID != "f1" {
+		t.Fatalf("save dropped the logo pick: %+v", s)
+	}
+
+	// Deleting the logo's file clears the pick with it.
+	s, err = a.DeleteSponsorBranding(s.ID, "f1")
+	if err != nil {
+		t.Fatalf("delete branding: %v", err)
+	}
+	if s.LogoFileID != "" || s.LogoURL != "" {
+		t.Fatalf("logo pick should be cleared, got %+v", s)
+	}
+}
+
 func TestDeleteSponsorBranding(t *testing.T) {
 	a := newTestApp(t)
 

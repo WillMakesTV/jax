@@ -8,21 +8,24 @@ import {
   Paperclip,
   Plus,
   Sparkles,
+  Star,
   Trash2,
   Upload,
 } from 'lucide-react'
-import {useEffect, useState} from 'react'
+import {useCallback, useEffect, useState} from 'react'
 import {
   AddSponsorBranding,
   DeleteSponsorBranding,
   DeleteSponsorCampaign,
-  GenerateSponsorDescription,
   GetSponsors,
   SaveSponsor,
+  SetSponsorLogo,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {MarkdownField} from '../components/markdown/MarkdownField'
 import {openExternal} from '../lib/browser'
+import {useDataChanged} from '../lib/dataChanged'
+import {useSponsorAi} from '../sponsors/SponsorAiProvider'
 
 const field =
   'w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent'
@@ -51,7 +54,7 @@ export function SponsorDetails({
 
   // The navigation history hands us a snapshot; reload the live record so
   // files/campaigns edited on a previous visit are current.
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!sponsor) return
     GetSponsors()
       .then((all) => {
@@ -60,6 +63,11 @@ export function SponsorDetails({
       })
       .catch(() => {})
   }, [sponsor])
+
+  useEffect(load, [load])
+  // A background website research (see SponsorAiProvider) persists its
+  // results while this page may be open; adopt changes as they land.
+  useDataChanged(['sponsors'], load)
 
   return (
     <div className="flex flex-col">
@@ -76,17 +84,19 @@ export function SponsorDetails({
         <CreateSponsorForm onCreated={setSp} onCancel={onBack} />
       ) : (
         <div className="flex flex-col gap-8 lg:flex-row">
-          <div className="flex min-w-0 max-w-3xl flex-1 flex-col gap-6">
-            <DetailsSection sponsor={sp} onChange={setSp} />
+          {/* Branding with the campaigns beneath it, to the left of the
+              description column. */}
+          <aside className="flex w-full shrink-0 flex-col gap-6 lg:w-80">
+            <BrandingSection sponsor={sp} onChange={setSp} />
             <CampaignsSection
               sponsor={sp}
               onChange={setSp}
               onOpenCampaign={onOpenCampaign}
             />
-          </div>
-          <aside className="flex w-full shrink-0 flex-col gap-3 lg:w-80">
-            <BrandingSection sponsor={sp} onChange={setSp} />
           </aside>
+          <div className="min-w-0 max-w-3xl flex-1">
+            <DetailsSection sponsor={sp} onChange={setSp} />
+          </div>
         </div>
       )}
     </div>
@@ -263,21 +273,22 @@ function DetailsSection({
 
   // Generate with AI: the backend reads the website (homepage, llms.txt,
   // sitemap), writes the description, and pulls likely logo/branding images
-  // into the branding uploads. The returned sponsor carries all of it.
-  const [generating, setGenerating] = useState(false)
+  // into the branding uploads. The run lives in SponsorAiProvider so it
+  // survives navigating away and reports through the status bar.
+  const sponsorAi = useSponsorAi()
+  const generating = sponsorAi.jobs.some((j) => j.sponsorId === sponsor.id)
   const generate = async () => {
-    setGenerating(true)
     setError('')
     try {
-      onChange(await GenerateSponsorDescription(sponsor.id))
+      // The backend persists the results; adopt them when this page is
+      // still around to hear it.
+      onChange(await sponsorAi.generate(sponsor.id, sponsor.name))
     } catch (err) {
       setError(
         err instanceof Error && err.message
           ? err.message
           : 'The description could not be generated.',
       )
-    } finally {
-      setGenerating(false)
     }
   }
 
@@ -558,6 +569,10 @@ function BrandingSection({
         onDelete={async (fileID) =>
           onChange(await DeleteSponsorBranding(sponsor.id, fileID))
         }
+        logoFileId={sponsor.logoFileId || ''}
+        onSetLogo={async (fileID) =>
+          onChange(await SetSponsorLogo(sponsor.id, fileID))
+        }
       />
     </div>
   )
@@ -598,15 +613,29 @@ export function SponsorFileList({
   files,
   emptyCopy,
   onDelete,
+  logoFileId,
+  onSetLogo,
 }: {
   files: main.SponsorFile[]
   /** Explains what belongs here when nothing is uploaded yet. */
   emptyCopy: string
   onDelete: (fileID: string) => Promise<void>
+  /** Which file serves as the sponsor's logo (branding list only). */
+  logoFileId?: string
+  /** Pick a file as the logo ('' clears it); omitted = no logo control. */
+  onSetLogo?: (fileID: string) => Promise<void>
 }) {
   const remove = async (fileID: string) => {
     try {
       await onDelete(fileID)
+    } catch {
+      // Non-fatal; the list reconciles on the next load.
+    }
+  }
+
+  const setLogo = async (fileID: string) => {
+    try {
+      await onSetLogo?.(fileID)
     } catch {
       // Non-fatal; the list reconciles on the next load.
     }
@@ -618,39 +647,69 @@ export function SponsorFileList({
 
   return (
     <ul className="flex flex-col gap-2">
-      {files.map((f) => (
-        <li
-          key={f.id}
-          className="flex items-center gap-3 rounded-xl border border-edge bg-surface p-3"
-        >
-          {IMAGE_EXT.test(f.name) ? (
-            <img
-              src={f.mediaUrl}
-              alt={f.name}
-              className="h-12 w-12 shrink-0 rounded-lg border border-edge object-cover"
-            />
-          ) : (
-            <span
-              aria-hidden
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-edge bg-bg text-fg-muted"
-            >
-              <File size={20} />
-            </span>
-          )}
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-fg">{f.name}</p>
-            <p className="text-xs text-fg-muted">{formatSize(f.sizeBytes)}</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => void remove(f.id)}
-            title="Remove file"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+      {files.map((f) => {
+        const isLogo = Boolean(logoFileId) && f.id === logoFileId
+        return (
+          <li
+            key={f.id}
+            className="flex items-center gap-3 rounded-xl border border-edge bg-surface p-3"
           >
-            <Trash2 size={14} aria-hidden />
-          </button>
-        </li>
-      ))}
+            {IMAGE_EXT.test(f.name) ? (
+              <img
+                src={f.mediaUrl}
+                alt={f.name}
+                className="h-12 w-12 shrink-0 rounded-lg border border-edge object-cover"
+              />
+            ) : (
+              <span
+                aria-hidden
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-edge bg-bg text-fg-muted"
+              >
+                <File size={20} />
+              </span>
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-fg">{f.name}</p>
+              <p className="text-xs text-fg-muted">
+                {formatSize(f.sizeBytes)}
+                {isLogo && (
+                  <span className="ml-1.5 font-medium text-accent">Logo</span>
+                )}
+              </p>
+            </div>
+            {onSetLogo && (
+              <button
+                type="button"
+                onClick={() => void setLogo(isLogo ? '' : f.id)}
+                title={
+                  isLogo
+                    ? 'This file is the sponsor logo — click to clear'
+                    : 'Use this file as the sponsor logo'
+                }
+                className={
+                  isLogo
+                    ? 'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-accent transition-colors hover:bg-surface-hover'
+                    : 'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg'
+                }
+              >
+                <Star
+                  size={14}
+                  aria-hidden
+                  fill={isLogo ? 'currentColor' : 'none'}
+                />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => void remove(f.id)}
+              title="Remove file"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+            >
+              <Trash2 size={14} aria-hidden />
+            </button>
+          </li>
+        )
+      })}
     </ul>
   )
 }

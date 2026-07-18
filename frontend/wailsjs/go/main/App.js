@@ -802,6 +802,10 @@ export function SetSetting(arg1, arg2) {
   return window['go']['main']['App']['SetSetting'](arg1, arg2);
 }
 
+export function SetSponsorLogo(arg1, arg2) {
+  return window['go']['main']['App']['SetSponsorLogo'](arg1, arg2);
+}
+
 export function SetStreamDescription(arg1, arg2) {
   return window['go']['main']['App']['SetStreamDescription'](arg1, arg2);
 }

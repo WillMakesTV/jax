@@ -57,10 +57,14 @@ type Sponsor struct {
 	Name    string `json:"name"`
 	Website string `json:"website"`
 	// Description is markdown.
-	Description string            `json:"description"`
-	Branding    []SponsorFile     `json:"branding"`
-	Campaigns   []SponsorCampaign `json:"campaigns"`
-	CreatedAt   string            `json:"createdAt"`
+	Description string `json:"description"`
+	// LogoFileID names which branding file serves as the sponsor's logo
+	// ("" = none); LogoURL is derived on read, never persisted.
+	LogoFileID string            `json:"logoFileId"`
+	LogoURL    string            `json:"logoUrl"`
+	Branding   []SponsorFile     `json:"branding"`
+	Campaigns  []SponsorCampaign `json:"campaigns"`
+	CreatedAt  string            `json:"createdAt"`
 }
 
 // sponsorsDir returns the root directory holding per-sponsor files
@@ -118,10 +122,14 @@ func (a *App) fillSponsorURLs(s *Sponsor) {
 	if s.Campaigns == nil {
 		s.Campaigns = []SponsorCampaign{}
 	}
+	s.LogoURL = ""
 	for i := range s.Branding {
 		s.Branding[i].MediaURL = base + sponsorFilesPrefix +
 			url.PathEscape(s.ID) + "/branding/" +
 			url.PathEscape(s.Branding[i].Name)
+		if s.Branding[i].ID == s.LogoFileID {
+			s.LogoURL = s.Branding[i].MediaURL
+		}
 	}
 	for i := range s.Campaigns {
 		c := &s.Campaigns[i]
@@ -181,11 +189,15 @@ func (a *App) SaveSponsor(s Sponsor) (Sponsor, error) {
 		s.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 
+	// Derived per read, never persisted.
+	s.LogoURL = ""
+
 	replaced := false
 	for i, existing := range all {
 		if existing.ID == s.ID {
 			s.Branding = existing.Branding
 			s.Campaigns = existing.Campaigns
+			s.LogoFileID = existing.LogoFileID
 			all[i] = s
 			replaced = true
 			break
@@ -194,6 +206,7 @@ func (a *App) SaveSponsor(s Sponsor) (Sponsor, error) {
 	if !replaced {
 		s.Branding = []SponsorFile{}
 		s.Campaigns = []SponsorCampaign{}
+		s.LogoFileID = ""
 		all = append([]Sponsor{s}, all...)
 	}
 
@@ -294,8 +307,27 @@ func (a *App) AddSponsorBranding(sponsorID string) (Sponsor, error) {
 	})
 }
 
+// SetSponsorLogo picks which branding file serves as the sponsor's logo
+// ("" clears the pick) and returns the updated sponsor.
+func (a *App) SetSponsorLogo(sponsorID, fileID string) (Sponsor, error) {
+	return a.mutateSponsor(sponsorID, func(s *Sponsor) error {
+		if fileID == "" {
+			s.LogoFileID = ""
+			return nil
+		}
+		for _, f := range s.Branding {
+			if f.ID == fileID {
+				s.LogoFileID = fileID
+				return nil
+			}
+		}
+		return fmt.Errorf("that branding file no longer exists")
+	})
+}
+
 // DeleteSponsorBranding removes a branding file's metadata and its file on
-// disk, and returns the updated sponsor.
+// disk, and returns the updated sponsor. Deleting the file that served as
+// the logo clears the logo pick with it.
 func (a *App) DeleteSponsorBranding(sponsorID, fileID string) (Sponsor, error) {
 	var name string
 	s, err := a.mutateSponsor(sponsorID, func(s *Sponsor) error {
@@ -308,6 +340,9 @@ func (a *App) DeleteSponsorBranding(sponsorID, fileID string) (Sponsor, error) {
 			out = append(out, f)
 		}
 		s.Branding = out
+		if s.LogoFileID == fileID {
+			s.LogoFileID = ""
+		}
 		return nil
 	})
 	if err != nil {

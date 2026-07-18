@@ -8,6 +8,7 @@ import {
   Eye,
   EyeOff,
   Gauge,
+  Handshake,
   Image as ImageIcon,
   Loader2,
   MessageSquare,
@@ -66,6 +67,11 @@ import {
   type ProjectThumbNotice,
 } from '../projects/ProjectThumbsProvider'
 import {
+  useSponsorAi,
+  type SponsorAiJob,
+  type SponsorAiNotice,
+} from '../sponsors/SponsorAiProvider'
+import {
   useVodTranscribe,
   type VodJob,
   type VodNotice,
@@ -89,6 +95,8 @@ interface StatusBarProps {
   onOpenPlanAi: (planId: string) => void
   /** Open the project whose cover image is generating. */
   onOpenProjectThumb: (projectId: string) => void
+  /** Open the sponsor whose website research is running. */
+  onOpenSponsorAi: (sponsorId: string) => void
   /** Open the Editor tab of the video plan with the active edit session. */
   onOpenEditSession: (planId: string) => void
   /** Open the past stream the post-stream wrap-up is processing, on the tab
@@ -112,6 +120,7 @@ export function StatusBar({
   onOpenClipIdeas,
   onOpenPlanAi,
   onOpenProjectThumb,
+  onOpenSponsorAi,
   onOpenEditSession,
   onOpenPostStream,
   onOpenFixNotice,
@@ -126,6 +135,7 @@ export function StatusBar({
   const clipIdeas = useClipIdeas()
   const planAi = usePlanAi()
   const projectThumbs = useProjectThumbs()
+  const sponsorAi = useSponsorAi()
   const editSession = useEditSession()
 
   // Prefer the designated primary mic; otherwise "on" when any mic is
@@ -325,6 +335,15 @@ export function StatusBar({
         notice={projectThumbs.notice}
         onOpen={onOpenProjectThumb}
         onDismiss={projectThumbs.dismissNotice}
+      />
+
+      {/* AI website research for a sponsor; click through to the sponsor's
+          page. */}
+      <SponsorAiStatus
+        jobs={sponsorAi.jobs}
+        notice={sponsorAi.notice}
+        onOpen={onOpenSponsorAi}
+        onDismiss={sponsorAi.dismissNotice}
       />
 
       {/* Post-stream wrap-up pipeline (download → transcribe → outline →
@@ -678,6 +697,69 @@ function ProjectThumbStatus({
       }
     >
       <ImageIcon size={12} aria-hidden />
+      <span className="max-w-[22rem] truncate">
+        {notice.state === 'done' ? '✓ ' : ''}
+        {notice.detail}
+      </span>
+    </button>
+  )
+}
+
+/**
+ * Sponsor-research chip: while the AI reads a sponsor's website and writes
+ * its description the chip jumps back to the sponsor's page; the run is
+ * owned by its provider (and persisted by the backend), so navigating away
+ * costs nothing. The done notice goes green and lingers, still clickable.
+ */
+function SponsorAiStatus({
+  jobs,
+  notice,
+  onOpen,
+  onDismiss,
+}: {
+  jobs: SponsorAiJob[]
+  notice: SponsorAiNotice | null
+  onOpen: (sponsorId: string) => void
+  onDismiss: () => void
+}) {
+  if (jobs.length > 0) {
+    const label =
+      jobs.length === 1
+        ? `Researching sponsor — ${jobs[0].name || 'sponsor'}`
+        : `Researching ${jobs.length} sponsors`
+    return (
+      <button
+        type="button"
+        onClick={() => onOpen(jobs[0].sponsorId)}
+        title="Open the sponsor — research keeps going in the background"
+        className="inline-flex min-w-0 items-center gap-1.5 font-medium text-fg transition-colors hover:text-accent"
+      >
+        <Loader2 size={12} aria-hidden className="animate-spin" />
+        <span className="max-w-[22rem] truncate">{label}</span>
+      </button>
+    )
+  }
+
+  if (!notice) return null
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onDismiss()
+        onOpen(notice.sponsorId)
+      }}
+      title={
+        notice.state === 'done'
+          ? 'Open the sponsor to review the description and branding'
+          : notice.detail
+      }
+      className={
+        notice.state === 'error'
+          ? 'inline-flex min-w-0 items-center gap-1.5 font-medium text-red-500 transition-colors hover:text-accent dark:text-red-400'
+          : 'inline-flex min-w-0 items-center gap-1.5 font-medium text-green-600 transition-colors hover:text-accent dark:text-green-400'
+      }
+    >
+      <Handshake size={12} aria-hidden />
       <span className="max-w-[22rem] truncate">
         {notice.state === 'done' ? '✓ ' : ''}
         {notice.detail}

@@ -15,6 +15,7 @@ import {OutlineProvider} from './outline/OutlineProvider'
 import {ClipIdeasProvider} from './clips/ClipIdeasProvider'
 import {PlanAiProvider} from './plans/PlanAiProvider'
 import {ProjectThumbsProvider} from './projects/ProjectThumbsProvider'
+import {SponsorAiProvider} from './sponsors/SponsorAiProvider'
 import {EditSessionProvider} from './editor/EditSessionProvider'
 
 const container = document.getElementById('root')
@@ -36,9 +37,11 @@ root.render(
                                                 <ClipIdeasProvider>
                                                     <PlanAiProvider>
                                                         <ProjectThumbsProvider>
-                                                            <EditSessionProvider>
-                                                                <App/>
-                                                            </EditSessionProvider>
+                                                            <SponsorAiProvider>
+                                                                <EditSessionProvider>
+                                                                    <App/>
+                                                                </EditSessionProvider>
+                                                            </SponsorAiProvider>
                                                         </ProjectThumbsProvider>
                                                     </PlanAiProvider>
                                                 </ClipIdeasProvider>

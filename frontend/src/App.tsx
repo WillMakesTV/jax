@@ -3,6 +3,7 @@ import {
   GetDownloads,
   GetPastStreams,
   GetProjects,
+  GetSponsors,
   GetVideoPlans,
 } from '../wailsjs/go/main/App'
 import {main} from '../wailsjs/go/models'
@@ -447,6 +448,22 @@ function App() {
     [navigate],
   )
 
+  // Status-bar chip for a sponsor's website research: resolve the sponsor by
+  // id and open its page.
+  const openSponsorById = useCallback(
+    async (sponsorId: string) => {
+      try {
+        const sponsors = await GetSponsors()
+        const sponsor = (sponsors ?? []).find((s) => s.id === sponsorId)
+        if (!sponsor) return
+        navigate({view: 'sponsor-details', sponsor, campaign: null})
+      } catch {
+        // Lookup failed; stay where we are.
+      }
+    },
+    [navigate],
+  )
+
   // Mouse buttons 4/5 (back/forward) navigate history.
   useEffect(() => {
     const onMouseUp = (e: MouseEvent) => {
@@ -775,6 +792,7 @@ function App() {
         }
         onOpenPlanAi={(planId) => void openVideoPlanById(planId, 'publish')}
         onOpenProjectThumb={(projectId) => void openProjectById(projectId)}
+        onOpenSponsorAi={(sponsorId) => void openSponsorById(sponsorId)}
         onOpenEditSession={(planId) => void openVideoPlanById(planId, 'editor')}
         onOpenPostStream={(startedAt, streamTab) =>
           void openStreamByStart(startedAt, streamTab)

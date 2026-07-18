@@ -1556,6 +1556,8 @@ export class Sponsor {
     name: string;
     website: string;
     description: string;
+    logoFileId: string;
+    logoUrl: string;
     branding: SponsorFile[];
     campaigns: SponsorCampaign[];
     createdAt: string;
@@ -1570,6 +1572,8 @@ export class Sponsor {
         this.name = source["name"];
         this.website = source["website"];
         this.description = source["description"];
+        this.logoFileId = source["logoFileId"];
+        this.logoUrl = source["logoUrl"];
         this.branding = this.convertValues(source["branding"], SponsorFile);
         this.campaigns = this.convertValues(source["campaigns"], SponsorCampaign);
         this.createdAt = source["createdAt"];

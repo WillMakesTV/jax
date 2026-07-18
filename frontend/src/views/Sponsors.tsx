@@ -2,6 +2,7 @@ import {Handshake, Megaphone, Paperclip, Plus, Trash2} from 'lucide-react'
 import {useCallback, useEffect, useState} from 'react'
 import {DeleteSponsor, GetSponsors} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
+import {Markdown} from '../components/markdown/Markdown'
 import {PageHeader} from '../components/PageHeader'
 import {useDataChanged} from '../lib/dataChanged'
 
@@ -118,12 +119,20 @@ function SponsorCard({
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5">
-            <span
-              aria-hidden
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent"
-            >
-              <Handshake size={16} />
-            </span>
+            {sponsor.logoUrl ? (
+              <img
+                src={sponsor.logoUrl}
+                alt={`${sponsor.name} logo`}
+                className="h-8 w-8 shrink-0 rounded-lg border border-edge bg-bg object-contain"
+              />
+            ) : (
+              <span
+                aria-hidden
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent"
+              >
+                <Handshake size={16} />
+              </span>
+            )}
             <p className="min-w-0 flex-1 truncate text-sm font-semibold text-fg">
               {sponsor.name}
             </p>
@@ -142,9 +151,9 @@ function SponsorCard({
         </div>
 
         {sponsor.description && (
-          <p className="mt-2 line-clamp-2 text-sm text-fg-muted">
-            {sponsor.description}
-          </p>
+          <div className="mt-2 line-clamp-3 text-sm text-fg-muted">
+            <Markdown>{sponsor.description}</Markdown>
+          </div>
         )}
 
         <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-3">

@@ -402,6 +402,8 @@ export function SetProjectThumbnail(arg1:string,arg2:string):Promise<main.Projec
 
 export function SetSetting(arg1:string,arg2:string):Promise<void>;
 
+export function SetSponsorLogo(arg1:string,arg2:string):Promise<main.Sponsor>;
+
 export function SetStreamDescription(arg1:string,arg2:string):Promise<void>;
 
 export function SetStreamEpisode(arg1:Array<string>,arg2:number,arg3:string):Promise<void>;
