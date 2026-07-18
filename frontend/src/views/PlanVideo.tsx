@@ -23,6 +23,7 @@ import {
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {EpisodeThumb} from '../components/EpisodeThumb'
+import {MarkdownField} from '../components/markdown/MarkdownField'
 import {formatDate} from '../lib/format'
 import {ObsRecordPanel} from '../obs/ObsRecordPanel'
 
@@ -359,14 +360,11 @@ export function PlanVideo({
             <label htmlFor="video-plan-idea" className={labelCls}>
               Video idea
             </label>
-            <textarea
+            <MarkdownField
               id="video-plan-idea"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              rows={2}
-              required
+              onChange={setTitle}
               placeholder="A short description of the video — e.g. top 5 moments from the launch stream"
-              className={`${field} resize-none`}
             />
             <p className="mt-1.5 text-xs text-fg-muted">
               Required — moving on creates the plan and its workspace folder.
