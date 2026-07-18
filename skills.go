@@ -45,6 +45,7 @@ var appSkillDefs = []struct {
 	{"video-descriptions", "Published video descriptions", "The writing guide for produced videos published to YouTube — hook-first search copy with the original full-length broadcast link above the brand links."},
 	{"video-publish-prep", "Preparing videos to publish", "How the Publish tab's title, description, tags, and category are drafted — all at once, one field at a time, or revised from the producer's feedback."},
 	{"projects", "Projects & docs", "Use projects as the writing and reference space: doc trees, conventions, and what stays app-only."},
+	{"project-images", "Project images", "The creative brief behind generated project cover images: logo-style, led by the project's name and tagline, drawn from its description."},
 	{"project-brief", "Project brief chat", "How the Overview tab's chat collaborator behaves: the questions that turn a bare project title into a description, and how the draft is maintained turn over turn."},
 	{"obs-setup", "OBS, routines & smart sources", "How Jax drives OBS: routines around going live, and token-templated smart sources."},
 	{skillAIDebugging, "AI Debugging", "Work the debug-report queue over MCP: find open reports, reproduce, fix, verify, then delete the resolved report."},

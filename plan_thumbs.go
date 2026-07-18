@@ -45,6 +45,9 @@ const (
 	openaiImageSizePortrait  = "1024x1536"
 
 	thumbnailSkillID = "stream-thumbnails"
+	// projectImagesSkillID is the creative brief behind project cover images
+	// (logo-style, led by the project's name — see skills/project-images.md).
+	projectImagesSkillID = "project-images"
 )
 
 // thumbShape is the frame a thumbnail is composed in. A short's cover is seen
@@ -276,10 +279,10 @@ func (a *App) GenerateVideoPlanThumbnail(planID, title, description, feedback, c
 func (a *App) GenerateProjectThumbnail(projectID, feedback, currentFile string) (PlanThumbnail, error) {
 	for _, p := range a.getProjects() {
 		if p.ID == projectID {
-			return a.generateThumbnail(p.Title, p.Description,
-				"This is the cover image of a project — a body of work such as a launch, build, or campaign — "+
-					"not a stream thumbnail: no LIVE badges, viewer counts, or platform UI.",
-				feedback, currentFile, landscapeThumb)
+			// The project-images skill carries the whole brief (logo-style,
+			// name + tagline), so no extra context note is needed.
+			return a.generateThumbnailWithSkill(projectImagesSkillID, "Project",
+				p.Title, p.Description, "", feedback, currentFile, landscapeThumb)
 		}
 	}
 	return PlanThumbnail{}, fmt.Errorf("no project with id %q", projectID)
@@ -291,6 +294,15 @@ func (a *App) GenerateProjectThumbnail(projectID, feedback, currentFile string) 
 // VOD, no LIVE badges"), and — for revisions — the current image plus the
 // feedback.
 func (a *App) generateThumbnail(title, description, contextNote, feedback, currentFile string, shape thumbShape) (PlanThumbnail, error) {
+	return a.generateThumbnailWithSkill(thumbnailSkillID, "Stream",
+		title, description, contextNote, feedback, currentFile, shape)
+}
+
+// generateThumbnailWithSkill runs the image engine under a chosen skill
+// brief: skillID names the Application Skill whose content leads the prompt,
+// and subjectLabel heads the section carrying the title/description (e.g.
+// "Stream", "Project").
+func (a *App) generateThumbnailWithSkill(skillID, subjectLabel, title, description, contextNote, feedback, currentFile string, shape thumbShape) (PlanThumbnail, error) {
 	conn, ok := a.getConn(openaiService)
 	if !ok {
 		return PlanThumbnail{}, fmt.Errorf("connect OpenAI in Settings → AI to generate thumbnails")
@@ -302,7 +314,7 @@ func (a *App) generateThumbnail(title, description, contextNote, feedback, curre
 		shape = landscapeThumb
 	}
 
-	skill, err := a.getAppSkill(thumbnailSkillID)
+	skill, err := a.getAppSkill(skillID)
 	if err != nil {
 		return PlanThumbnail{}, err
 	}
@@ -315,7 +327,7 @@ func (a *App) generateThumbnail(title, description, contextNote, feedback, curre
 	if strings.TrimSpace(contextNote) != "" {
 		fmt.Fprintf(&b, "\n\n# Context\n%s\n", strings.TrimSpace(contextNote))
 	}
-	b.WriteString("\n\n# Stream\n")
+	fmt.Fprintf(&b, "\n\n# %s\n", subjectLabel)
 	if strings.TrimSpace(title) != "" {
 		fmt.Fprintf(&b, "Title: %s\n", strings.TrimSpace(title))
 	}
