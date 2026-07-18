@@ -20,6 +20,7 @@ import clsx from 'clsx'
 import {
   AddProjectAssets,
   ChatProjectDescription,
+  DeleteProject,
   DeleteProjectAsset,
   DeleteProjectDoc,
   GetProjects,
@@ -132,6 +133,7 @@ export function ProjectDetails({
               project={proj}
               onChange={setProj}
               onOpenTab={setTab}
+              onDeleted={onBack}
             />
           )}
           {tab === 'files' && (
@@ -250,11 +252,14 @@ function OverviewSection({
   project,
   onChange,
   onOpenTab,
+  onDeleted,
 }: {
   project: main.Project
   onChange: (project: main.Project) => void
   /** Jump to another of the project's tabs (the files/docs cards). */
   onOpenTab: (tab: ProjectTab) => void
+  /** Called after the project is deleted (returns to the list). */
+  onDeleted: () => void
 }) {
   const [description, setDescription] = useState(project.description)
   const [repository, setRepository] = useState(project.repository ?? '')
@@ -317,6 +322,27 @@ function OverviewSection({
       )
     } finally {
       setThumbBusy('')
+    }
+  }
+
+  // Deleting moved off the listing cards (too destructive for a hover
+  // target); it lives here behind a confirm instead.
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const removeProject = async () => {
+    setDeleting(true)
+    setError('')
+    try {
+      await DeleteProject(project.id)
+      onDeleted()
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'The project could not be deleted.',
+      )
+      setConfirmDelete(false)
+      setDeleting(false)
     }
   }
 
@@ -531,7 +557,57 @@ function OverviewSection({
             </span>
           </span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => setConfirmDelete(true)}
+          className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg-muted transition-colors hover:border-red-600/50 hover:text-red-600 dark:hover:text-red-400"
+        >
+          <Trash2 size={14} aria-hidden />
+          Delete project
+        </button>
       </aside>
+
+      {/* Deleting takes the project's files and docs with it, so it asks
+          first. */}
+      <Modal
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        title="Delete this project?"
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-fg-muted">
+            <span className="font-semibold text-fg">
+              {project.title || 'This project'}
+            </span>{' '}
+            and everything it holds — its description, uploaded files, and docs
+            — are removed. This cannot be undone.
+          </p>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(false)}
+              disabled={deleting}
+              className="rounded-lg border border-edge px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void removeProject()}
+              disabled={deleting}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {deleting ? (
+                <Loader2 size={14} aria-hidden className="animate-spin" />
+              ) : (
+                <Trash2 size={14} aria-hidden />
+              )}
+              {deleting ? 'Deleting…' : 'Delete the project'}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={chatOpen}
