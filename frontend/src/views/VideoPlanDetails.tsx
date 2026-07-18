@@ -10,6 +10,7 @@ import {
   Loader2,
   Pencil,
   Play,
+  Plus,
   Radio,
   RefreshCw,
   RotateCcw,
@@ -31,6 +32,7 @@ import {
   ReopenVideoPlan,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
+import {AddContentModal} from '../components/AddPlanContent'
 import {DownloadThumb} from '../components/DownloadThumb'
 import {EpisodeThumb} from '../components/EpisodeThumb'
 import {Modal} from '../components/Modal'
@@ -211,6 +213,9 @@ export function VideoPlanDetails({
   // links + live view counts) backs the Shares section and the modal.
   const [tracked, setTracked] = useState<main.TrackedVideo | null>(null)
   const [sharesOpen, setSharesOpen] = useState(false)
+  // The Add Content dialog: extra source streams or new footage (picked
+  // files / an OBS recording), applied to the plan immediately.
+  const [addContentOpen, setAddContentOpen] = useState(false)
   const [refreshingShares, setRefreshingShares] = useState(false)
   useEffect(() => {
     if (!done) {
@@ -345,6 +350,18 @@ export function VideoPlanDetails({
                   {tracked.shares.length}
                 </span>
               )}
+            </button>
+          )}
+          {/* Source more streams or add fresh footage without leaving the
+              page — the wizard's content choices, applied immediately. */}
+          {!done && (
+            <button
+              type="button"
+              onClick={() => setAddContentOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-semibold text-fg transition-colors hover:bg-surface-hover"
+            >
+              <Plus size={14} aria-hidden />
+              Add Content
             </button>
           )}
           <button
@@ -774,6 +791,13 @@ export function VideoPlanDetails({
           setTracked(updated)
           setPlan(updated.plan)
         }}
+      />
+
+      <AddContentModal
+        open={addContentOpen}
+        onClose={() => setAddContentOpen(false)}
+        plan={plan}
+        onUpdated={setPlan}
       />
 
       {/* Quick playback of a source or rendered video; the modal unmounts
