@@ -315,8 +315,9 @@ export function VideoPlanDetails({
         Back to Videos
       </button>
 
-      {/* The plan's identity and Edit action, shared by every tab. */}
-      <header className="mb-6 flex max-w-3xl items-start justify-between gap-4">
+      {/* The plan's identity and actions, shared by every tab: the title
+          takes the full width, with the CTAs on their own row beneath. */}
+      <header className="mb-6 flex max-w-3xl flex-col gap-4">
         <div className="min-w-0">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/15 px-2.5 py-1 text-xs font-medium text-accent">
             <FormatIcon size={12} aria-hidden />
@@ -331,7 +332,7 @@ export function VideoPlanDetails({
             </p>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* A tracked video can pick up share links after the fact — where
               else it was posted (TikTok, Instagram, anywhere); their views
               join the video's total. */}
