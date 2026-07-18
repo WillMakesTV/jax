@@ -3,6 +3,7 @@ import {
   CalendarClock,
   FolderKanban,
   Clapperboard,
+  Handshake,
   Settings,
   type LucideIcon,
 } from 'lucide-react'
@@ -18,6 +19,9 @@ export type ViewId =
   | 'broadcasting'
   | 'projects'
   | 'project-details'
+  | 'sponsors'
+  | 'sponsor-details'
+  | 'campaign-details'
   | 'obs'
   | 'stream-details'
   | 'live-details'
@@ -54,8 +58,9 @@ export const PRIMARY_NAV: NavItemConfig[] = [
   {id: 'broadcasting', label: 'Broadcasting', icon: CalendarClock},
   {id: 'videos', label: 'Videos', icon: Clapperboard},
   // Projects is the writing/reference space rather than part of the pipeline,
-  // so it sits at the end.
+  // so it sits at the end, with the sponsor relationships it feeds alongside.
   {id: 'projects', label: 'Projects', icon: FolderKanban},
+  {id: 'sponsors', label: 'Sponsors', icon: Handshake},
 ]
 
 /** Navigation item pinned to the bottom of the sidebar. */

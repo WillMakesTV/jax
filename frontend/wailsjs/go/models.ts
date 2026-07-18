@@ -1487,7 +1487,115 @@ export namespace main {
 	}
 	
 	
-	export class RoutineStep {
+	export class SponsorFile {
+    id: string;
+    name: string;
+    sizeBytes: number;
+    addedAt: string;
+    mediaUrl: string;
+
+    static createFrom(source: any = {}) {
+        return new SponsorFile(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.id = source["id"];
+        this.name = source["name"];
+        this.sizeBytes = source["sizeBytes"];
+        this.addedAt = source["addedAt"];
+        this.mediaUrl = source["mediaUrl"];
+    }
+}
+export class SponsorCampaign {
+    id: string;
+    name: string;
+    startDate: string;
+    endDate: string;
+    messaging: string;
+    promotionDetails: string;
+    assets: SponsorFile[];
+    createdAt: string;
+
+    static createFrom(source: any = {}) {
+        return new SponsorCampaign(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.id = source["id"];
+        this.name = source["name"];
+        this.startDate = source["startDate"];
+        this.endDate = source["endDate"];
+        this.messaging = source["messaging"];
+        this.promotionDetails = source["promotionDetails"];
+        this.assets = this.convertValues(source["assets"], SponsorFile);
+        this.createdAt = source["createdAt"];
+    }
+
+	convertValues(a: any, classs: any, asMap: boolean = false): any {
+	    if (!a) {
+	        return a;
+	    }
+	    if (a.slice && a.map) {
+	        return (a as any[]).map(elem => this.convertValues(elem, classs));
+	    } else if ("object" === typeof a) {
+	        if (asMap) {
+	            for (const key of Object.keys(a)) {
+	                a[key] = new classs(a[key]);
+	            }
+	            return a;
+	        }
+	        return new classs(a);
+	    }
+	    return a;
+	}
+}
+export class Sponsor {
+    id: string;
+    name: string;
+    website: string;
+    description: string;
+    branding: SponsorFile[];
+    campaigns: SponsorCampaign[];
+    createdAt: string;
+
+    static createFrom(source: any = {}) {
+        return new Sponsor(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.id = source["id"];
+        this.name = source["name"];
+        this.website = source["website"];
+        this.description = source["description"];
+        this.branding = this.convertValues(source["branding"], SponsorFile);
+        this.campaigns = this.convertValues(source["campaigns"], SponsorCampaign);
+        this.createdAt = source["createdAt"];
+    }
+
+	convertValues(a: any, classs: any, asMap: boolean = false): any {
+	    if (!a) {
+	        return a;
+	    }
+	    if (a.slice && a.map) {
+	        return (a as any[]).map(elem => this.convertValues(elem, classs));
+	    } else if ("object" === typeof a) {
+	        if (asMap) {
+	            for (const key of Object.keys(a)) {
+	                a[key] = new classs(a[key]);
+	            }
+	            return a;
+	        }
+	        return new classs(a);
+	    }
+	    return a;
+	}
+}
+
+
+export class RoutineStep {
 	    kind: string;
 	    scene?: string;
 	    target?: string;

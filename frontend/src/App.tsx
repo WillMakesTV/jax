@@ -27,6 +27,9 @@ import {PlanStream} from './views/PlanStream'
 import {PlanVideo} from './views/PlanVideo'
 import {ProjectDetails} from './views/ProjectDetails'
 import {Projects} from './views/Projects'
+import {CampaignDetails} from './views/CampaignDetails'
+import {SponsorDetails} from './views/SponsorDetails'
+import {Sponsors} from './views/Sponsors'
 import {CustomTokens} from './views/CustomTokens'
 import {EditSmartSource} from './views/EditSmartSource'
 import {StreamDetails, type StreamTab} from './views/StreamDetails'
@@ -76,6 +79,10 @@ interface NavState {
   profileTab: ProfileTab | null
   /** The project being viewed; null = creating a new one. */
   project: main.Project | null
+  /** The sponsor being viewed; null = creating a new one. */
+  sponsor: main.Sponsor | null
+  /** The campaign being viewed; null = creating a new one. */
+  campaign: main.SponsorCampaign | null
 }
 
 const INITIAL_NAV: NavState = {
@@ -95,6 +102,8 @@ const INITIAL_NAV: NavState = {
   videoPlanTab: null,
   profileTab: null,
   project: null,
+  sponsor: null,
+  campaign: null,
 }
 
 const sameNav = (a: NavState, b: NavState) =>
@@ -113,7 +122,9 @@ const sameNav = (a: NavState, b: NavState) =>
   a.videoPlan === b.videoPlan &&
   a.videoPlanTab === b.videoPlanTab &&
   a.profileTab === b.profileTab &&
-  a.project === b.project
+  a.project === b.project &&
+  a.sponsor === b.sponsor &&
+  a.campaign === b.campaign
 
 function App() {
   const [collapsed, setCollapsed] = useState<boolean>(readCollapsed)
@@ -278,6 +289,20 @@ function App() {
     () => navigate({view: 'projects', project: null}),
     [navigate],
   )
+  const openSponsor = useCallback(
+    (sponsor: main.Sponsor | null) =>
+      navigate({view: 'sponsor-details', sponsor, campaign: null}),
+    [navigate],
+  )
+  const backToSponsors = useCallback(
+    () => navigate({view: 'sponsors', sponsor: null, campaign: null}),
+    [navigate],
+  )
+  const openCampaign = useCallback(
+    (sponsor: main.Sponsor, campaign: main.SponsorCampaign | null) =>
+      navigate({view: 'campaign-details', sponsor, campaign}),
+    [navigate],
+  )
   const openEditRoutine = useCallback(
     (routine: main.Routine | null) => navigate({view: 'edit-routine', routine}),
     [navigate],
@@ -367,11 +392,14 @@ function App() {
         live: 'broadcasting',
         planning: 'broadcasting',
         'project-details': 'projects',
+        'sponsor-details': 'sponsors',
+        'campaign-details': 'sponsors',
       }
       const topLevel: ViewId[] = [
         'dashboard',
         'broadcasting',
         'projects',
+        'sponsors',
         'obs',
         'videos',
         'settings',
@@ -468,6 +496,12 @@ function App() {
         return cur.videoPlan?.title || 'Video plan'
       case 'project-details':
         return cur.project ? cur.project.title || 'Project' : 'New project'
+      case 'sponsors':
+        return 'Sponsors'
+      case 'sponsor-details':
+        return cur.sponsor ? cur.sponsor.name || 'Sponsor' : 'New sponsor'
+      case 'campaign-details':
+        return cur.campaign ? cur.campaign.name || 'Campaign' : 'New campaign'
       case 'edit-series':
         return cur.series ? 'Edit series' : 'New content series'
       case 'edit-routine':
@@ -490,6 +524,8 @@ function App() {
     cur.plan,
     cur.videoPlan,
     cur.project,
+    cur.sponsor,
+    cur.campaign,
     cur.smartSource,
   ])
 
@@ -532,17 +568,19 @@ function App() {
               ? 'broadcasting'
               : view === 'project-details'
                 ? 'projects'
-                : view === 'edit-routine' ||
-                    view === 'edit-smart-source' ||
-                    view === 'custom-tokens'
-                  ? 'obs'
-                  : view === 'video-details' ||
-                      view === 'plan-video' ||
-                      view === 'video-plan'
-                    ? 'videos'
-                    : view === 'channel-details'
-                      ? 'dashboard'
-                      : view
+                : view === 'sponsor-details' || view === 'campaign-details'
+                  ? 'sponsors'
+                  : view === 'edit-routine' ||
+                      view === 'edit-smart-source' ||
+                      view === 'custom-tokens'
+                    ? 'obs'
+                    : view === 'video-details' ||
+                        view === 'plan-video' ||
+                        view === 'video-plan'
+                      ? 'videos'
+                      : view === 'channel-details'
+                        ? 'dashboard'
+                        : view
           }
           onNavigate={setView}
           collapsed={collapsed}
@@ -606,6 +644,21 @@ function App() {
             {view === 'projects' && <Projects onOpenProject={openProject} />}
             {view === 'project-details' && (
               <ProjectDetails project={cur.project} onBack={backToProjects} />
+            )}
+            {view === 'sponsors' && <Sponsors onOpenSponsor={openSponsor} />}
+            {view === 'sponsor-details' && (
+              <SponsorDetails
+                sponsor={cur.sponsor}
+                onBack={backToSponsors}
+                onOpenCampaign={openCampaign}
+              />
+            )}
+            {view === 'campaign-details' && cur.sponsor && (
+              <CampaignDetails
+                sponsor={cur.sponsor}
+                campaign={cur.campaign}
+                onBack={() => back()}
+              />
             )}
             {view === 'obs' && (
               <ObsStudio

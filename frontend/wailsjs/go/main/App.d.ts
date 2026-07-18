@@ -4,7 +4,11 @@ import {main} from '../models';
 
 export function AddBrandAssets():Promise<Array<main.BrandAsset>>;
 
+export function AddCampaignAssets(arg1:string,arg2:string):Promise<main.Sponsor>;
+
 export function AddProjectAssets(arg1:string):Promise<main.Project>;
+
+export function AddSponsorBranding(arg1:string):Promise<main.Sponsor>;
 
 export function AddTranscriptLine(arg1:number,arg2:number,arg3:number,arg4:string):Promise<void>;
 
@@ -66,6 +70,8 @@ export function DeleteBrandAsset(arg1:string):Promise<Array<main.BrandAsset>>;
 
 export function DeleteBrandLink(arg1:string):Promise<Array<main.BrandLink>>;
 
+export function DeleteCampaignAsset(arg1:string,arg2:string,arg3:string):Promise<main.Sponsor>;
+
 export function DeleteContentSeries(arg1:string):Promise<void>;
 
 export function DeleteDebugReport(arg1:number):Promise<void>;
@@ -83,6 +89,12 @@ export function DeleteProjectDoc(arg1:string,arg2:string):Promise<main.Project>;
 export function DeleteRoutine(arg1:string):Promise<void>;
 
 export function DeleteSeriesType(arg1:string):Promise<void>;
+
+export function DeleteSponsor(arg1:string):Promise<void>;
+
+export function DeleteSponsorBranding(arg1:string,arg2:string):Promise<main.Sponsor>;
+
+export function DeleteSponsorCampaign(arg1:string,arg2:string):Promise<main.Sponsor>;
 
 export function DeleteVideoPlan(arg1:string):Promise<void>;
 
@@ -222,6 +234,8 @@ export function GetSessionChatHistory(arg1:number):Promise<Array<main.StoredChat
 
 export function GetSetting(arg1:string):Promise<string>;
 
+export function GetSponsors():Promise<Array<main.Sponsor>>;
+
 export function GetStreamOutline(arg1:string):Promise<main.StreamOutline>;
 
 export function GetStreamdeckMultiActions():Promise<Array<main.StreamdeckMultiAction>>;
@@ -345,6 +359,10 @@ export function SaveRoutine(arg1:main.Routine):Promise<main.Routine>;
 export function SaveSeriesType(arg1:main.SeriesType):Promise<main.SeriesType>;
 
 export function SaveServiceConfig(arg1:main.ServiceConfig):Promise<void>;
+
+export function SaveSponsor(arg1:main.Sponsor):Promise<main.Sponsor>;
+
+export function SaveSponsorCampaign(arg1:string,arg2:main.SponsorCampaign):Promise<main.Sponsor>;
 
 export function SaveStreams(arg1:Array<main.Stream>):Promise<void>;
 

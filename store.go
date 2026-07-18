@@ -20,6 +20,7 @@ const (
 	keySeriesTypes    = "series_types"
 	keyRoutines       = "routines"
 	keyProjects       = "projects"
+	keySponsors       = "sponsors"
 	// keyYouTubeLivePrefix holds the "🔴 LIVE: "-style prefix for YouTube
 	// broadcast titles; shared with the frontend's SETTING_KEYS.
 	keyYouTubeLivePrefix = "youtube_live_prefix"

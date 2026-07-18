@@ -27,6 +27,10 @@ const mediaPrefix = "/media/"
 // projects.go) alongside downloaded media.
 const projectFilesPrefix = "/projectfiles/"
 
+// sponsorFilesPrefix serves sponsor branding and campaign asset files
+// (~/.jax/sponsors, see sponsors.go).
+const sponsorFilesPrefix = "/sponsorfiles/"
+
 // editsPrefix serves the video-plan edit workspaces (see editor.go). Their
 // root is configured independently of the download folder (Settings →
 // Videos), so it gets its own route.
@@ -89,6 +93,14 @@ func (h mediaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		base = dir
 		rel = strings.TrimPrefix(r.URL.Path, projectFilesPrefix)
+	case strings.HasPrefix(r.URL.Path, sponsorFilesPrefix):
+		dir, err := sponsorsDir()
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		base = dir
+		rel = strings.TrimPrefix(r.URL.Path, sponsorFilesPrefix)
 	case strings.HasPrefix(r.URL.Path, planThumbsPrefix):
 		dir, err := planThumbsDir()
 		if err != nil {

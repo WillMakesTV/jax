@@ -6,8 +6,16 @@ export function AddBrandAssets() {
   return window['go']['main']['App']['AddBrandAssets']();
 }
 
+export function AddCampaignAssets(arg1, arg2) {
+  return window['go']['main']['App']['AddCampaignAssets'](arg1, arg2);
+}
+
 export function AddProjectAssets(arg1) {
   return window['go']['main']['App']['AddProjectAssets'](arg1);
+}
+
+export function AddSponsorBranding(arg1) {
+  return window['go']['main']['App']['AddSponsorBranding'](arg1);
 }
 
 export function AddTranscriptLine(arg1, arg2, arg3, arg4) {
@@ -130,6 +138,10 @@ export function DeleteBrandLink(arg1) {
   return window['go']['main']['App']['DeleteBrandLink'](arg1);
 }
 
+export function DeleteCampaignAsset(arg1, arg2, arg3) {
+  return window['go']['main']['App']['DeleteCampaignAsset'](arg1, arg2, arg3);
+}
+
 export function DeleteContentSeries(arg1) {
   return window['go']['main']['App']['DeleteContentSeries'](arg1);
 }
@@ -164,6 +176,18 @@ export function DeleteRoutine(arg1) {
 
 export function DeleteSeriesType(arg1) {
   return window['go']['main']['App']['DeleteSeriesType'](arg1);
+}
+
+export function DeleteSponsor(arg1) {
+  return window['go']['main']['App']['DeleteSponsor'](arg1);
+}
+
+export function DeleteSponsorBranding(arg1, arg2) {
+  return window['go']['main']['App']['DeleteSponsorBranding'](arg1, arg2);
+}
+
+export function DeleteSponsorCampaign(arg1, arg2) {
+  return window['go']['main']['App']['DeleteSponsorCampaign'](arg1, arg2);
 }
 
 export function DeleteVideoPlan(arg1) {
@@ -442,6 +466,10 @@ export function GetSetting(arg1) {
   return window['go']['main']['App']['GetSetting'](arg1);
 }
 
+export function GetSponsors() {
+  return window['go']['main']['App']['GetSponsors']();
+}
+
 export function GetStreamOutline(arg1) {
   return window['go']['main']['App']['GetStreamOutline'](arg1);
 }
@@ -688,6 +716,14 @@ export function SaveSeriesType(arg1) {
 
 export function SaveServiceConfig(arg1) {
   return window['go']['main']['App']['SaveServiceConfig'](arg1);
+}
+
+export function SaveSponsor(arg1) {
+  return window['go']['main']['App']['SaveSponsor'](arg1);
+}
+
+export function SaveSponsorCampaign(arg1, arg2) {
+  return window['go']['main']['App']['SaveSponsorCampaign'](arg1, arg2);
 }
 
 export function SaveStreams(arg1) {
