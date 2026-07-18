@@ -1,8 +1,25 @@
 import clsx from 'clsx'
-import {Bug, ChevronDown, ChevronRight, Pencil, Trash2} from 'lucide-react'
-import {useEffect, useState} from 'react'
-import {DeleteDebugReport, ListDebugReports} from '../../../wailsjs/go/main/App'
+import {
+  Bug,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Pencil,
+  Trash2,
+} from 'lucide-react'
+import {useEffect, useRef, useState, type FormEvent} from 'react'
+import {
+  DeleteDebugReport,
+  DisconnectGitHub,
+  GetGitHubConnection,
+  ListDebugReports,
+  PollGitHubDeviceAuth,
+  SetGitHubRepo,
+  StartGitHubDeviceAuth,
+} from '../../../wailsjs/go/main/App'
 import {main} from '../../../wailsjs/go/models'
+import {GitHubIcon} from '../../components/brand/BrandIcons'
 import {DebugReportModal} from '../../components/DebugReportModal'
 import {useDataChanged} from '../../lib/dataChanged'
 import {SETTING_KEYS, loadSetting, saveSetting} from '../../lib/settings'
@@ -12,37 +29,45 @@ import {SETTING_KEYS, loadSetting, saveSetting} from '../../lib/settings'
  * the top bar's bug button queue up here (and in the dev_ai_debug table); an
  * AI client connected over MCP works each report and deletes it once
  * resolved. The toggle publishes the optional "AI Debugging" Application
- * Skill that teaches that workflow.
+ * Skill that teaches that workflow; while it's on, the GitHub connection the
+ * workflow files issues and pushes fixes through is set up here too.
  */
 export function DevelopmentTab() {
-  return (
-    <div className="flex max-w-3xl flex-col gap-6">
-      <SkillToggleSection />
-      <DebugReportsSection />
-    </div>
-  )
-}
-
-/** The AI Debugging Application Skill on/off switch. */
-function SkillToggleSection() {
-  const [enabled, setEnabled] = useState(false)
+  const [skillEnabled, setSkillEnabled] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     void loadSetting(SETTING_KEYS.devDebugSkill).then((v) => {
-      if (!cancelled) setEnabled(v === 'true')
+      if (!cancelled) setSkillEnabled(v === 'true')
     })
     return () => {
       cancelled = true
     }
   }, [])
 
-  const toggle = () => {
-    const next = !enabled
-    setEnabled(next)
+  const toggleSkill = () => {
+    const next = !skillEnabled
+    setSkillEnabled(next)
     saveSetting(SETTING_KEYS.devDebugSkill, next ? 'true' : '')
   }
 
+  return (
+    <div className="flex max-w-3xl flex-col gap-6">
+      <SkillToggleSection enabled={skillEnabled} onToggle={toggleSkill} />
+      {skillEnabled && <GitHubSection />}
+      <DebugReportsSection />
+    </div>
+  )
+}
+
+/** The AI Debugging Application Skill on/off switch. */
+function SkillToggleSection({
+  enabled,
+  onToggle,
+}: {
+  enabled: boolean
+  onToggle: () => void
+}) {
   return (
     <section
       aria-labelledby="ai-debugging-skill-heading"
@@ -60,9 +85,9 @@ function SkillToggleSection() {
             Publish the optional “AI Debugging” Application Skill. While
             enabled, Claude clients connected over MCP see the skill (in{' '}
             <span className="font-medium">Settings → Skills</span> and via{' '}
-            <code className="text-xs">list_skills</code>) and learn to check
-            the debug-report queue, work each report to resolution, and delete
-            it once the fix is verified.
+            <code className="text-xs">list_skills</code>) and learn to check the
+            debug-report queue, work each report to resolution, and delete it
+            once the fix is verified.
           </p>
         </div>
         {/* Toggle switch. */}
@@ -71,7 +96,7 @@ function SkillToggleSection() {
           role="switch"
           aria-checked={enabled}
           aria-label="Enable the AI Debugging skill"
-          onClick={toggle}
+          onClick={onToggle}
           className={clsx(
             'relative mt-1 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
             enabled ? 'bg-accent' : 'bg-surface-hover',
@@ -84,6 +109,272 @@ function SkillToggleSection() {
             )}
           />
         </button>
+      </div>
+    </section>
+  )
+}
+
+/**
+ * The GitHub link the AI-debugging workflow uses: an OAuth Device Flow
+ * connection (the same user-code + poll UX as the streaming services) plus
+ * the owner/repo the agents file issues and push fixes against.
+ */
+function GitHubSection() {
+  const [conn, setConn] = useState<main.GitHubConnection | null>(null)
+  const [clientId, setClientId] = useState('')
+  const [repo, setRepo] = useState('')
+  const [repoSaved, setRepoSaved] = useState(false)
+  const [phase, setPhase] = useState<'config' | 'awaiting'>('config')
+  const [info, setInfo] = useState<main.DeviceCodeInfo | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const poller = useRef<{cancelled: boolean; timer: number | undefined}>({
+    cancelled: false,
+    timer: undefined,
+  })
+
+  useEffect(() => {
+    let cancelled = false
+    GetGitHubConnection()
+      .then((c) => {
+        if (cancelled) return
+        setConn(c)
+        setRepo(c.repo)
+      })
+      .catch(() => {})
+    void loadSetting(SETTING_KEYS.githubClientId).then((v) => {
+      if (!cancelled && v) setClientId(v)
+    })
+    const ref = poller.current
+    return () => {
+      cancelled = true
+      ref.cancelled = true
+      if (ref.timer) window.clearTimeout(ref.timer)
+    }
+  }, [])
+
+  const schedulePoll = (
+    deviceCode: string,
+    id: string,
+    intervalSec: number,
+    deadline: number,
+  ) => {
+    poller.current.timer = window.setTimeout(async () => {
+      if (poller.current.cancelled) return
+      if (Date.now() > deadline) {
+        setError('The code expired before authorization. Please try again.')
+        setPhase('config')
+        return
+      }
+      try {
+        const result = await PollGitHubDeviceAuth(id, deviceCode)
+        if (poller.current.cancelled) return
+        if (result.status === 'complete') {
+          setPhase('config')
+          setConn(await GetGitHubConnection())
+        } else if (result.status === 'error') {
+          setError(result.message || 'Authorization failed.')
+          setPhase('config')
+        } else {
+          const next =
+            result.message === 'slow_down' ? intervalSec + 5 : intervalSec
+          schedulePoll(deviceCode, id, next, deadline)
+        }
+      } catch (err) {
+        if (poller.current.cancelled) return
+        setError(err instanceof Error ? err.message : String(err))
+        setPhase('config')
+      }
+    }, intervalSec * 1000)
+  }
+
+  const connect = async (event: FormEvent) => {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    saveSetting(SETTING_KEYS.githubClientId, clientId.trim())
+    try {
+      const deviceInfo = await StartGitHubDeviceAuth(clientId.trim())
+      setInfo(deviceInfo)
+      setPhase('awaiting')
+      poller.current.cancelled = false
+      const interval = deviceInfo.interval > 0 ? deviceInfo.interval : 5
+      const ttl = deviceInfo.expiresIn > 0 ? deviceInfo.expiresIn : 900
+      schedulePoll(
+        deviceInfo.deviceCode,
+        clientId.trim(),
+        interval,
+        Date.now() + ttl * 1000,
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const disconnect = async () => {
+    try {
+      await DisconnectGitHub()
+      setConn(await GetGitHubConnection())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const saveRepo = async () => {
+    setError('')
+    setRepoSaved(false)
+    try {
+      await SetGitHubRepo(repo.trim())
+      setRepo(repo.trim())
+      setRepoSaved(true)
+      window.setTimeout(() => setRepoSaved(false), 1500)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const inputCls =
+    'rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent'
+
+  return (
+    <section
+      aria-labelledby="github-connection-heading"
+      className="rounded-xl border border-edge bg-surface p-6"
+    >
+      <div className="flex items-start gap-3">
+        <span
+          aria-hidden
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-hover text-fg"
+        >
+          <GitHubIcon size={20} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2
+            id="github-connection-heading"
+            className="text-base font-semibold text-fg"
+          >
+            Connect GitHub
+          </h2>
+          <p className="mt-1 text-sm text-fg-muted">
+            The repository the AI-debugging workflow works against: agents open
+            an issue per debug report, push the fix citing it, and close it on
+            resolution.
+          </p>
+
+          {conn?.connected ? (
+            <div className="mt-4 flex flex-col gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-edge bg-bg px-3 py-2">
+                <p className="text-sm text-fg">
+                  Connected as{' '}
+                  <span className="font-semibold">{conn.account}</span>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void disconnect()}
+                  className="rounded-lg border border-edge bg-surface px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+                >
+                  Disconnect
+                </button>
+              </div>
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium text-fg">Repository</span>
+                <span className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={repo}
+                    onChange={(e) => setRepo(e.target.value)}
+                    placeholder="owner/repo"
+                    className={clsx(inputCls, 'flex-1')}
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void saveRepo()}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-3 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+                  >
+                    {repoSaved ? (
+                      <>
+                        <Check
+                          size={14}
+                          aria-hidden
+                          className="text-emerald-500"
+                        />
+                        Saved
+                      </>
+                    ) : (
+                      'Save'
+                    )}
+                  </button>
+                </span>
+                <span className="text-xs text-fg-muted">
+                  The owner/repo issues are filed on (e.g. octocat/hello-world).
+                </span>
+              </label>
+            </div>
+          ) : phase === 'awaiting' && info ? (
+            <div className="mt-4 flex flex-col gap-3">
+              <p className="text-sm text-fg-muted">
+                A browser window has opened to authorize GitHub. If prompted,
+                enter this code:
+              </p>
+              <div className="rounded-lg border border-edge bg-bg px-4 py-3 text-center">
+                <span className="select-all font-mono text-2xl font-bold tracking-[0.3em] text-fg">
+                  {info.userCode}
+                </span>
+              </div>
+              <a
+                href={info.verificationUri}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm text-accent underline"
+              >
+                <ExternalLink size={14} aria-hidden />
+                Open the authorization page
+              </a>
+              <p className="text-sm text-fg-muted">
+                Waiting for you to approve access…
+              </p>
+            </div>
+          ) : (
+            <form
+              onSubmit={(e) => void connect(e)}
+              className="mt-4 flex flex-col gap-3"
+            >
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium text-fg">Client ID</span>
+                <input
+                  type="text"
+                  value={clientId}
+                  onChange={(e) => setClientId(e.target.value)}
+                  placeholder="Your GitHub OAuth app's Client ID"
+                  className={inputCls}
+                  autoComplete="off"
+                />
+                <span className="text-xs text-fg-muted">
+                  Create an OAuth app under GitHub Settings → Developer settings
+                  and enable Device Flow; only the Client ID is needed here.
+                </span>
+              </label>
+              <button
+                type="submit"
+                disabled={busy || !clientId.trim()}
+                className="w-fit rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {busy ? 'Starting…' : 'Connect GitHub'}
+              </button>
+            </form>
+          )}
+
+          {error && (
+            <p className="mt-3 text-sm text-red-600 dark:text-red-400">
+              {error}
+            </p>
+          )}
+        </div>
       </div>
     </section>
   )
@@ -176,9 +467,17 @@ function DebugReportsSection() {
                     className="flex min-w-0 flex-1 items-center gap-2 text-left"
                   >
                     {open ? (
-                      <ChevronDown size={16} aria-hidden className="shrink-0 text-fg-muted" />
+                      <ChevronDown
+                        size={16}
+                        aria-hidden
+                        className="shrink-0 text-fg-muted"
+                      />
                     ) : (
-                      <ChevronRight size={16} aria-hidden className="shrink-0 text-fg-muted" />
+                      <ChevronRight
+                        size={16}
+                        aria-hidden
+                        className="shrink-0 text-fg-muted"
+                      />
                     )}
                     <span className="truncate text-sm font-medium text-fg">
                       {r.title || r.description}
@@ -219,7 +518,9 @@ function DebugReportsSection() {
                     }
                     onBlur={() => setDeleteArmed(null)}
                     aria-label={`Delete report ${r.title || r.id}`}
-                    title={deleteArmed === r.id ? 'Click again to delete' : 'Delete'}
+                    title={
+                      deleteArmed === r.id ? 'Click again to delete' : 'Delete'
+                    }
                     className={clsx(
                       'rounded-lg p-1.5 transition-colors',
                       deleteArmed === r.id

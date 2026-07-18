@@ -84,6 +84,8 @@ export function DeleteSeriesType(arg1:string):Promise<void>;
 
 export function DeleteVideoPlan(arg1:string):Promise<void>;
 
+export function DisconnectGitHub():Promise<void>;
+
 export function DisconnectService(arg1:string):Promise<void>;
 
 export function DismissFixNotice(arg1:number):Promise<void>;
@@ -151,6 +153,8 @@ export function GetEditWorkspace(arg1:string):Promise<main.EditWorkspaceInfo>;
 export function GetEditorTools():Promise<main.EditorTools>;
 
 export function GetFacebookLiveChat():Promise<main.LiveChatPage>;
+
+export function GetGitHubConnection():Promise<main.GitHubConnection>;
 
 export function GetInstagramLiveChat():Promise<main.LiveChatPage>;
 
@@ -268,6 +272,8 @@ export function PollKickAuth():Promise<main.AuthPollResult>;
 
 export function PollTikTokAuth():Promise<main.AuthPollResult>;
 
+export function PollGitHubDeviceAuth(arg1:string,arg2:string):Promise<main.AuthPollResult>;
+
 export function PollTwitchDeviceAuth(arg1:string,arg2:string,arg3:string):Promise<main.AuthPollResult>;
 
 export function PollXAuth():Promise<main.AuthPollResult>;
@@ -354,6 +360,8 @@ export function SetHideFromCapture(arg1:boolean):Promise<void>;
 
 export function SetPastStreamSeries(arg1:Array<string>,arg2:string):Promise<void>;
 
+export function SetGitHubRepo(arg1:string):Promise<void>;
+
 export function SetSetting(arg1:string,arg2:string):Promise<void>;
 
 export function SetStreamDescription(arg1:string,arg2:string):Promise<void>;
@@ -379,6 +387,8 @@ export function StartKickAuth(arg1:string,arg2:string):Promise<string>;
 export function StartTikTokAuth(arg1:string,arg2:string):Promise<string>;
 
 export function StartTranscription(arg1:string):Promise<void>;
+
+export function StartGitHubDeviceAuth(arg1:string):Promise<main.DeviceCodeInfo>;
 
 export function StartTwitchDeviceAuth(arg1:string,arg2:string):Promise<main.DeviceCodeInfo>;
 

@@ -166,6 +166,10 @@ export function DeleteVideoPlan(arg1) {
   return window['go']['main']['App']['DeleteVideoPlan'](arg1);
 }
 
+export function DisconnectGitHub() {
+  return window['go']['main']['App']['DisconnectGitHub']();
+}
+
 export function DisconnectService(arg1) {
   return window['go']['main']['App']['DisconnectService'](arg1);
 }
@@ -300,6 +304,10 @@ export function GetEditorTools() {
 
 export function GetFacebookLiveChat() {
   return window['go']['main']['App']['GetFacebookLiveChat']();
+}
+
+export function GetGitHubConnection() {
+  return window['go']['main']['App']['GetGitHubConnection']();
 }
 
 export function GetInstagramLiveChat() {
@@ -534,6 +542,10 @@ export function PollTikTokAuth() {
   return window['go']['main']['App']['PollTikTokAuth']();
 }
 
+export function PollGitHubDeviceAuth(arg1, arg2) {
+  return window['go']['main']['App']['PollGitHubDeviceAuth'](arg1, arg2);
+}
+
 export function PollTwitchDeviceAuth(arg1, arg2, arg3) {
   return window['go']['main']['App']['PollTwitchDeviceAuth'](arg1, arg2, arg3);
 }
@@ -706,6 +718,10 @@ export function SetPastStreamSeries(arg1, arg2) {
   return window['go']['main']['App']['SetPastStreamSeries'](arg1, arg2);
 }
 
+export function SetGitHubRepo(arg1) {
+  return window['go']['main']['App']['SetGitHubRepo'](arg1);
+}
+
 export function SetSetting(arg1, arg2) {
   return window['go']['main']['App']['SetSetting'](arg1, arg2);
 }
@@ -756,6 +772,10 @@ export function StartTikTokAuth(arg1, arg2) {
 
 export function StartTranscription(arg1) {
   return window['go']['main']['App']['StartTranscription'](arg1);
+}
+
+export function StartGitHubDeviceAuth(arg1) {
+  return window['go']['main']['App']['StartGitHubDeviceAuth'](arg1);
 }
 
 export function StartTwitchDeviceAuth(arg1, arg2) {

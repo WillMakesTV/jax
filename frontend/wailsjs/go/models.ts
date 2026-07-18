@@ -418,6 +418,23 @@ export namespace main {
 	    }
 	}
 
+	export class GitHubConnection {
+	    connected: boolean;
+	    account: string;
+	    repo: string;
+
+	    static createFrom(source: any = {}) {
+	        return new GitHubConnection(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connected = source["connected"];
+	        this.account = source["account"];
+	        this.repo = source["repo"];
+	    }
+	}
+
 	export class DeviceCodeInfo {
 	    deviceCode: string;
 	    userCode: string;

@@ -29,6 +29,9 @@ const (
 	// keyDevDebugSkillEnabled ("true"/"") gates the optional ai-debugging
 	// Application Skill; shared with the frontend's SETTING_KEYS.
 	keyDevDebugSkillEnabled = "dev_ai_debug_skill_enabled"
+	// keyGitHubRepo holds the "owner/repo" the AI-debugging workflow files
+	// issues and pushes fixes against (see github.go).
+	keyGitHubRepo = "github_repo"
 )
 
 // Store wraps the SQLite database that persists all app data. The database

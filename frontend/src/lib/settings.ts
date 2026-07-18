@@ -63,6 +63,11 @@ export const SETTING_KEYS = {
    * (Settings → Development). Mirrors keyDevDebugSkillEnabled in store.go.
    */
   devDebugSkill: 'dev_ai_debug_skill_enabled',
+  /**
+   * GitHub OAuth app Client ID for the Development tab's device-flow
+   * connection, kept so a reconnect doesn't ask for it again.
+   */
+  githubClientId: 'github_client_id',
 } as const
 
 /**
