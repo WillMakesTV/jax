@@ -41,7 +41,7 @@ func TestParseWidgetTestItem(t *testing.T) {
 	}
 }
 
-func TestWidgetTestItemOverlay(t *testing.T) {
+func TestWidgetTestStaging(t *testing.T) {
 	a := newTestApp(t)
 	a.mediaBaseURL = "http://127.0.0.1:9999"
 	a.GetWidgetFieldTypes() // seed the catalog
@@ -58,39 +58,34 @@ func TestWidgetTestItemOverlay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("set real value: %v", err)
 	}
-	a.setWidgetTestItem(w.ID, map[string]string{w.Fields[0].ID: "Sample value"})
+	fieldID := w.Fields[0].ID
 
-	h := mediaHandler{app: a}
-	fetch := func() widgetSourceData {
-		t.Helper()
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest("GET", widgetSourcePrefix+w.ID+"/data", nil))
-		var data widgetSourceData
-		if err := json.Unmarshal(rec.Body.Bytes(), &data); err != nil {
-			t.Fatalf("data decode: %v", err)
-		}
-		return data
+	// Staging writes the sample into the real field, so every consumer —
+	// the Browser Source feed included — sees a genuine change.
+	if err := a.stageWidgetTestValues(w.ID, map[string]string{fieldID: "Sample value"}); err != nil {
+		t.Fatalf("stage test values: %v", err)
+	}
+	if got := a.getStreamWidgets(); got[0].Fields[0].Value != "Sample value" {
+		t.Fatalf("staged value not written: %+v", got[0].Fields[0])
 	}
 
-	// The staged item shows only while a test window is open.
-	if got := fetch(); got.Fields[0].Value != "Real value" {
-		t.Fatalf("no window yet: %+v", got.Fields[0])
+	// Re-staging before the restore fires keeps the ORIGINAL snapshot.
+	if err := a.stageWidgetTestValues(w.ID, map[string]string{fieldID: "Second sample"}); err != nil {
+		t.Fatalf("re-stage test values: %v", err)
 	}
-	if err := a.TestStreamWidget(w.ID); err != nil {
-		t.Fatalf("open window: %v", err)
+
+	// The restore brings the original back and reloads the source.
+	a.restoreWidgetTest(w.ID)
+	if got := a.getStreamWidgets(); got[0].Fields[0].Value != "Real value" {
+		t.Fatalf("restore should bring the original back: %+v", got[0].Fields[0])
 	}
-	if got := fetch(); got.Fields[0].Value != "Sample value" {
-		t.Fatalf("window open, want the sample: %+v", got.Fields[0])
+	if gen := a.widgetReloadGen(w.ID); gen != 1 {
+		t.Fatalf("restore should reload the source once, gen = %d", gen)
 	}
-	a.mu.Lock()
-	a.widgetTests[w.ID] = time.Now().Add(-time.Second)
-	a.mu.Unlock()
-	if got := fetch(); got.Fields[0].Value != "Real value" {
-		t.Fatalf("window closed, want the real value back: %+v", got.Fields[0])
-	}
-	// The real stored value never changed.
-	if raw := a.getStreamWidgets(); raw[0].Fields[0].Value != "Real value" {
-		t.Fatalf("stored value touched: %+v", raw[0].Fields[0])
+	// A second restore with nothing pending is a no-op.
+	a.restoreWidgetTest(w.ID)
+	if gen := a.widgetReloadGen(w.ID); gen != 1 {
+		t.Fatalf("idle restore should not reload again, gen = %d", gen)
 	}
 }
 

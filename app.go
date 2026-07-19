@@ -98,10 +98,10 @@ type App struct {
 	// cache — whenever the count it sees changes.
 	widgetReload map[string]int
 
-	// widgetTestItems holds each widget's staged sample item — text-field
-	// values (field id → value) the data feed substitutes while that
-	// widget's test window is open (guarded by mu; see widget_source.go).
-	widgetTestItems map[string]map[string]string
+	// widgetTestRestores holds each widget's pending test restore: the
+	// original field values written back when the staged test item's window
+	// ends (guarded by mu; see widget_source.go).
+	widgetTestRestores map[string]*widgetTestRestore
 
 	// In-progress headless editing session and the plan it belongs to
 	// (guarded by mu; see editor.go). One edit runs at a time.
