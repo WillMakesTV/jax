@@ -34,6 +34,7 @@ export function StreamWidgetsPanel({
   onOpenWidget: (widget: main.StreamWidget) => void
 }) {
   const [widgets, setWidgets] = useState<main.StreamWidget[]>([])
+  const [types, setTypes] = useState<main.WidgetFieldType[]>([])
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -42,11 +43,21 @@ export function StreamWidgetsPanel({
     GetStreamWidgets()
       .then((w) => setWidgets(w ?? []))
       .catch(() => {})
+    GetWidgetFieldTypes()
+      .then((t) => setTypes(t ?? []))
+      .catch(() => {})
   }, [])
 
   useEffect(load, [load])
   // Widgets saved elsewhere (e.g. an MCP client) appear without a re-visit.
-  useDataChanged(['stream_widgets'], load)
+  useDataChanged(['stream_widgets', 'widget_field_types'], load)
+
+  // A widget's card thumbnail: its first image field carrying a file.
+  const kindById = new Map(types.map((t) => [t.id, t.kind]))
+  const thumbOf = (w: main.StreamWidget) =>
+    (w.fields ?? []).find(
+      (f) => f.valueUrl && kindById.get(f.typeId) === 'image',
+    )?.valueUrl
 
   const create = async () => {
     if (!name.trim()) {
@@ -165,12 +176,21 @@ export function StreamWidgetsPanel({
                 title="Configure this widget"
                 className="flex min-w-0 flex-1 items-center gap-3 text-left"
               >
-                <span
-                  aria-hidden
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent"
-                >
-                  <LayoutGrid size={15} />
-                </span>
+                {thumbOf(w) ? (
+                  <img
+                    src={thumbOf(w)}
+                    alt=""
+                    aria-hidden
+                    className="h-9 w-14 shrink-0 rounded-lg border border-edge object-cover"
+                  />
+                ) : (
+                  <span
+                    aria-hidden
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent"
+                  >
+                    <LayoutGrid size={15} />
+                  </span>
+                )}
                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
                   {w.name}
                 </span>
