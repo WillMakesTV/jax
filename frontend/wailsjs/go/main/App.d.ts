@@ -12,6 +12,8 @@ export function AddSponsorBranding(arg1:string):Promise<main.Sponsor>;
 
 export function AddTranscriptLine(arg1:number,arg2:number,arg3:number,arg4:string):Promise<void>;
 
+export function AddWidgetField(arg1:string,arg2:string):Promise<main.StreamWidget>;
+
 export function ApplyChangesToSkill(arg1:string):Promise<main.AppSkill>;
 
 export function ApplyPlannedStream(arg1:string):Promise<Array<string>>;
@@ -331,6 +333,8 @@ export function RecycleMCPToken():Promise<main.MCPStatus>;
 export function RefreshChannelInfo():Promise<void>;
 
 export function RemoveVideoPlanFootage(arg1:string,arg2:string):Promise<main.VideoPlan>;
+
+export function RemoveWidgetField(arg1:string,arg2:string):Promise<main.StreamWidget>;
 
 export function ReopenVideoPlan(arg1:string):Promise<main.VideoPlan>;
 

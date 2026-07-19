@@ -22,6 +22,10 @@ export function AddTranscriptLine(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['AddTranscriptLine'](arg1, arg2, arg3, arg4);
 }
 
+export function AddWidgetField(arg1, arg2) {
+  return window['go']['main']['App']['AddWidgetField'](arg1, arg2);
+}
+
 export function ApplyChangesToSkill(arg1) {
   return window['go']['main']['App']['ApplyChangesToSkill'](arg1);
 }
@@ -660,6 +664,10 @@ export function RefreshChannelInfo() {
 
 export function RemoveVideoPlanFootage(arg1, arg2) {
   return window['go']['main']['App']['RemoveVideoPlanFootage'](arg1, arg2);
+}
+
+export function RemoveWidgetField(arg1, arg2) {
+  return window['go']['main']['App']['RemoveWidgetField'](arg1, arg2);
 }
 
 export function ReopenVideoPlan(arg1) {
