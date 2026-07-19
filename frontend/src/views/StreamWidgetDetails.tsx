@@ -97,11 +97,11 @@ export function StreamWidgetDetails({
   const [genOpen, setGenOpen] = useState(false)
   const [genDesc, setGenDesc] = useState('')
   const [copied, setCopied] = useState(false)
-  // The page's sections: the field schema (with items), the display, and
-  // the widget's skill.
-  const [pageTab, setPageTab] = useState<'fields' | 'display' | 'skill'>(
-    'fields',
-  )
+  // The page's sections: the field schema, the widget's entries, the
+  // display, and the widget's skill.
+  const [pageTab, setPageTab] = useState<
+    'fields' | 'items' | 'display' | 'skill'
+  >('fields')
   // Field values being edited, keyed by field id; unsaved edits live here.
   const [values, setValues] = useState<Record<string, string>>({})
   // Revision notes for image generation, keyed by field id.
@@ -604,9 +604,9 @@ export function StreamWidgetDetails({
         </div>
       </div>
 
-      {/* The page's sections: schema and items, display, skill. */}
+      {/* The page's sections: schema, items, display, skill. */}
       <div className="flex w-fit items-center gap-1 rounded-lg border border-edge bg-surface p-1">
-        {(['fields', 'display', 'skill'] as const).map((tab) => (
+        {(['fields', 'items', 'display', 'skill'] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -621,9 +621,11 @@ export function StreamWidgetDetails({
           >
             {tab === 'fields'
               ? 'Fields'
-              : tab === 'display'
-                ? 'Display'
-                : 'Skill'}
+              : tab === 'items'
+                ? `Items (${items.length})`
+                : tab === 'display'
+                  ? 'Display'
+                  : 'Skill'}
           </button>
         ))}
       </div>
@@ -900,57 +902,59 @@ export function StreamWidgetDetails({
               </ul>
             )}
           </div>
-
-          {/* The widget's entries: instances of the field schema, newest
-          first — what the Browser Source shows as the widget's list. */}
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-sm font-semibold text-fg">Items</h2>
-              <button
-                type="button"
-                onClick={() => void addItem()}
-                disabled={fields.length === 0}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
-              >
-                <Plus size={14} aria-hidden />
-                Add item
-              </button>
-            </div>
-            <p className="text-xs text-fg-muted">
-              Entries shown on the widget, newest first. The fields above are
-              the compose form — Add item snapshots their current values as a
-              new entry, and saved field values act as the defaults.
-            </p>
-            {items.length === 0 ? (
-              <p className="text-sm text-fg-muted">No items yet.</p>
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {items.map((item) => (
-                  <li
-                    key={item.id}
-                    className="flex items-center gap-3 rounded-xl border border-edge bg-surface px-3 py-2"
-                  >
-                    <span className="min-w-0 flex-1 truncate text-sm text-fg">
-                      {itemSummary(item) || '(no text content)'}
-                    </span>
-                    <span className="shrink-0 text-xs text-fg-muted">
-                      {formatDate(item.createdAt)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => void removeItem(item.id)}
-                      title="Remove item"
-                      aria-label="Remove item"
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
-                    >
-                      <Trash2 size={14} aria-hidden />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
         </>
+      )}
+
+      {/* The widget's entries: instances of the field schema, newest first —
+          what the Browser Source shows as the widget's list. */}
+      {pageTab === 'items' && (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold text-fg">Items</h2>
+            <button
+              type="button"
+              onClick={() => void addItem()}
+              disabled={fields.length === 0}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              <Plus size={14} aria-hidden />
+              Add item
+            </button>
+          </div>
+          <p className="text-xs text-fg-muted">
+            Entries shown on the widget, newest first. The Fields tab is the
+            compose form — Add item snapshots its current values as a new entry,
+            and saved field values act as the defaults.
+          </p>
+          {items.length === 0 ? (
+            <p className="text-sm text-fg-muted">No items yet.</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {items.map((item) => (
+                <li
+                  key={item.id}
+                  className="flex items-center gap-3 rounded-xl border border-edge bg-surface px-3 py-2"
+                >
+                  <span className="min-w-0 flex-1 truncate text-sm text-fg">
+                    {itemSummary(item) || '(no text content)'}
+                  </span>
+                  <span className="shrink-0 text-xs text-fg-muted">
+                    {formatDate(item.createdAt)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void removeItem(item.id)}
+                    title="Remove item"
+                    aria-label="Remove item"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                  >
+                    <Trash2 size={14} aria-hidden />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
 
       {pageTab === 'display' && (
