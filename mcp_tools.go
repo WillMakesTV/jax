@@ -1030,14 +1030,14 @@ func mcpToolCatalog() []mcpTool {
 		// deletes it once resolved.
 		{
 			name:        "list_debug_reports",
-			description: "All open developer debug reports (bug reports filed from the app), newest first: id, title, description, route (the app view id), global flag, a checkedOut flag, and timestamps. Any result is work to pick up — see the ai-debugging skill. When several agents share the queue, skip reports whose checkedOut is true (another agent is on them) and claim one with check_out_debug_report before starting.",
+			description: "All open developer debug reports (bug reports filed from the app), newest first: id, title, description, route (the app view id), global flag, a checkedOut flag, and timestamps. Any result is work to pick up — re-read the ai-debugging skill (get_skill \"ai-debugging\") each time you start a report: the producer edits it between runs, and cached instructions from an earlier report may be stale. When several agents share the queue, skip reports whose checkedOut is true (another agent is on them) and claim one with check_out_debug_report before starting.",
 			handler: func(a *App, _ json.RawMessage) (any, error) {
 				return a.ListDebugReports(), nil
 			},
 		},
 		{
 			name:        "check_out_debug_report",
-			description: "Claim a debug report before working it, so multiple agents can share the same queue without duplicating effort. Call this the moment you pick a report; it fails if another agent already checked it out. On success the report's checkedOut becomes true for everyone else. Resolve it with delete_debug_report once the fix is verified.",
+			description: "Claim a debug report before working it, so multiple agents can share the same queue without duplicating effort. Call this the moment you pick a report; it fails if another agent already checked it out. On success the report's checkedOut becomes true for everyone else. Before starting, load the ai-debugging skill fresh with get_skill (id \"ai-debugging\") — it changes between runs and governs the whole workflow, including the on-stream Issue Tracker announcements. Resolve the report with delete_debug_report once the fix is verified.",
 			inputSchema: objSchema(map[string]any{
 				"id": prop("integer", "The report id to check out."),
 			}, "id"),
