@@ -472,12 +472,18 @@ var widgetSourcePage = template.Must(template.New("widget").Parse(`<!DOCTYPE htm
       var code = Babel.transform('(' + source + ')', {presets: ['react']}).code
       body = 'return ' + code.replace(/;\s*$/, '')
     } else {
-      // No template yet: name plus every field's value, so the source shows
-      // something before the layout is authored.
+      // No template yet: name, the items newest-first, and the field
+      // defaults, so the source shows real content before a layout is
+      // authored.
       body =
         "return React.createElement('div', null," +
         " React.createElement('h2', null, widget.name)," +
-        " Object.keys(fields).map(function (k) {" +
+        " items.map(function (item) {" +
+        "   return React.createElement('p', {key: item.id}," +
+        "     Object.keys(item.values).map(function (k) { return item.values[k] })" +
+        "       .filter(Boolean).join(' \\u2014 '))" +
+        " })," +
+        " items.length ? null : Object.keys(fields).map(function (k) {" +
         "   return React.createElement('p', {key: k}, String(fields[k]))" +
         " }))"
     }

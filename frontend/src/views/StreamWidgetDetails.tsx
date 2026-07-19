@@ -60,11 +60,15 @@ const templateStarter = (
   w: main.StreamWidget,
   fields: main.WidgetField[],
 ): string => {
-  const lines = fields.map((f) => `  <p>{fields['${f.label}']}</p>`)
+  const lines = fields.map((f) => `      <p>{item.values['${f.label}']}</p>`)
   return [
     '<div className="widget">',
     '  <h2>{widget.name}</h2>',
+    '  {items.map((item) => (',
+    '    <div key={item.id} className="entry">',
     ...lines,
+    '    </div>',
+    '  ))}',
     '</div>',
   ].join('\n')
 }
