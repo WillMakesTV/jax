@@ -671,6 +671,9 @@ export function VideoPlanDetails({
                       key={name}
                       className="flex items-center gap-3 rounded-lg border border-edge bg-surface p-2"
                     >
+                      {/* The tile IS the file's own footage: a muted video
+                          element parked half a second in renders that frame
+                          as the thumbnail, straight off the media server. */}
                       <button
                         type="button"
                         onClick={() => url && setPlaying({title: name, url})}
@@ -681,9 +684,28 @@ export function VideoPlanDetails({
                             ? 'Play video'
                             : 'The file could not be found in the workspace'
                         }
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface-hover text-fg transition-colors enabled:hover:bg-accent enabled:hover:text-accent-fg disabled:opacity-50"
+                        className="group relative flex aspect-video w-24 shrink-0 items-center justify-center overflow-hidden rounded-md bg-surface-hover text-fg disabled:opacity-50"
                       >
-                        <Play size={14} aria-hidden className="ml-0.5" />
+                        {url && (
+                          <video
+                            src={`${url}#t=0.5`}
+                            preload="metadata"
+                            muted
+                            playsInline
+                            aria-hidden
+                            className="pointer-events-none absolute inset-0 h-full w-full bg-black object-cover"
+                          />
+                        )}
+                        <span
+                          className={clsx(
+                            'relative flex h-7 w-7 items-center justify-center rounded-full transition-colors',
+                            url
+                              ? 'bg-black/50 text-white group-hover:bg-accent group-hover:text-accent-fg'
+                              : 'text-fg',
+                          )}
+                        >
+                          <Play size={14} aria-hidden className="ml-0.5" />
+                        </span>
                       </button>
                       <span className="min-w-0 flex-1 truncate text-sm text-fg">
                         {name}
