@@ -264,16 +264,27 @@ var widgetSourcePage = template.Must(template.New("widget").Parse(`<!DOCTYPE htm
   }
 
   var wasTesting = false
+  var wasCleared = false
+  var first = true
 
   function apply(data) {
+    var widget = {name: data.name, testing: !!data.testing}
+
+    // Leaving a test window or entering a clear reloads the page — the
+    // surest way to drop cached templates, custom-JS timers, and any DOM
+    // state a test or previous display left behind.
+    if (!first && ((wasTesting && !widget.testing) ||
+        (data.cleared && !wasCleared && !widget.testing))) {
+      location.reload()
+      return
+    }
+
     fields = {}
     data.fields.forEach(function (f) { fields[f.label] = f.value })
-    cssTag.textContent = data.css || ''
-    var widget = {name: data.name, testing: !!data.testing}
 
     // A test window opening remounts the display (restarting entrance
     // animations) and plays each sound field once; the window closing
-    // clears back to the normal render below.
+    // reloads above.
     if (widget.testing && !wasTesting) {
       root.render(null)
       data.fields.forEach(function (f) {
@@ -281,13 +292,18 @@ var widgetSourcePage = template.Must(template.New("widget").Parse(`<!DOCTYPE htm
       })
     }
     wasTesting = widget.testing
+    wasCleared = !!data.cleared
+    first = false
 
-    // A cleared widget shows nothing — unless a test window is open, which
-    // shows through the clear.
+    // A cleared widget shows nothing at all — its CSS could otherwise
+    // still paint the page (a body background, say). A test window shows
+    // through the clear.
     if (data.cleared && !widget.testing) {
+      cssTag.textContent = ''
       root.render(null)
       return
     }
+    cssTag.textContent = data.css || ''
 
     var render = compileTemplate(data.template)
     root.render(render(React, widget, fields, window.playSound))
