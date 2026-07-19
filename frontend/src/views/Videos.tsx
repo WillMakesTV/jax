@@ -423,7 +423,8 @@ export function Videos({onOpenVideo, onOpenVideoPlan, onPlanVideo}: VideosProps)
               Plan a video
             </button>
           </div>
-          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {/* Three across on medium viewports, five at full width. */}
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
             {plans.map((plan) => (
               <li key={plan.id}>
                 <PlannedVideoCard
