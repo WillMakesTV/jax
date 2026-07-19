@@ -285,7 +285,7 @@ export function StreamWidgetsPanel({
                 <button
                   type="button"
                   onClick={() => void clear(w)}
-                  title="Clear the Browser Source cache — the OBS page reloads itself fresh"
+                  title="Clear the widget's populated content and reload its Browser Source fresh"
                   className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
                 >
                   {clearedFlashId === w.id ? (

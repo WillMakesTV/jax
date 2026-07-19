@@ -2,6 +2,7 @@ import {
   BookOpen,
   Check,
   Copy,
+  Eraser,
   Image,
   LayoutGrid,
   MonitorPlay,
@@ -17,6 +18,7 @@ import {
 import {useCallback, useEffect, useState} from 'react'
 import {
   AddWidgetField,
+  ClearWidgetField,
   DeleteStreamWidget,
   GenerateWidgetFieldImage,
   GenerateWidgetFieldSound,
@@ -209,12 +211,33 @@ export function StreamWidgetDetails({
     }
   }
 
+  // Removing a field asks for a second click; holds the armed field id.
+  const [removeArmedId, setRemoveArmedId] = useState('')
   const removeField = async (fieldID: string) => {
     setError('')
+    setRemoveArmedId('')
     try {
       setW(await RemoveWidgetField(w.id, fieldID))
     } catch {
       // Non-fatal; the record reconciles on the next load.
+    }
+  }
+
+  // Clear one field's value in place — text empties, file references drop
+  // (the files stay on disk).
+  const clearField = async (fieldID: string) => {
+    setError('')
+    try {
+      setW(await ClearWidgetField(w.id, fieldID))
+      setValues((prev) => ({...prev, [fieldID]: ''}))
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string' && err
+            ? err
+            : 'The field could not be cleared.',
+      )
     }
   }
 
@@ -615,12 +638,40 @@ export function StreamWidgetDetails({
                     )}
                     <button
                       type="button"
-                      onClick={() => void removeField(f.id)}
-                      title="Remove field"
+                      onClick={() => void clearField(f.id)}
+                      disabled={!value}
+                      title="Clear this field's value"
+                      aria-label={`Clear field ${f.label}`}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-40"
+                    >
+                      <Eraser size={14} aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        removeArmedId === f.id
+                          ? void removeField(f.id)
+                          : setRemoveArmedId(f.id)
+                      }
+                      onBlur={() =>
+                        setRemoveArmedId((cur) => (cur === f.id ? '' : cur))
+                      }
+                      title={
+                        removeArmedId === f.id
+                          ? 'Click again to remove this field'
+                          : 'Remove field'
+                      }
                       aria-label={`Remove field ${f.label}`}
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                      className={`flex h-7 shrink-0 items-center justify-center gap-1 rounded-lg px-1.5 transition-colors ${
+                        removeArmedId === f.id
+                          ? 'text-red-500 hover:bg-red-500/10'
+                          : 'text-fg-muted hover:bg-surface-hover hover:text-fg'
+                      }`}
                     >
                       <Trash2 size={14} aria-hidden />
+                      {removeArmedId === f.id && (
+                        <span className="text-xs font-medium">Sure?</span>
+                      )}
                     </button>
                   </div>
 

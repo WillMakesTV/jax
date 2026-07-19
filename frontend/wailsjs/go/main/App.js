@@ -86,6 +86,10 @@ export function ClearStreamWidget(arg1) {
   return window['go']['main']['App']['ClearStreamWidget'](arg1);
 }
 
+export function ClearWidgetField(arg1, arg2) {
+  return window['go']['main']['App']['ClearWidgetField'](arg1, arg2);
+}
+
 export function ChooseClipIdea(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['ChooseClipIdea'](arg1, arg2, arg3, arg4);
 }

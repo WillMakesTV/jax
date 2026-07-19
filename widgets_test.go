@@ -138,4 +138,20 @@ func TestSetWidgetFieldValue(t *testing.T) {
 	if _, err := a.SetWidgetFieldValue(w.ID, "nope", "x"); err == nil {
 		t.Fatal("want error for an unknown field")
 	}
+
+	// ClearWidgetField empties any kind's value.
+	w, err = a.setWidgetFieldFile(w.ID, w.Fields[1].ID, "art.png")
+	if err != nil {
+		t.Fatalf("set image value: %v", err)
+	}
+	w, err = a.ClearWidgetField(w.ID, w.Fields[1].ID)
+	if err != nil {
+		t.Fatalf("clear field: %v", err)
+	}
+	if w.Fields[1].Value != "" {
+		t.Fatalf("field should be cleared: %+v", w.Fields[1])
+	}
+	if _, err := a.ClearWidgetField(w.ID, "nope"); err == nil {
+		t.Fatal("want error clearing an unknown field")
+	}
 }

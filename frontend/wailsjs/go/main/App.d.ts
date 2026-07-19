@@ -44,6 +44,8 @@ export function ChatProjectDescription(arg1:string,arg2:main.ProjectChatMessage[
 
 export function ClearStreamWidget(arg1:string):Promise<void>;
 
+export function ClearWidgetField(arg1:string,arg2:string):Promise<main.StreamWidget>;
+
 export function ChooseClipIdea(arg1:string,arg2:string,arg3:string,arg4:number):Promise<main.VideoPlan>;
 
 export function ClipIdeasInProgress(arg1:string,arg2:string):Promise<boolean>;

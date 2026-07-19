@@ -212,4 +212,13 @@ func TestWidgetSourceEndpoints(t *testing.T) {
 	if data.Reload != 2 {
 		t.Fatalf("two clears should read as reload 2, got %d", data.Reload)
 	}
+	// Clear also empties the populated content: text values go, file-backed
+	// assets (the sound's file) stay.
+	raw := a.getStreamWidgets()
+	if raw[0].Fields[0].Value != "" {
+		t.Fatalf("clear should empty text values: %+v", raw[0].Fields[0])
+	}
+	if raw[0].Fields[1].Value != "ding.mp3" {
+		t.Fatalf("clear should keep file-backed values: %+v", raw[0].Fields[1])
+	}
 }

@@ -269,6 +269,21 @@ func (a *App) SetWidgetFieldValue(widgetID, fieldID, value string) (StreamWidget
 	})
 }
 
+// ClearWidgetField empties one field's value — any kind; file-backed fields
+// keep their files on disk, only the reference clears — and returns the
+// updated widget.
+func (a *App) ClearWidgetField(widgetID, fieldID string) (StreamWidget, error) {
+	return a.mutateStreamWidget(widgetID, func(w *StreamWidget) error {
+		for i := range w.Fields {
+			if w.Fields[i].ID == fieldID {
+				w.Fields[i].Value = ""
+				return nil
+			}
+		}
+		return fmt.Errorf("that field no longer exists")
+	})
+}
+
 // RemoveWidgetField detaches a field from a widget and returns the updated
 // widget.
 func (a *App) RemoveWidgetField(widgetID, fieldID string) (StreamWidget, error) {

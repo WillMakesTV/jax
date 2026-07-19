@@ -170,7 +170,9 @@ func (a *App) restoreWidgetTest(widgetID string) {
 	}); err != nil {
 		return
 	}
-	_ = a.ClearStreamWidget(widgetID)
+	// A plain reload — the restored values must survive it, so this must
+	// not go through ClearStreamWidget (which empties content).
+	a.reloadWidgetSource(widgetID)
 }
 
 // GenerateWidgetTestItem tests a widget the way it is really used: the
@@ -270,28 +272,49 @@ func parseWidgetTestItem(text string) (map[string]string, error) {
 	return out, nil
 }
 
-// ClearStreamWidget clears the widget's Browser Source cache: a one-shot
-// action that makes the page discard everything it holds — compiled
-// template, custom-JS timers, DOM state — and load itself fresh. It works
-// by bumping a per-widget reload count the page watches in its data feed.
+// ClearStreamWidget clears the widget's populated content and its Browser
+// Source: every text field's value empties (file-backed fields keep their
+// assets — those are configuration, not items), any pending test restore is
+// dropped so it cannot resurrect the cleared values, and the page reloads
+// itself fresh via a per-widget reload count carried in the data feed.
 func (a *App) ClearStreamWidget(id string) error {
-	found := false
-	for _, w := range a.getStreamWidgets() {
-		if w.ID == id {
-			found = true
-			break
+	a.mu.Lock()
+	if pending := a.widgetTestRestores[id]; pending != nil {
+		pending.timer.Stop()
+		delete(a.widgetTestRestores, id)
+	}
+	a.mu.Unlock()
+
+	textKinds := map[string]bool{}
+	for _, ft := range a.getWidgetFieldTypes() {
+		if ft.Kind == widgetFieldMessage || ft.Kind == widgetFieldStatus {
+			textKinds[ft.ID] = true
 		}
 	}
-	if !found {
-		return fmt.Errorf("that stream widget no longer exists")
+	if _, err := a.mutateStreamWidget(id, func(w *StreamWidget) error {
+		for i := range w.Fields {
+			if textKinds[w.Fields[i].TypeID] {
+				w.Fields[i].Value = ""
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
+
+	a.reloadWidgetSource(id)
+	return nil
+}
+
+// reloadWidgetSource bumps the widget's reload count, making its Browser
+// Source page reload itself fresh on the next poll.
+func (a *App) reloadWidgetSource(id string) {
 	a.mu.Lock()
 	if a.widgetReload == nil {
 		a.widgetReload = map[string]int{}
 	}
 	a.widgetReload[id]++
 	a.mu.Unlock()
-	return nil
 }
 
 // widgetReloadGen returns a widget's current Clear count.
