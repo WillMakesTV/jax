@@ -103,19 +103,23 @@ func (a *App) widgetTesting(id string) bool {
 }
 
 // widgetTestRestore is one pending test cleanup: the field values to write
-// back when the staged item's window ends.
+// back — and the staged item to remove — when the test window ends.
 type widgetTestRestore struct {
 	timer    *time.Timer
 	original map[string]string // field id → value
+	itemID   string            // the staged test item, removed on restore
 }
 
 // stageWidgetTestValues writes a sample item into the widget's REAL fields —
-// the same path an MCP set_widget_field takes — so the Browser Source's own
-// display logic reacts to a genuine change: entrance animation, sounds, all
-// of it. The original values are written back when the window ends, and the
-// source then reloads into a clean state. Re-testing before the restore
-// fires keeps the first snapshot, so originals are never overwritten by
-// sample values.
+// the same path an MCP set_widget_field takes — AND prepends it as a real
+// timestamped item — the path add_widget_item takes — so every display
+// reacts to a genuine change: field-driven layouts see the new defaults,
+// item-driven layouts (lists rendering `items`) see a new entry, entrance
+// animation, sounds, all of it. The original values are written back and
+// the staged item removed when the window ends, and the source then reloads
+// into a clean state. Re-testing before the restore fires keeps the first
+// snapshot, so originals are never overwritten by sample values; the prior
+// staged item is swapped for the new one.
 func (a *App) stageWidgetTestValues(widgetID string, values map[string]string) error {
 	a.mu.Lock()
 	pending := a.widgetTestRestores[widgetID]
@@ -141,12 +145,29 @@ func (a *App) stageWidgetTestValues(widgetID string, values map[string]string) e
 		}
 	}
 
+	staged := fmt.Sprintf("item_%d", time.Now().UnixNano())
 	if _, err := a.mutateStreamWidget(widgetID, func(w *StreamWidget) error {
 		for i := range w.Fields {
 			if v, ok := values[w.Fields[i].ID]; ok {
 				w.Fields[i].Value = v
 			}
 		}
+		if pending != nil && pending.itemID != "" {
+			w.Items = removeWidgetItem(w.Items, pending.itemID)
+		}
+		item := WidgetItem{
+			ID:        staged,
+			Values:    map[string]string{},
+			CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		}
+		for _, f := range w.Fields {
+			if v, ok := values[f.ID]; ok {
+				item.Values[f.ID] = v
+			} else {
+				item.Values[f.ID] = f.Value
+			}
+		}
+		w.Items = append([]WidgetItem{item}, w.Items...)
 		return nil
 	}); err != nil {
 		return err
@@ -157,13 +178,29 @@ func (a *App) stageWidgetTestValues(widgetID string, values map[string]string) e
 	if a.widgetTestRestores == nil {
 		a.widgetTestRestores = map[string]*widgetTestRestore{}
 	}
-	a.widgetTestRestores[widgetID] = &widgetTestRestore{timer: timer, original: original}
+	a.widgetTestRestores[widgetID] = &widgetTestRestore{
+		timer:    timer,
+		original: original,
+		itemID:   staged,
+	}
 	a.mu.Unlock()
 	return nil
 }
 
-// restoreWidgetTest ends a staged test: the original field values return and
-// the Browser Source reloads fresh so no test state lingers.
+// removeWidgetItem returns items without the entry matching id.
+func removeWidgetItem(items []WidgetItem, id string) []WidgetItem {
+	out := items[:0]
+	for _, item := range items {
+		if item.ID != id {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// restoreWidgetTest ends a staged test: the original field values return,
+// the staged item goes, and the Browser Source reloads fresh so no test
+// state lingers.
 func (a *App) restoreWidgetTest(widgetID string) {
 	a.mu.Lock()
 	pending := a.widgetTestRestores[widgetID]
@@ -178,6 +215,9 @@ func (a *App) restoreWidgetTest(widgetID string) {
 				w.Fields[i].Value = v
 			}
 		}
+		if pending.itemID != "" {
+			w.Items = removeWidgetItem(w.Items, pending.itemID)
+		}
 		return nil
 	}); err != nil {
 		return
@@ -190,10 +230,12 @@ func (a *App) restoreWidgetTest(widgetID string) {
 // GenerateWidgetTestItem tests a widget the way it is really used: the
 // widget's own skill briefs the connected text AI to write one realistic
 // sample item for the widget's text fields, and the item is written into
-// the fields themselves — the same path an MCP agent's set_widget_field
-// takes — so the Browser Source's display logic genuinely reacts to it.
-// After 15 seconds the original values return and the source reloads
-// clean. With no text fields to write, the plain test window opens instead.
+// the fields themselves and staged as a real timestamped item — the same
+// paths an MCP agent's set_widget_field and add_widget_item take — so the
+// Browser Source's display logic genuinely reacts to it whether it renders
+// field values or the items list. After 15 seconds the original values
+// return, the staged item goes, and the source reloads clean. With no text
+// fields to write, the plain test window opens instead.
 func (a *App) GenerateWidgetTestItem(widgetID string) error {
 	var widget *StreamWidget
 	for _, sw := range a.getStreamWidgets() {
