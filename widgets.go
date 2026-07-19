@@ -195,9 +195,11 @@ func (a *App) mutateStreamWidget(id string, fn func(w *StreamWidget) error) (Str
 	return StreamWidget{}, fmt.Errorf("that stream widget no longer exists")
 }
 
-// AddWidgetField attaches a new field of the given type to a widget,
-// labelled after the type, and returns the updated widget.
-func (a *App) AddWidgetField(widgetID, typeID string) (StreamWidget, error) {
+// AddWidgetField attaches a new field of the given type to a widget and
+// returns the updated widget. label names the field; blank falls back to the
+// type's name, so one widget can carry several fields of the same type told
+// apart by their labels.
+func (a *App) AddWidgetField(widgetID, typeID, label string) (StreamWidget, error) {
 	var fieldType *WidgetFieldType
 	for _, ft := range a.getWidgetFieldTypes() {
 		if ft.ID == typeID {
@@ -209,11 +211,15 @@ func (a *App) AddWidgetField(widgetID, typeID string) (StreamWidget, error) {
 	if fieldType == nil {
 		return StreamWidget{}, fmt.Errorf("that field type no longer exists")
 	}
+	label = strings.TrimSpace(label)
+	if label == "" {
+		label = fieldType.Name
+	}
 	return a.mutateStreamWidget(widgetID, func(w *StreamWidget) error {
 		w.Fields = append(w.Fields, WidgetField{
 			ID:     fmt.Sprintf("wf_%d", time.Now().UnixNano()),
 			TypeID: typeID,
-			Label:  fieldType.Name,
+			Label:  label,
 		})
 		return nil
 	})

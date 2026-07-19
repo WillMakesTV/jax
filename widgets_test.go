@@ -52,16 +52,30 @@ func TestWidgetFields(t *testing.T) {
 		t.Fatalf("save widget: %v", err)
 	}
 
-	if _, err := a.AddWidgetField(w.ID, "nope"); err == nil {
+	if _, err := a.AddWidgetField(w.ID, "nope", ""); err == nil {
 		t.Fatal("want error for an unknown field type")
 	}
 
-	w, err = a.AddWidgetField(w.ID, "field_status")
+	w, err = a.AddWidgetField(w.ID, "field_status", "")
 	if err != nil {
 		t.Fatalf("add field: %v", err)
 	}
 	if len(w.Fields) != 1 || w.Fields[0].Label != "Status" || w.Fields[0].TypeID != "field_status" {
 		t.Fatalf("field mismatch: %+v", w.Fields)
+	}
+
+	// A custom label lets several fields share a type; blank fell back to
+	// the type's name above.
+	w, err = a.AddWidgetField(w.ID, "field_status", "  Top donor ")
+	if err != nil {
+		t.Fatalf("add labelled field: %v", err)
+	}
+	if len(w.Fields) != 2 || w.Fields[1].Label != "Top donor" {
+		t.Fatalf("custom label mismatch: %+v", w.Fields)
+	}
+	w, err = a.RemoveWidgetField(w.ID, w.Fields[1].ID)
+	if err != nil {
+		t.Fatalf("remove labelled field: %v", err)
 	}
 
 	// A value over the type's cap is rejected on save.

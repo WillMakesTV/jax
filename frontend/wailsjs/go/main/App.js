@@ -22,8 +22,8 @@ export function AddTranscriptLine(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['AddTranscriptLine'](arg1, arg2, arg3, arg4);
 }
 
-export function AddWidgetField(arg1, arg2) {
-  return window['go']['main']['App']['AddWidgetField'](arg1, arg2);
+export function AddWidgetField(arg1, arg2, arg3) {
+  return window['go']['main']['App']['AddWidgetField'](arg1, arg2, arg3);
 }
 
 export function ApplyChangesToSkill(arg1) {

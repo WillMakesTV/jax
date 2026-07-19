@@ -12,7 +12,7 @@ export function AddSponsorBranding(arg1:string):Promise<main.Sponsor>;
 
 export function AddTranscriptLine(arg1:number,arg2:number,arg3:number,arg4:string):Promise<void>;
 
-export function AddWidgetField(arg1:string,arg2:string):Promise<main.StreamWidget>;
+export function AddWidgetField(arg1:string,arg2:string,arg3:string):Promise<main.StreamWidget>;
 
 export function ApplyChangesToSkill(arg1:string):Promise<main.AppSkill>;
 

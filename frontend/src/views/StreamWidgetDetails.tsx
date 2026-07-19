@@ -65,6 +65,7 @@ export function StreamWidgetDetails({
   const [uploading, setUploading] = useState('')
   const [types, setTypes] = useState<main.WidgetFieldType[]>([])
   const [addTypeId, setAddTypeId] = useState('')
+  const [addLabel, setAddLabel] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const queue = useAiQueue()
@@ -138,7 +139,8 @@ export function StreamWidgetDetails({
     if (!addTypeId) return
     setError('')
     try {
-      setW(await AddWidgetField(w.id, addTypeId))
+      setW(await AddWidgetField(w.id, addTypeId, addLabel))
+      setAddLabel('')
     } catch (err) {
       setError(
         err instanceof Error
@@ -266,6 +268,13 @@ export function StreamWidgetDetails({
                 </option>
               ))}
             </select>
+            <input
+              value={addLabel}
+              onChange={(e) => setAddLabel(e.target.value)}
+              placeholder="Field name (optional)"
+              aria-label="Name for the new field"
+              className="w-40 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-sm text-fg outline-none focus:border-accent"
+            />
             <button
               type="button"
               onClick={() => void addField()}

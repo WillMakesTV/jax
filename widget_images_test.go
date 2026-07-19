@@ -70,7 +70,7 @@ func TestWidgetImageFieldValueURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("save widget: %v", err)
 	}
-	w, err = a.AddWidgetField(w.ID, "field_image")
+	w, err = a.AddWidgetField(w.ID, "field_image", "")
 	if err != nil {
 		t.Fatalf("add image field: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestWidgetImageFieldValueURL(t *testing.T) {
 	}
 
 	// Text fields never carry a URL, whatever their value.
-	w, err = a.AddWidgetField(w.ID, "field_status")
+	w, err = a.AddWidgetField(w.ID, "field_status", "")
 	if err != nil {
 		t.Fatalf("add status field: %v", err)
 	}
