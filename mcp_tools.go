@@ -164,6 +164,31 @@ func mcpToolCatalog() []mcpTool {
 				return skill.Content, nil
 			},
 		},
+		{
+			name:        "save_skill",
+			description: "Update an Application Skill's markdown content, by id from list_skills. Works for the dynamic skills too (widget field types, per-widget stream-widget-<id> skills) — the way to change how a feature or widget is used going forward. Saving content identical to the built-in default clears the customization instead.",
+			inputSchema: objSchema(map[string]any{
+				"id":      prop("string", "The skill id from list_skills."),
+				"content": prop("string", "The skill's full markdown content."),
+			}, "id", "content"),
+			handler: func(a *App, args json.RawMessage) (any, error) {
+				var in struct {
+					ID      string `json:"id"`
+					Content string `json:"content"`
+				}
+				if err := decodeArgs(args, &in); err != nil {
+					return nil, err
+				}
+				skill, err := a.SaveAppSkill(in.ID, in.Content)
+				if err != nil {
+					return nil, err
+				}
+				return map[string]any{
+					"id":         skill.ID,
+					"overridden": skill.Overridden,
+				}, nil
+			},
+		},
 
 		// --- Brand ---------------------------------------------------------
 		{
@@ -717,6 +742,91 @@ func mcpToolCatalog() []mcpTool {
 			description: "Stream routines (Start/End Stream and custom OBS action sequences) with their steps. Read-only — routines run from the app, which owns the OBS connection.",
 			handler: func(a *App, _ json.RawMessage) (any, error) {
 				return a.GetRoutines(), nil
+			},
+		},
+
+		// --- Stream widgets ---------------------------------------------
+		{
+			name:        "list_stream_widgets",
+			description: "Stream widgets — on-stream overlay elements served locally as OBS Browser Sources — with full field discovery: each field's id, label, kind (image, message, status, sound), character cap, and current value (file-backed kinds report their served URL). Each widget names its own skill (skillId): read it with get_skill before producing content for the widget, and edit it with save_skill to change how the widget is used. sourceUrl is the widget's Browser Source page; template/css/js are its display.",
+			handler: func(a *App, _ json.RawMessage) (any, error) {
+				kinds := map[string]WidgetFieldType{}
+				for _, ft := range a.getWidgetFieldTypes() {
+					kinds[ft.ID] = ft
+				}
+				widgets := a.GetStreamWidgets()
+				out := make([]map[string]any, 0, len(widgets))
+				for _, w := range widgets {
+					fields := make([]map[string]any, 0, len(w.Fields))
+					for _, f := range w.Fields {
+						ft := kinds[f.TypeID]
+						value := f.Value
+						if f.ValueURL != "" {
+							value = f.ValueURL
+						}
+						fields = append(fields, map[string]any{
+							"id":        f.ID,
+							"label":     f.Label,
+							"kind":      ft.Kind,
+							"maxLength": ft.MaxLength,
+							"value":     value,
+						})
+					}
+					out = append(out, map[string]any{
+						"id":        w.ID,
+						"name":      w.Name,
+						"skillId":   widgetSkillID(w),
+						"sourceUrl": w.SourceURL,
+						"template":  w.Template,
+						"css":       w.CSS,
+						"js":        w.JS,
+						"fields":    fields,
+						"createdAt": w.CreatedAt,
+					})
+				}
+				return out, nil
+			},
+		},
+		{
+			name:        "set_widget_field",
+			description: "Set a stream widget text field's value (message and status kinds), by widget id and field id from list_stream_widgets. The field type's character cap applies. Image and sound fields are file-backed (uploaded or generated in the app) and cannot be set here. The widget's Browser Source picks the change up within seconds.",
+			inputSchema: objSchema(map[string]any{
+				"widgetId": prop("string", "The widget id from list_stream_widgets."),
+				"fieldId":  prop("string", "The field id from list_stream_widgets."),
+				"value":    prop("string", "The field's new text content."),
+			}, "widgetId", "fieldId", "value"),
+			handler: func(a *App, args json.RawMessage) (any, error) {
+				var in struct {
+					WidgetID string `json:"widgetId"`
+					FieldID  string `json:"fieldId"`
+					Value    string `json:"value"`
+				}
+				if err := decodeArgs(args, &in); err != nil {
+					return nil, err
+				}
+				if _, err := a.SetWidgetFieldValue(in.WidgetID, in.FieldID, in.Value); err != nil {
+					return nil, err
+				}
+				return "field updated", nil
+			},
+		},
+		{
+			name:        "test_stream_widget",
+			description: "Fire a stream widget's 15-second test window, by id from list_stream_widgets: its Browser Source remounts the display (restarting entrance animations), plays each sound field once, and exposes widget.testing to the template — then clears back to the normal render. Use it to demonstrate or verify an on-stream element.",
+			inputSchema: objSchema(map[string]any{
+				"id": prop("string", "The widget id from list_stream_widgets."),
+			}, "id"),
+			handler: func(a *App, args json.RawMessage) (any, error) {
+				var in struct {
+					ID string `json:"id"`
+				}
+				if err := decodeArgs(args, &in); err != nil {
+					return nil, err
+				}
+				if err := a.TestStreamWidget(in.ID); err != nil {
+					return nil, err
+				}
+				return "test window open for the next 15 seconds", nil
 			},
 		},
 

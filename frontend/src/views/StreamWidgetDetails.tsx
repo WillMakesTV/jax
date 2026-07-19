@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   Check,
   Copy,
   Image,
@@ -6,6 +7,7 @@ import {
   MonitorPlay,
   Music,
   Plus,
+  RotateCcw,
   Sparkles,
   Trash2,
   Type,
@@ -19,7 +21,10 @@ import {
   GenerateWidgetTemplate,
   GetStreamWidgets,
   GetWidgetFieldTypes,
+  ListAppSkills,
   RemoveWidgetField,
+  ResetAppSkill,
+  SaveAppSkill,
   SaveStreamWidget,
   UploadWidgetFieldImage,
   UploadWidgetFieldSound,
@@ -87,6 +92,11 @@ export function StreamWidgetDetails({
   const [addLabel, setAddLabel] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // The widget's own dynamic skill (stream-widget-<id>), editable in place.
+  const [skill, setSkill] = useState<main.AppSkill | null>(null)
+  const [skillDraft, setSkillDraft] = useState<string | null>(null)
+  const [skillSaved, setSkillSaved] = useState(false)
+  const [skillResetArmed, setSkillResetArmed] = useState(false)
   const queue = useAiQueue()
 
   // The navigation history hands us a snapshot; reload the live record so
@@ -100,6 +110,14 @@ export function StreamWidgetDetails({
       .catch(() => {})
     GetWidgetFieldTypes()
       .then((t) => setTypes(t ?? []))
+      .catch(() => {})
+    ListAppSkills()
+      .then((skills) => {
+        const own = (skills ?? []).find(
+          (s) => s.id === `stream-widget-${widget.id}`,
+        )
+        setSkill(own ?? null)
+      })
       .catch(() => {})
   }, [widget])
 
@@ -318,6 +336,45 @@ export function StreamWidgetDetails({
   const templateBusy = queue.jobs.some(
     (j) => j.kind === 'widget-template' && j.targetId === w.id,
   )
+
+  const saveSkill = async () => {
+    if (!skill || skillDraft === null || skillDraft === skill.content) return
+    setError('')
+    try {
+      const updated = await SaveAppSkill(skill.id, skillDraft)
+      setSkill(updated)
+      setSkillDraft(null)
+      setSkillSaved(true)
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string' && err
+            ? err
+            : 'The skill could not be saved.',
+      )
+    }
+  }
+
+  const resetSkill = async () => {
+    if (!skill) return
+    setError('')
+    try {
+      const updated = await ResetAppSkill(skill.id)
+      setSkill(updated)
+      setSkillDraft(null)
+      setSkillResetArmed(false)
+      setSkillSaved(false)
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string' && err
+            ? err
+            : 'The skill could not be reset.',
+      )
+    }
+  }
 
   const copySourceUrl = async () => {
     if (!w.sourceUrl) return
@@ -719,6 +776,80 @@ export function StreamWidgetDetails({
               )}
               {copied ? 'Copied' : 'Copy'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* The widget's own skill: the brief every image, sound, and template
+          generation for this widget follows — editable right here, and the
+          same document agents load over MCP (get_skill / save_skill). */}
+      {skill && (
+        <div className="flex flex-col gap-2 rounded-xl border border-edge bg-surface p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <BookOpen size={16} aria-hidden className="shrink-0 text-accent" />
+            <h2 className="text-sm font-semibold text-fg">Widget skill</h2>
+            {skill.overridden && (
+              <span className="rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
+                Customized
+              </span>
+            )}
+            {skillDraft !== null && skillDraft !== skill.content && (
+              <span className="text-[11px] font-medium text-fg-muted">
+                Unsaved changes
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-fg-muted">
+            The brief behind everything generated for this widget — images,
+            spoken sounds, and the display template. AI agents read it over MCP
+            before working with the widget, so edits here change how the widget
+            is used everywhere.
+          </p>
+          <MarkdownField
+            key={`${skill.id}:${skill.overridden}`}
+            id="widget-skill"
+            value={skillDraft ?? skill.content}
+            onChange={(next) => {
+              setSkillDraft(next)
+              setSkillSaved(false)
+            }}
+            placeholder="Skill instructions in markdown…"
+          />
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              disabled={skillDraft === null || skillDraft === skill.content}
+              onClick={() => void saveSkill()}
+              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              Save skill
+            </button>
+            {(skill.overridden ||
+              (skillDraft !== null && skillDraft !== skill.content)) && (
+              <button
+                type="button"
+                onClick={() =>
+                  skillResetArmed ? void resetSkill() : setSkillResetArmed(true)
+                }
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                  skillResetArmed
+                    ? 'border-red-500/50 text-red-500 hover:bg-red-500/10'
+                    : 'border-edge text-fg-muted hover:bg-surface-hover hover:text-fg'
+                }`}
+              >
+                <RotateCcw size={14} aria-hidden />
+                {skillResetArmed
+                  ? 'Discard edits and reset?'
+                  : 'Reset to default'}
+              </button>
+            )}
+            {skillSaved &&
+              (skillDraft === null || skillDraft === skill.content) && (
+                <span className="inline-flex items-center gap-1.5 text-sm text-fg-muted">
+                  <Check size={16} aria-hidden />
+                  Saved
+                </span>
+              )}
           </div>
         </div>
       )}

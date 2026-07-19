@@ -240,6 +240,35 @@ func (a *App) AddWidgetField(widgetID, typeID, label string) (StreamWidget, erro
 	})
 }
 
+// SetWidgetFieldValue sets a text field's value directly (the MCP surface's
+// write path). File-backed kinds (image, sound) are refused — their values
+// are file names managed by upload/generation — and the type's character cap
+// applies as it does on save.
+func (a *App) SetWidgetFieldValue(widgetID, fieldID, value string) (StreamWidget, error) {
+	types := map[string]WidgetFieldType{}
+	for _, ft := range a.getWidgetFieldTypes() {
+		types[ft.ID] = ft
+	}
+	return a.mutateStreamWidget(widgetID, func(w *StreamWidget) error {
+		for i := range w.Fields {
+			if w.Fields[i].ID != fieldID {
+				continue
+			}
+			if ft, ok := types[w.Fields[i].TypeID]; ok {
+				if ft.Kind == widgetFieldImage || ft.Kind == widgetFieldSound {
+					return fmt.Errorf("%s is a file-backed %s field — its content is uploaded or generated in the app", w.Fields[i].Label, ft.Kind)
+				}
+				if ft.MaxLength > 0 && len([]rune(value)) > ft.MaxLength {
+					return fmt.Errorf("%s is over the %d-character limit", w.Fields[i].Label, ft.MaxLength)
+				}
+			}
+			w.Fields[i].Value = value
+			return nil
+		}
+		return fmt.Errorf("that field no longer exists")
+	})
+}
+
 // RemoveWidgetField detaches a field from a widget and returns the updated
 // widget.
 func (a *App) RemoveWidgetField(widgetID, fieldID string) (StreamWidget, error) {

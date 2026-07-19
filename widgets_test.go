@@ -100,3 +100,42 @@ func TestWidgetFields(t *testing.T) {
 		t.Fatalf("field should be gone, got %+v", w.Fields)
 	}
 }
+
+func TestSetWidgetFieldValue(t *testing.T) {
+	a := newTestApp(t)
+	a.GetWidgetFieldTypes() // seed the type catalog
+
+	w, err := a.SaveStreamWidget(StreamWidget{Name: "Goal"})
+	if err != nil {
+		t.Fatalf("save widget: %v", err)
+	}
+	w, err = a.AddWidgetField(w.ID, "field_status", "")
+	if err != nil {
+		t.Fatalf("add status field: %v", err)
+	}
+	w, err = a.AddWidgetField(w.ID, "field_image", "")
+	if err != nil {
+		t.Fatalf("add image field: %v", err)
+	}
+
+	// Text values set directly, respecting the type's cap.
+	w, err = a.SetWidgetFieldValue(w.ID, w.Fields[0].ID, "Live now")
+	if err != nil {
+		t.Fatalf("set text value: %v", err)
+	}
+	if w.Fields[0].Value != "Live now" {
+		t.Fatalf("value not stored: %+v", w.Fields[0])
+	}
+	over := strings.Repeat("x", widgetStatusMaxLen+1)
+	if _, err := a.SetWidgetFieldValue(w.ID, w.Fields[0].ID, over); err == nil {
+		t.Fatal("want error for an over-cap value")
+	}
+
+	// File-backed kinds are refused — their values are managed files.
+	if _, err := a.SetWidgetFieldValue(w.ID, w.Fields[1].ID, "sneaky.png"); err == nil {
+		t.Fatal("want error setting a file-backed field")
+	}
+	if _, err := a.SetWidgetFieldValue(w.ID, "nope", "x"); err == nil {
+		t.Fatal("want error for an unknown field")
+	}
+}
