@@ -515,6 +515,7 @@ function App() {
           void openSponsorById(targetId)
           break
         case 'widget-image':
+        case 'widget-sound':
         case 'widget-template':
           void openWidgetById(targetId)
           break

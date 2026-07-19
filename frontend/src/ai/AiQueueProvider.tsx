@@ -19,6 +19,7 @@ export type AiJobKind =
   | 'project-image'
   | 'sponsor-research'
   | 'widget-image'
+  | 'widget-sound'
   | 'widget-template'
 
 /** One AI generation, queued or running. */

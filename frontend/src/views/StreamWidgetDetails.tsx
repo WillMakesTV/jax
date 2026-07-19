@@ -15,6 +15,7 @@ import {useCallback, useEffect, useState} from 'react'
 import {
   AddWidgetField,
   GenerateWidgetFieldImage,
+  GenerateWidgetFieldSound,
   GenerateWidgetTemplate,
   GetStreamWidgets,
   GetWidgetFieldTypes,
@@ -77,6 +78,8 @@ export function StreamWidgetDetails({
   const [values, setValues] = useState<Record<string, string>>({})
   // Revision notes for image generation, keyed by field id.
   const [feedback, setFeedback] = useState<Record<string, string>>({})
+  // Lines to speak for sound-field TTS, keyed by field id.
+  const [speech, setSpeech] = useState<Record<string, string>>({})
   const [uploading, setUploading] = useState('')
   const [types, setTypes] = useState<main.WidgetFieldType[]>([])
   const [addTypeId, setAddTypeId] = useState('')
@@ -237,6 +240,45 @@ export function StreamWidgetDetails({
     queue.jobs.some(
       (j) =>
         j.kind === 'widget-image' &&
+        j.targetId === w.id &&
+        j.dedupe === fieldID,
+    )
+
+  // Text-to-speech for sound fields, through the same queue: OpenAI TTS
+  // with an API key, the local Windows synthesizer otherwise.
+  const generateSpeech = async (f: main.WidgetField) => {
+    const line = (speech[f.id] ?? '').trim()
+    if (!line) return
+    setError('')
+    try {
+      const saved = await queue.enqueue({
+        kind: 'widget-sound',
+        targetId: w.id,
+        dedupe: f.id,
+        title: w.name,
+        label: `Speaking ${f.label} — ${w.name || 'widget'}`,
+        doneDetail: `Widget sound ready — ${w.name || 'widget'}`,
+        failDetail: 'Widget sound failed',
+        busyError: 'a sound is already being generated for this field',
+        work: () => GenerateWidgetFieldSound(w.id, f.id, line),
+      })
+      setW(saved)
+      setSpeech((prev) => ({...prev, [f.id]: ''}))
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string' && err
+            ? err
+            : 'The sound could not be generated.',
+      )
+    }
+  }
+
+  const soundBusy = (fieldID: string) =>
+    queue.jobs.some(
+      (j) =>
+        j.kind === 'widget-sound' &&
         j.targetId === w.id &&
         j.dedupe === fieldID,
     )
@@ -483,13 +525,35 @@ export function StreamWidgetDetails({
                           <Upload size={14} aria-hidden />
                           {uploading === f.id ? 'Uploading…' : 'Upload sound'}
                         </button>
-                        {!f.valueUrl && (
-                          <span className="text-xs text-fg-muted">
-                            MP3, WAV, OGG and friends — played on stream when
-                            the widget calls for it.
-                          </span>
-                        )}
+                        <input
+                          value={speech[f.id] ?? ''}
+                          onChange={(e) =>
+                            setSpeech((prev) => ({
+                              ...prev,
+                              [f.id]: e.target.value,
+                            }))
+                          }
+                          placeholder="Or type a line to speak…"
+                          aria-label={`Text to speak for ${f.label}`}
+                          className={`${field} min-w-40 flex-1`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void generateSpeech(f)}
+                          disabled={
+                            soundBusy(f.id) || !(speech[f.id] ?? '').trim()
+                          }
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+                        >
+                          <Sparkles size={14} aria-hidden />
+                          {soundBusy(f.id) ? 'Speaking…' : 'Speak it'}
+                        </button>
                       </div>
+                      <p className="text-xs text-fg-muted">
+                        MP3, WAV, OGG and friends — played on stream when the
+                        widget calls for it. Typed lines become speech via
+                        OpenAI TTS (API key) or the local Windows voice.
+                      </p>
                     </div>
                   ) : kind === 'message' ? (
                     <textarea

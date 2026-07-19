@@ -290,6 +290,10 @@ export function GenerateWidgetFieldImage(arg1, arg2, arg3) {
   return window['go']['main']['App']['GenerateWidgetFieldImage'](arg1, arg2, arg3);
 }
 
+export function GenerateWidgetFieldSound(arg1, arg2, arg3) {
+  return window['go']['main']['App']['GenerateWidgetFieldSound'](arg1, arg2, arg3);
+}
+
 export function GenerateWidgetTemplate(arg1, arg2) {
   return window['go']['main']['App']['GenerateWidgetTemplate'](arg1, arg2);
 }
