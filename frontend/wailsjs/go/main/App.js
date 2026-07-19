@@ -82,6 +82,10 @@ export function ChatProjectDescription(arg1, arg2, arg3) {
   return window['go']['main']['App']['ChatProjectDescription'](arg1, arg2, arg3);
 }
 
+export function ClearStreamWidget(arg1) {
+  return window['go']['main']['App']['ClearStreamWidget'](arg1);
+}
+
 export function ChooseClipIdea(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['ChooseClipIdea'](arg1, arg2, arg3, arg4);
 }
@@ -348,10 +352,6 @@ export function GetChatHistory(arg1) {
 
 export function GetChatUserInfo(arg1, arg2, arg3) {
   return window['go']['main']['App']['GetChatUserInfo'](arg1, arg2, arg3);
-}
-
-export function GetClearedStreamWidgets() {
-  return window['go']['main']['App']['GetClearedStreamWidgets']();
 }
 
 export function GetClipIdeas(arg1, arg2) {
@@ -882,9 +882,6 @@ export function SetStreamTitle(arg1, arg2) {
   return window['go']['main']['App']['SetStreamTitle'](arg1, arg2);
 }
 
-export function SetStreamWidgetCleared(arg1, arg2) {
-  return window['go']['main']['App']['SetStreamWidgetCleared'](arg1, arg2);
-}
 
 export function SetVideoPlanShares(arg1, arg2) {
   return window['go']['main']['App']['SetVideoPlanShares'](arg1, arg2);

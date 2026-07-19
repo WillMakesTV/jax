@@ -195,28 +195,26 @@ func TestWidgetSourceEndpoints(t *testing.T) {
 		t.Fatal("an expired test window should read as cleared")
 	}
 
-	// The Clear toggle blanks the feed until the widget is shown again.
-	if err := a.SetStreamWidgetCleared("nope", true); err == nil {
+	// Clear is a one-shot action: each call bumps the feed's reload count,
+	// which is what makes the page reload fresh.
+	if err := a.ClearStreamWidget("nope"); err == nil {
 		t.Fatal("want error clearing an unknown widget")
 	}
-	if err := a.SetStreamWidgetCleared(w.ID, true); err != nil {
+	if data.Reload != 0 {
+		t.Fatalf("no clears yet, reload = %d", data.Reload)
+	}
+	if err := a.ClearStreamWidget(w.ID); err != nil {
 		t.Fatalf("clear widget: %v", err)
+	}
+	if err := a.ClearStreamWidget(w.ID); err != nil {
+		t.Fatalf("clear widget again: %v", err)
 	}
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", widgetSourcePrefix+w.ID+"/data", nil))
 	if err := json.Unmarshal(rec.Body.Bytes(), &data); err != nil {
 		t.Fatalf("data decode after clear: %v", err)
 	}
-	if !data.Cleared {
-		t.Fatal("the feed should report the widget cleared")
-	}
-	if ids := a.GetClearedStreamWidgets(); len(ids) != 1 || ids[0] != w.ID {
-		t.Fatalf("cleared list mismatch: %v", ids)
-	}
-	if err := a.SetStreamWidgetCleared(w.ID, false); err != nil {
-		t.Fatalf("show widget: %v", err)
-	}
-	if a.widgetIsCleared(w.ID) {
-		t.Fatal("the widget should read as shown again")
+	if data.Reload != 2 {
+		t.Fatalf("two clears should read as reload 2, got %d", data.Reload)
 	}
 }

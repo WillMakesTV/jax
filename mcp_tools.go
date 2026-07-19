@@ -781,7 +781,6 @@ func mcpToolCatalog() []mcpTool {
 						"css":       w.CSS,
 						"js":        w.JS,
 						"fields":    fields,
-						"cleared":   a.widgetIsCleared(w.ID),
 						"createdAt": w.CreatedAt,
 					})
 				}

@@ -93,9 +93,10 @@ type App struct {
 	// reports a widget as testing until its window expires.
 	widgetTests map[string]time.Time
 
-	// widgetCleared marks widgets whose Browser Source is blanked (guarded
-	// by mu; see widget_source.go). A test window shows through a clear.
-	widgetCleared map[string]bool
+	// widgetReload counts each widget's Clear actions (guarded by mu; see
+	// widget_source.go). The Browser Source reloads fresh — dropping its
+	// cache — whenever the count it sees changes.
+	widgetReload map[string]int
 
 	// widgetTestItems holds each widget's staged sample item — text-field
 	// values (field id → value) the data feed substitutes while that

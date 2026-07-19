@@ -1,26 +1,24 @@
 import {
   Check,
   Copy,
-  Eye,
-  EyeOff,
   FlaskConical,
   Image,
   LayoutGrid,
   Plus,
+  RefreshCw,
   SlidersHorizontal,
   Trash2,
   Type,
 } from 'lucide-react'
 import {useCallback, useEffect, useState} from 'react'
 import {
+  ClearStreamWidget,
   DeleteWidgetFieldType,
   GenerateWidgetTestItem,
-  GetClearedStreamWidgets,
   GetStreamWidgets,
   GetWidgetFieldTypes,
   SaveStreamWidget,
   SaveWidgetFieldType,
-  SetStreamWidgetCleared,
   TestStreamWidget,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
@@ -48,18 +46,12 @@ export function StreamWidgetsPanel({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  // Widgets whose Browser Source is blanked (in-memory app state).
-  const [clearedIds, setClearedIds] = useState<string[]>([])
-
   const load = useCallback(() => {
     GetStreamWidgets()
       .then((w) => setWidgets(w ?? []))
       .catch(() => {})
     GetWidgetFieldTypes()
       .then((t) => setTypes(t ?? []))
-      .catch(() => {})
-    GetClearedStreamWidgets()
-      .then((ids) => setClearedIds(ids ?? []))
       .catch(() => {})
   }, [])
 
@@ -154,14 +146,17 @@ export function StreamWidgetsPanel({
   const staging = (id: string) =>
     queue.jobs.some((j) => j.kind === 'widget-test' && j.targetId === id)
 
-  // Blank (or restore) a widget's Browser Source without touching OBS.
-  const toggleCleared = async (w: main.StreamWidget) => {
-    const cleared = clearedIds.includes(w.id)
+  // One-shot cache clear: the widget's Browser Source reloads itself
+  // fresh, dropping compiled templates, custom-JS timers, and DOM state.
+  const [clearedFlashId, setClearedFlashId] = useState('')
+  const clear = async (w: main.StreamWidget) => {
     setError('')
     try {
-      await SetStreamWidgetCleared(w.id, !cleared)
-      setClearedIds((prev) =>
-        cleared ? prev.filter((id) => id !== w.id) : [...prev, w.id],
+      await ClearStreamWidget(w.id)
+      setClearedFlashId(w.id)
+      window.setTimeout(
+        () => setClearedFlashId((cur) => (cur === w.id ? '' : cur)),
+        2000,
       )
     } catch (err) {
       setError(
@@ -289,20 +284,16 @@ export function StreamWidgetsPanel({
               {w.sourceUrl && (
                 <button
                   type="button"
-                  onClick={() => void toggleCleared(w)}
-                  title={
-                    clearedIds.includes(w.id)
-                      ? 'Show this widget on its Browser Source again'
-                      : "Clear this widget's Browser Source (show nothing)"
-                  }
+                  onClick={() => void clear(w)}
+                  title="Clear the Browser Source cache — the OBS page reloads itself fresh"
                   className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
                 >
-                  {clearedIds.includes(w.id) ? (
-                    <Eye size={12} aria-hidden />
+                  {clearedFlashId === w.id ? (
+                    <Check size={12} aria-hidden />
                   ) : (
-                    <EyeOff size={12} aria-hidden />
+                    <RefreshCw size={12} aria-hidden />
                   )}
-                  {clearedIds.includes(w.id) ? 'Show' : 'Clear'}
+                  {clearedFlashId === w.id ? 'Cleared' : 'Clear'}
                 </button>
               )}
               {w.sourceUrl && (

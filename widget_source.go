@@ -51,9 +51,9 @@ type widgetSourceData struct {
 	// the page remounts the display and plays sound fields when it flips
 	// on, and clears back to the normal render when it flips off.
 	Testing bool `json:"testing"`
-	// Cleared blanks the page (the Clear button on the widget's card);
-	// a test window shows through it.
-	Cleared bool `json:"cleared"`
+	// Reload counts Clear actions; the page reloads itself fresh whenever
+	// the value it sees changes.
+	Reload int `json:"reload"`
 }
 
 // widgetTestWindow is how long a widget test shows before clearing.
@@ -205,11 +205,11 @@ func parseWidgetTestItem(text string) (map[string]string, error) {
 	return out, nil
 }
 
-// SetStreamWidgetCleared blanks (or restores) a widget's Browser Source:
-// while cleared the page renders nothing, so the element leaves the stream
-// without touching OBS. A test window shows through a clear, and the state
-// lives in memory — a restart shows everything again.
-func (a *App) SetStreamWidgetCleared(id string, cleared bool) error {
+// ClearStreamWidget clears the widget's Browser Source cache: a one-shot
+// action that makes the page discard everything it holds — compiled
+// template, custom-JS timers, DOM state — and load itself fresh. It works
+// by bumping a per-widget reload count the page watches in its data feed.
+func (a *App) ClearStreamWidget(id string) error {
 	found := false
 	for _, w := range a.getStreamWidgets() {
 		if w.ID == id {
@@ -221,35 +221,19 @@ func (a *App) SetStreamWidgetCleared(id string, cleared bool) error {
 		return fmt.Errorf("that stream widget no longer exists")
 	}
 	a.mu.Lock()
-	if a.widgetCleared == nil {
-		a.widgetCleared = map[string]bool{}
+	if a.widgetReload == nil {
+		a.widgetReload = map[string]int{}
 	}
-	if cleared {
-		a.widgetCleared[id] = true
-	} else {
-		delete(a.widgetCleared, id)
-	}
+	a.widgetReload[id]++
 	a.mu.Unlock()
 	return nil
 }
 
-// widgetIsCleared reports whether a widget's Browser Source is blanked.
-func (a *App) widgetIsCleared(id string) bool {
+// widgetReloadGen returns a widget's current Clear count.
+func (a *App) widgetReloadGen(id string) int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.widgetCleared[id]
-}
-
-// GetClearedStreamWidgets lists the ids of widgets whose Browser Source is
-// currently blanked.
-func (a *App) GetClearedStreamWidgets() []string {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	out := make([]string, 0, len(a.widgetCleared))
-	for id := range a.widgetCleared {
-		out = append(out, id)
-	}
-	return out
+	return a.widgetReload[id]
 }
 
 // serveWidgetSource handles everything under /widget/: the runtime assets,
@@ -294,7 +278,7 @@ func (a *App) serveWidgetSource(w http.ResponseWriter, r *http.Request) {
 			JS:       widget.JS,
 			Fields:   []widgetSourceField{},
 			Testing:  a.widgetTesting(widget.ID),
-			Cleared:  a.widgetIsCleared(widget.ID),
+			Reload:   a.widgetReloadGen(widget.ID),
 		}
 		// An open test window shows the staged sample item's text values in
 		// place of the real ones (see GenerateWidgetTestItem); the real
@@ -389,17 +373,17 @@ var widgetSourcePage = template.Must(template.New("widget").Parse(`<!DOCTYPE htm
   }
 
   var wasTesting = false
-  var wasCleared = false
+  var reloadGen = 0
   var first = true
 
   function apply(data) {
     var widget = {name: data.name, testing: !!data.testing}
 
-    // Leaving a test window or entering a clear reloads the page — the
-    // surest way to drop cached templates, custom-JS timers, and any DOM
-    // state a test or previous display left behind.
+    // Leaving a test window, or a Clear fired from the app (the reload
+    // count moved), reloads the page — the surest way to drop cached
+    // templates, custom-JS timers, and any DOM state left behind.
     if (!first && ((wasTesting && !widget.testing) ||
-        (data.cleared && !wasCleared && !widget.testing))) {
+        data.reload !== reloadGen)) {
       location.reload()
       return
     }
@@ -417,17 +401,8 @@ var widgetSourcePage = template.Must(template.New("widget").Parse(`<!DOCTYPE htm
       })
     }
     wasTesting = widget.testing
-    wasCleared = !!data.cleared
+    reloadGen = data.reload
     first = false
-
-    // A cleared widget shows nothing at all — its CSS could otherwise
-    // still paint the page (a body background, say). A test window shows
-    // through the clear.
-    if (data.cleared && !widget.testing) {
-      cssTag.textContent = ''
-      root.render(null)
-      return
-    }
     cssTag.textContent = data.css || ''
 
     var render = compileTemplate(data.template)
