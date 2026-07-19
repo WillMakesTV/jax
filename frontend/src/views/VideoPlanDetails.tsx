@@ -32,14 +32,13 @@ import {
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {AddContentModal} from '../components/AddPlanContent'
-import {DownloadThumb} from '../components/DownloadThumb'
 import {EpisodeThumb} from '../components/EpisodeThumb'
 import {Modal} from '../components/Modal'
 import {PlatformPill} from '../components/PlatformPill'
 import {TrackedSharesModal} from '../components/TrackedSharesModal'
 import {useDownloads} from '../downloads/useDownloads'
 import {openExternal} from '../lib/browser'
-import {formatCompact, formatDate, formatDurationMs} from '../lib/format'
+import {formatCompact, formatDate} from '../lib/format'
 import {VideoPlanEditor} from './VideoPlanEditor'
 import {VideoPlanPublish} from './VideoPlanPublish'
 
@@ -140,7 +139,6 @@ export function VideoPlanDetails({
   initialTab,
   onEdit,
   onOpenStream,
-  onOpenDownload,
   onDeleted,
 }: {
   plan: main.VideoPlan
@@ -151,8 +149,6 @@ export function VideoPlanDetails({
   onEdit: (plan: main.VideoPlan) => void
   /** Open a source stream's details view. */
   onOpenStream: (stream: main.PastStream) => void
-  /** Open a downloaded broadcast's video page (player + chat + transcript). */
-  onOpenDownload: (download: main.DownloadedVideo) => void
   /** The plan was deleted; leave the page. */
   onDeleted: () => void
 }) {
@@ -291,13 +287,6 @@ export function VideoPlanDetails({
       .map((b) => byUrl.get(b.url))
       .find(Boolean)
     return {src, stream, download}
-  })
-  // Several sources could share one download; list each file once.
-  const seenSubfolders = new Set<string>()
-  const downloaded = resolved.filter((r) => {
-    if (!r.download || seenSubfolders.has(r.download.subfolder)) return false
-    seenSubfolders.add(r.download.subfolder)
-    return true
   })
   const missing = resolved.filter((r) => !r.download)
 
@@ -617,98 +606,6 @@ export function VideoPlanDetails({
                 </section>
               )}
 
-              {downloaded.length > 0 ? (
-                <section aria-labelledby="video-plan-footage-heading">
-                  <h2
-                    id="video-plan-footage-heading"
-                    className="mb-2 text-sm font-semibold uppercase tracking-wide text-fg-muted"
-                  >
-                    Footage on disk
-                  </h2>
-                  <ul className="flex max-w-xl flex-col gap-2">
-                    {downloaded.map(({stream, download}) => {
-                      const d = download!
-                      const title =
-                        d.title || stream?.title || 'Untitled stream'
-                      return (
-                        <li
-                          key={d.subfolder}
-                          className="flex items-center gap-3 rounded-lg border border-edge bg-surface p-2"
-                        >
-                          {/* Thumbnail = play in a modal. */}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setPlaying({
-                                title,
-                                url: d.mediaUrl,
-                                poster:
-                                  d.thumbnailUrl ||
-                                  stream?.thumbnailUrl ||
-                                  undefined,
-                              })
-                            }
-                            aria-label={`Play ${title}`}
-                            title="Play video"
-                            className="group relative h-14 w-24 shrink-0 overflow-hidden rounded-md bg-black"
-                          >
-                            <DownloadThumb
-                              subfolder={d.subfolder}
-                              src={d.thumbnailUrl || stream?.thumbnailUrl || ''}
-                              className="h-full w-full object-cover opacity-90 transition-opacity group-hover:opacity-60"
-                            />
-                            <span className="absolute inset-0 flex items-center justify-center">
-                              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-transform group-hover:scale-110">
-                                <Play
-                                  size={12}
-                                  aria-hidden
-                                  className="ml-0.5"
-                                />
-                              </span>
-                            </span>
-                            {d.durationSecs > 0 && (
-                              <span className="absolute bottom-1 right-1 rounded bg-black/75 px-1 py-px text-[10px] font-medium text-white">
-                                {formatDurationMs(d.durationSecs * 1000)}
-                              </span>
-                            )}
-                          </button>
-                          {/* Title/meta = the download's full video page
-                              (player + chat + transcript). */}
-                          <button
-                            type="button"
-                            onClick={() => onOpenDownload(d)}
-                            title="Open the video's page (player, chat, transcript)"
-                            className="min-w-0 flex-1 text-left"
-                          >
-                            <p className="truncate text-sm font-semibold text-fg hover:underline">
-                              {title}
-                            </p>
-                            <p className="mt-0.5 truncate text-xs text-fg-muted">
-                              {[
-                                stream && stream.episodeNumber > 0
-                                  ? `EP ${stream.episodeNumber}`
-                                  : '',
-                                d.channelName,
-                                formatDate(
-                                  d.startedAt || stream?.startedAt || '',
-                                ),
-                              ]
-                                .filter(Boolean)
-                                .join(' · ')}
-                            </p>
-                          </button>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </section>
-              ) : (
-                <p className="text-sm text-fg-muted">
-                  None of this plan&apos;s source streams have a downloaded
-                  video yet — the editor needs the footage on disk.
-                </p>
-              )}
-
               {/* Sources whose footage is not on disk yet; the stream's
                   details page carries the Download action. */}
               {missing.length > 0 && (
@@ -752,6 +649,50 @@ export function VideoPlanDetails({
                 </section>
               )}
             </>
+          )}
+
+          {/* Imported footage — files picked from disk or recorded straight
+              from OBS into the plan's workspace. Shown regardless of source
+              streams, so a footage-only plan still sees its material. */}
+          {(plan.files ?? []).length > 0 && (
+            <section aria-labelledby="video-plan-additional-footage-heading">
+              <h2
+                id="video-plan-additional-footage-heading"
+                className="mb-2 inline-flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-fg-muted"
+              >
+                <Film size={13} aria-hidden />
+                Additional Footage ({(plan.files ?? []).length})
+              </h2>
+              <ul className="flex max-w-xl flex-col gap-2">
+                {(plan.files ?? []).map((name, i) => {
+                  const url = plan.fileUrls?.[i] ?? ''
+                  return (
+                    <li
+                      key={name}
+                      className="flex items-center gap-3 rounded-lg border border-edge bg-surface p-2"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => url && setPlaying({title: name, url})}
+                        disabled={!url}
+                        aria-label={`Play ${name}`}
+                        title={
+                          url
+                            ? 'Play video'
+                            : 'The file could not be found in the workspace'
+                        }
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface-hover text-fg transition-colors enabled:hover:bg-accent enabled:hover:text-accent-fg disabled:opacity-50"
+                      >
+                        <Play size={14} aria-hidden className="ml-0.5" />
+                      </button>
+                      <span className="min-w-0 flex-1 truncate text-sm text-fg">
+                        {name}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
           )}
         </div>
       )}

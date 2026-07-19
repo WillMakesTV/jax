@@ -44,6 +44,9 @@ type VideoPlan struct {
 	// Owned by ImportVideoPlanFootage/RemoveVideoPlanFootage (see
 	// plan_footage.go); preserved across SaveVideoPlan.
 	Files []string `json:"files"`
+	// FileURLs are the media-server addresses of Files, index-aligned;
+	// recomputed on every read, never persisted.
+	FileURLs []string `json:"fileUrls"`
 	// ThumbnailFile names the plan's thumbnail image in ~/.jax/plan_thumbs
 	// ("" = none; shared with stream-plan thumbnails, see plan_thumbs.go).
 	// ThumbnailURL is the served address, recomputed on every read.
@@ -95,6 +98,7 @@ func (a *App) GetVideoPlans() []VideoPlan {
 	for i := range plans {
 		plans[i].ThumbnailURL = a.planThumbURL(plans[i].ThumbnailFile)
 		plans[i].ThumbnailHistoryURLs = a.planThumbHistoryURLs(plans[i].ThumbnailHistory)
+		plans[i].FileURLs = a.planFileURLs(plans[i].ID, plans[i].Files)
 	}
 	return plans
 }
@@ -130,6 +134,7 @@ func (a *App) SaveVideoPlan(plan VideoPlan) (VideoPlan, error) {
 	plan.ThumbnailURL = ""
 	plan.ThumbnailHistory = []string{}
 	plan.ThumbnailHistoryURLs = nil
+	plan.FileURLs = nil
 
 	plans := a.GetVideoPlans()
 	if plan.ID == "" {
@@ -174,6 +179,7 @@ func (a *App) SaveVideoPlan(plan VideoPlan) (VideoPlan, error) {
 	go a.relocateEditWorkspaces()
 	plan.ThumbnailURL = a.planThumbURL(plan.ThumbnailFile)
 	plan.ThumbnailHistoryURLs = a.planThumbHistoryURLs(plan.ThumbnailHistory)
+	plan.FileURLs = a.planFileURLs(plan.ID, plan.Files)
 	return plan, nil
 }
 
@@ -199,6 +205,7 @@ func (a *App) setPlanStatus(id, status string) (VideoPlan, error) {
 		for j := range stored {
 			stored[j].ThumbnailURL = ""
 			stored[j].ThumbnailHistoryURLs = nil
+			stored[j].FileURLs = nil
 		}
 		if err := a.store.setJSON(keyVideoPlans, stored); err != nil {
 			return VideoPlan{}, err

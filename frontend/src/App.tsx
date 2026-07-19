@@ -791,7 +791,6 @@ function App() {
                 initialTab={cur.videoPlanTab ?? undefined}
                 onEdit={openPlanVideo}
                 onOpenStream={openStreamDetails}
-                onOpenDownload={openDownloadVideo}
                 onDeleted={backToVideos}
               />
             )}

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,6 +105,42 @@ func (a *App) ImportVideoPlanFootage(planID string, paths []string) (VideoPlan, 
 	})
 }
 
+// planFileURLs returns the media-server addresses of a plan's imported
+// footage files, index-aligned with files ("" entries when the media server
+// or the workspace cannot be found). The workspace is located from disk
+// (findWorkspaceFolder) rather than editWorkspaceDir so this can run inside
+// GetVideoPlans without re-reading the plan list.
+func (a *App) planFileURLs(planID string, files []string) []string {
+	out := make([]string, len(files))
+	if len(files) == 0 {
+		return out
+	}
+	a.mu.Lock()
+	base := a.mediaBaseURL
+	a.mu.Unlock()
+	if base == "" {
+		return out
+	}
+	root := a.resolveEditRoot()
+	dir, ok := findWorkspaceFolder(root, planID)
+	if !ok {
+		return out
+	}
+	rel, err := filepath.Rel(root, dir)
+	if err != nil {
+		return out
+	}
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	for i, p := range parts {
+		parts[i] = url.PathEscape(p)
+	}
+	prefix := base + editsPrefix + strings.Join(parts, "/")
+	for i, f := range files {
+		out[i] = prefix + "/" + url.PathEscape(f)
+	}
+	return out
+}
+
 // importFile lands src at dst: a file already inside the workspace is moved,
 // anything else is copied. An OBS recording is handed over the moment
 // StopRecord returns, while OBS may still be finalizing the file — on
@@ -203,6 +240,7 @@ func (a *App) mutateVideoPlan(id string, fn func(p *VideoPlan) error) (VideoPlan
 		out := plans[i]
 		out.ThumbnailURL = a.planThumbURL(out.ThumbnailFile)
 		out.ThumbnailHistoryURLs = a.planThumbHistoryURLs(out.ThumbnailHistory)
+		out.FileURLs = a.planFileURLs(out.ID, out.Files)
 		return out, nil
 	}
 	return VideoPlan{}, fmt.Errorf("that video plan no longer exists")
