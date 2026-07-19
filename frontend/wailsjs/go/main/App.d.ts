@@ -100,6 +100,8 @@ export function DeleteStreamWidget(arg1:string):Promise<void>;
 
 export function DeleteVideoPlan(arg1:string):Promise<void>;
 
+export function DeleteWidgetFieldType(arg1:string):Promise<void>;
+
 export function DisconnectGitHub():Promise<void>;
 
 export function DisconnectService(arg1:string):Promise<void>;
@@ -264,6 +266,8 @@ export function GetVideoPublish(arg1:string):Promise<main.VideoPublishState>;
 
 export function GetVideos(arg1:boolean):Promise<main.VideoList>;
 
+export function GetWidgetFieldTypes():Promise<Array<main.WidgetFieldType>>;
+
 export function GetYouTubeCategories():Promise<Array<main.ServiceCategory>>;
 
 export function GetYouTubeLiveChat(arg1:string):Promise<main.LiveChatPage>;
@@ -379,6 +383,8 @@ export function SaveStreams(arg1:Array<main.Stream>):Promise<void>;
 export function SaveVideoPlan(arg1:main.VideoPlan):Promise<main.VideoPlan>;
 
 export function SaveVideoPublishDraft(arg1:string,arg2:main.VideoPublishDraft):Promise<void>;
+
+export function SaveWidgetFieldType(arg1:main.WidgetFieldType):Promise<main.WidgetFieldType>;
 
 export function SearchDebugReports(arg1:string):Promise<Array<main.DebugReport>>;
 

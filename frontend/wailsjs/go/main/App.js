@@ -198,6 +198,10 @@ export function DeleteVideoPlan(arg1) {
   return window['go']['main']['App']['DeleteVideoPlan'](arg1);
 }
 
+export function DeleteWidgetFieldType(arg1) {
+  return window['go']['main']['App']['DeleteWidgetFieldType'](arg1);
+}
+
 export function DisconnectGitHub() {
   return window['go']['main']['App']['DisconnectGitHub']();
 }
@@ -526,6 +530,10 @@ export function GetVideos(arg1) {
   return window['go']['main']['App']['GetVideos'](arg1);
 }
 
+export function GetWidgetFieldTypes() {
+  return window['go']['main']['App']['GetWidgetFieldTypes']();
+}
+
 export function GetYouTubeCategories() {
   return window['go']['main']['App']['GetYouTubeCategories']();
 }
@@ -756,6 +764,10 @@ export function SaveVideoPlan(arg1) {
 
 export function SaveVideoPublishDraft(arg1, arg2) {
   return window['go']['main']['App']['SaveVideoPublishDraft'](arg1, arg2);
+}
+
+export function SaveWidgetFieldType(arg1) {
+  return window['go']['main']['App']['SaveWidgetFieldType'](arg1);
 }
 
 export function SearchDebugReports(arg1) {

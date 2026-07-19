@@ -24,6 +24,9 @@ const (
 	// keyStreamWidgets holds the Stream Widgets managed on the OBS section
 	// (see widgets.go).
 	keyStreamWidgets = "stream_widgets"
+	// keyWidgetFieldTypes holds the field-type catalog stream widgets draw
+	// from (see widget_fields.go); seeded with defaults on first read.
+	keyWidgetFieldTypes = "widget_field_types"
 	// keyYouTubeLivePrefix holds the "🔴 LIVE: "-style prefix for YouTube
 	// broadcast titles; shared with the frontend's SETTING_KEYS.
 	keyYouTubeLivePrefix = "youtube_live_prefix"

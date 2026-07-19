@@ -1615,6 +1615,27 @@ export class Sponsor {
 }
 
 
+export class WidgetFieldType {
+    id: string;
+    name: string;
+    kind: string;
+    maxLength: number;
+    createdAt: string;
+
+    static createFrom(source: any = {}) {
+        return new WidgetFieldType(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.id = source["id"];
+        this.name = source["name"];
+        this.kind = source["kind"];
+        this.maxLength = source["maxLength"];
+        this.createdAt = source["createdAt"];
+    }
+}
+
 export class StreamWidget {
     id: string;
     name: string;

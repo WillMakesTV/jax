@@ -123,7 +123,34 @@ func (a *App) ListAppSkills() ([]AppSkill, error) {
 			Overridden:  overridden,
 		})
 	}
+	// Widget field types each publish a dynamic skill alongside the fixed
+	// catalog — the brief behind producing that field's content (see
+	// widget_fields.go). They override and reset like any other skill.
+	for _, ft := range a.getWidgetFieldTypes() {
+		id := widgetFieldSkillID(ft)
+		content, overridden := overrides[id]
+		if !overridden {
+			content = widgetFieldSkillContent(ft)
+		}
+		out = append(out, AppSkill{
+			ID:          id,
+			Title:       "Widget field: " + ft.Name,
+			Description: widgetFieldSkillDescription(ft),
+			Content:     content,
+			Overridden:  overridden,
+		})
+	}
 	return out, nil
+}
+
+// defaultContentFor returns a skill's default content: the embedded markdown
+// for catalog skills, or the generated brief for a widget field type's
+// dynamic skill.
+func (a *App) defaultContentFor(id string) (string, error) {
+	if ft, ok := a.widgetFieldBySkillID(id); ok {
+		return widgetFieldSkillContent(ft), nil
+	}
+	return defaultSkillContent(id)
 }
 
 // getAppSkill returns one skill by id.
@@ -144,7 +171,7 @@ func (a *App) getAppSkill(id string) (AppSkill, error) {
 // skill. Saving content identical to the embedded default clears the override
 // instead, so the skill reads as unmodified.
 func (a *App) SaveAppSkill(id, content string) (AppSkill, error) {
-	def, err := defaultSkillContent(id)
+	def, err := a.defaultContentFor(id)
 	if err != nil {
 		return AppSkill{}, err
 	}
@@ -165,7 +192,7 @@ func (a *App) SaveAppSkill(id, content string) (AppSkill, error) {
 
 // ResetAppSkill removes the skill's override, restoring the embedded default.
 func (a *App) ResetAppSkill(id string) (AppSkill, error) {
-	if _, err := defaultSkillContent(id); err != nil {
+	if _, err := a.defaultContentFor(id); err != nil {
 		return AppSkill{}, err
 	}
 	if a.store == nil {
