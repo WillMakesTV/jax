@@ -31,7 +31,11 @@ type StreamPlanInfo struct {
 	SeriesID      string   `json:"seriesId"`
 	EpisodeNumber int      `json:"episodeNumber"`
 	Tags          []string `json:"tags"`
-	ConcludedAt   string   `json:"concludedAt"` // RFC3339
+	// ThumbnailFile is the plan's thumbnail (a file in the shared
+	// plan-thumbs folder); the finished stream adopts it as its custom
+	// thumbnail when it has none of its own (see adoptPlanThumbs).
+	ThumbnailFile string `json:"thumbnailFile"`
+	ConcludedAt   string `json:"concludedAt"` // RFC3339
 }
 
 // keyStreamPlans stores the broadcastKey -> StreamPlanInfo assignments (live
@@ -286,6 +290,7 @@ func (a *App) ConcludePlannedStream(id string) error {
 		SeriesID:      plan.SeriesID,
 		EpisodeNumber: plan.EpisodeNumber,
 		Tags:          plan.Tags,
+		ThumbnailFile: sanitizeThumbFile(plan.ThumbnailFile),
 		ConcludedAt:   now,
 	}
 	if err := a.store.setJSON(keyStreamPlans, plans); err != nil {
@@ -363,6 +368,7 @@ func (a *App) concludePlanOntoStream(plan PlannedStream, s PastStream) error {
 		SeriesID:      plan.SeriesID,
 		EpisodeNumber: plan.EpisodeNumber,
 		Tags:          plan.Tags,
+		ThumbnailFile: sanitizeThumbFile(plan.ThumbnailFile),
 		ConcludedAt:   time.Now().UTC().Format(time.RFC3339),
 	}
 	plans := a.streamPlans()

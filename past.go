@@ -199,6 +199,10 @@ func (a *App) GetPastStreams(forceRefresh bool) []PastStream {
 	// the user's edit on the stream's page (see episodes.go).
 	a.applyStreamEpisodes(out)
 
+	// A concluded plan's thumbnail becomes the stream's custom thumbnail
+	// when it has none of its own (see stream_thumbs.go).
+	a.adoptPlanThumbs(out)
+
 	// Custom (generated or uploaded) thumbnails override the platform ones
 	// (see stream_thumbs.go).
 	a.applyStreamThumbs(out)

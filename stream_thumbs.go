@@ -93,6 +93,41 @@ func (a *App) SetStreamThumbnail(startedAt, file string) (StreamThumbInfo, error
 	return a.thumbInfo(rec, a.thumbPushes()[startedAt]), nil
 }
 
+// adoptPlanThumbs carries a concluded plan's thumbnail onto its finished
+// stream: a stream whose plan brought a thumbnail and that has never had a
+// custom thumbnail of its own adopts the plan's file (both live in the
+// shared plan-thumbs folder). Non-clobbering: any existing record — even a
+// cleared one, whose history keeps the record alive — wins, so a choice
+// made on the stream's page is never overwritten. From there the stream
+// page's usual generate/revise/upload options apply.
+func (a *App) adoptPlanThumbs(out []PastStream) {
+	if a.store == nil {
+		return
+	}
+	m := a.streamThumbs()
+	changed := false
+	for i := range out {
+		p := out[i].Plan
+		if p == nil {
+			continue
+		}
+		file := sanitizeThumbFile(p.ThumbnailFile)
+		if file == "" {
+			continue
+		}
+		if _, ok := m[out[i].StartedAt]; ok {
+			continue
+		}
+		m[out[i].StartedAt] = storedStreamThumb{File: file}
+		changed = true
+	}
+	if changed {
+		if err := a.store.setJSON(keyStreamThumbs, m); err != nil {
+			log.Printf("jax: adopt plan thumbnails: %v", err)
+		}
+	}
+}
+
 // applyStreamThumbs attaches custom thumbnails to the aggregated past
 // streams. A set custom file also becomes the stream's ThumbnailURL, taking
 // precedence over the platform image — the user chose it deliberately.
