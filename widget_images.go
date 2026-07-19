@@ -81,6 +81,38 @@ func (a *App) UploadWidgetFieldImage(widgetID, fieldID string) (StreamWidget, er
 	return a.setWidgetFieldFile(widgetID, fieldID, name)
 }
 
+// UploadWidgetFieldSound opens a native audio picker and copies the chosen
+// file into the widget's folder, recording it as the field's value. Returns
+// the updated widget (unchanged when the picker is cancelled).
+func (a *App) UploadWidgetFieldSound(widgetID, fieldID string) (StreamWidget, error) {
+	if a.ctx == nil {
+		return StreamWidget{}, fmt.Errorf("no window context")
+	}
+	path, err := wruntime.OpenFileDialog(a.ctx, wruntime.OpenDialogOptions{
+		Title: "Choose the field's sound",
+		Filters: []wruntime.FileFilter{
+			{DisplayName: "Audio", Pattern: "*.mp3;*.wav;*.ogg;*.m4a;*.aac;*.flac;*.webm"},
+		},
+	})
+	if err != nil {
+		return StreamWidget{}, err
+	}
+	if path == "" {
+		// Cancelled; hand back the current state so the frontend can no-op.
+		return a.mutateStreamWidget(widgetID, func(*StreamWidget) error { return nil })
+	}
+
+	dir, err := widgetFilesDir(widgetID)
+	if err != nil {
+		return StreamWidget{}, err
+	}
+	name, _, err := copyIntoDir(path, dir)
+	if err != nil {
+		return StreamWidget{}, fmt.Errorf("could not copy %s: %w", filepath.Base(path), err)
+	}
+	return a.setWidgetFieldFile(widgetID, fieldID, name)
+}
+
 // setWidgetFieldFile records name as a field's value and returns the widget.
 func (a *App) setWidgetFieldFile(widgetID, fieldID, name string) (StreamWidget, error) {
 	return a.mutateStreamWidget(widgetID, func(w *StreamWidget) error {

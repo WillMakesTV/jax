@@ -970,6 +970,10 @@ export function UploadWidgetFieldImage(arg1, arg2) {
   return window['go']['main']['App']['UploadWidgetFieldImage'](arg1, arg2);
 }
 
+export function UploadWidgetFieldSound(arg1, arg2) {
+  return window['go']['main']['App']['UploadWidgetFieldSound'](arg1, arg2);
+}
+
 export function UsedEpisodeNumbers(arg1) {
   return window['go']['main']['App']['UsedEpisodeNumbers'](arg1);
 }

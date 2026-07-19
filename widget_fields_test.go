@@ -9,8 +9,8 @@ func TestWidgetFieldTypeDefaultsSeedOnce(t *testing.T) {
 	a := newTestApp(t)
 
 	types := a.GetWidgetFieldTypes()
-	if len(types) != 3 {
-		t.Fatalf("first read should seed 3 defaults, got %+v", types)
+	if len(types) != 4 {
+		t.Fatalf("first read should seed 4 defaults, got %+v", types)
 	}
 	byID := map[string]WidgetFieldType{}
 	for _, ft := range types {
@@ -25,14 +25,47 @@ func TestWidgetFieldTypeDefaultsSeedOnce(t *testing.T) {
 	if byID["field_status"].MaxLength != widgetStatusMaxLen {
 		t.Fatalf("status default mismatch: %+v", byID["field_status"])
 	}
+	if byID["field_sound"].Kind != widgetFieldSound || byID["field_sound"].MaxLength != 0 {
+		t.Fatalf("sound default mismatch: %+v", byID["field_sound"])
+	}
 
 	// A deleted default stays deleted — the catalog only seeds when it has
 	// never been stored at all.
 	if err := a.DeleteWidgetFieldType("field_image"); err != nil {
 		t.Fatalf("delete default: %v", err)
 	}
-	if got := a.GetWidgetFieldTypes(); len(got) != 2 {
+	if got := a.GetWidgetFieldTypes(); len(got) != 3 {
 		t.Fatalf("deleted default reseeded: %+v", got)
+	}
+	// The later-added sound default is no different once offered.
+	if err := a.DeleteWidgetFieldType("field_sound"); err != nil {
+		t.Fatalf("delete sound default: %v", err)
+	}
+	if got := a.GetWidgetFieldTypes(); len(got) != 2 {
+		t.Fatalf("deleted sound default reseeded: %+v", got)
+	}
+}
+
+func TestWidgetFieldSoundToppedUpOnce(t *testing.T) {
+	a := newTestApp(t)
+
+	// A catalog stored before the sound kind existed gets the new default
+	// appended exactly once.
+	old := defaultWidgetFieldTypes()[:3]
+	if err := a.store.setJSON(keyWidgetFieldTypes, old); err != nil {
+		t.Fatalf("store old catalog: %v", err)
+	}
+	types := a.GetWidgetFieldTypes()
+	if len(types) != 4 || types[3].ID != "field_sound" {
+		t.Fatalf("sound default should be topped up: %+v", types)
+	}
+
+	// Removing it afterwards sticks — the offer is one-time.
+	if err := a.DeleteWidgetFieldType("field_sound"); err != nil {
+		t.Fatalf("delete sound: %v", err)
+	}
+	if got := a.GetWidgetFieldTypes(); len(got) != 3 {
+		t.Fatalf("sound default should stay deleted: %+v", got)
 	}
 }
 
@@ -63,8 +96,8 @@ func TestWidgetFieldTypeSaveValidation(t *testing.T) {
 		t.Fatalf("image kinds carry no cap: %+v", img)
 	}
 
-	if got := a.GetWidgetFieldTypes(); len(got) != 5 {
-		t.Fatalf("want 3 defaults + 2 new, got %+v", got)
+	if got := a.GetWidgetFieldTypes(); len(got) != 6 {
+		t.Fatalf("want 4 defaults + 2 new, got %+v", got)
 	}
 }
 

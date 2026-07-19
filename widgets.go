@@ -45,22 +45,23 @@ type StreamWidget struct {
 	CreatedAt string `json:"createdAt"` // RFC3339
 }
 
-// fillWidgetURLs stamps each image field's served URL (derived per read,
-// never persisted). Fields whose type is not an image kind carry none.
+// fillWidgetURLs stamps each file-backed field's served URL (derived per
+// read, never persisted). Fields whose type is not a file kind (image or
+// sound) carry none.
 func (a *App) fillWidgetURLs(w *StreamWidget) {
 	a.mu.Lock()
 	base := a.mediaBaseURL
 	a.mu.Unlock()
 
-	imageTypes := map[string]bool{}
+	fileTypes := map[string]bool{}
 	for _, ft := range a.getWidgetFieldTypes() {
-		if ft.Kind == widgetFieldImage {
-			imageTypes[ft.ID] = true
+		if ft.Kind == widgetFieldImage || ft.Kind == widgetFieldSound {
+			fileTypes[ft.ID] = true
 		}
 	}
 	for i := range w.Fields {
 		w.Fields[i].ValueURL = ""
-		if base == "" || w.Fields[i].Value == "" || !imageTypes[w.Fields[i].TypeID] {
+		if base == "" || w.Fields[i].Value == "" || !fileTypes[w.Fields[i].TypeID] {
 			continue
 		}
 		w.Fields[i].ValueURL = base + widgetFilesPrefix +

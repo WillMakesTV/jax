@@ -486,6 +486,8 @@ export function UploadPlanThumbnail():Promise<main.PlanThumbnail>;
 
 export function UploadWidgetFieldImage(arg1:string,arg2:string):Promise<main.StreamWidget>;
 
+export function UploadWidgetFieldSound(arg1:string,arg2:string):Promise<main.StreamWidget>;
+
 export function UsedEpisodeNumbers(arg1:string):Promise<Array<number>>;
 
 export function XRedirectURI():Promise<string>;

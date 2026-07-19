@@ -1,6 +1,7 @@
 import {
   Image,
   LayoutGrid,
+  Music,
   Plus,
   Sparkles,
   Trash2,
@@ -16,6 +17,7 @@ import {
   RemoveWidgetField,
   SaveStreamWidget,
   UploadWidgetFieldImage,
+  UploadWidgetFieldSound,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {useAiQueue} from '../ai/AiQueueProvider'
@@ -161,18 +163,22 @@ export function StreamWidgetDetails({
     }
   }
 
-  const uploadImage = async (fieldID: string) => {
+  const uploadMedia = async (fieldID: string, kind: string) => {
     setError('')
     setUploading(fieldID)
     try {
-      setW(await UploadWidgetFieldImage(w.id, fieldID))
+      setW(
+        await (kind === 'sound'
+          ? UploadWidgetFieldSound(w.id, fieldID)
+          : UploadWidgetFieldImage(w.id, fieldID)),
+      )
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
           : typeof err === 'string' && err
             ? err
-            : 'The image could not be uploaded.',
+            : 'The file could not be uploaded.',
       )
     } finally {
       setUploading('')
@@ -311,6 +317,8 @@ export function StreamWidgetDetails({
                     >
                       {kind === 'image' ? (
                         <Image size={14} />
+                      ) : kind === 'sound' ? (
+                        <Music size={14} />
                       ) : (
                         <Type size={14} />
                       )}
@@ -346,7 +354,7 @@ export function StreamWidgetDetails({
                       <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => void uploadImage(f.id)}
+                          onClick={() => void uploadMedia(f.id, kind)}
                           disabled={uploading === f.id}
                           className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
                         >
@@ -387,6 +395,36 @@ export function StreamWidgetDetails({
                         Generation follows this widget's own skill — tune its
                         creative brief under Settings → Skills.
                       </p>
+                    </div>
+                  ) : kind === 'sound' ? (
+                    <div className="flex flex-col gap-2">
+                      {f.valueUrl && (
+                        // The field's key remounts the player when the file
+                        // changes, so a re-upload is picked up immediately.
+                        <audio
+                          key={f.valueUrl}
+                          controls
+                          src={f.valueUrl}
+                          className="w-full max-w-md"
+                        />
+                      )}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void uploadMedia(f.id, kind)}
+                          disabled={uploading === f.id}
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+                        >
+                          <Upload size={14} aria-hidden />
+                          {uploading === f.id ? 'Uploading…' : 'Upload sound'}
+                        </button>
+                        {!f.valueUrl && (
+                          <span className="text-xs text-fg-muted">
+                            MP3, WAV, OGG and friends — played on stream when
+                            the widget calls for it.
+                          </span>
+                        )}
+                      </div>
                     </div>
                   ) : kind === 'message' ? (
                     <textarea

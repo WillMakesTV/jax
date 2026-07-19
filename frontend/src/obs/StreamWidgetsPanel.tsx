@@ -214,6 +214,11 @@ const FIELD_KINDS: {id: string; label: string; hint: string}[] = [
     label: 'Status',
     hint: 'Short plain text, capped at 110 characters by default',
   },
+  {
+    id: 'sound',
+    label: 'Sound',
+    hint: 'Uploaded audio (MP3, WAV, OGG, …) played when called upon',
+  },
 ]
 
 const kindLabel = (kind: string) =>

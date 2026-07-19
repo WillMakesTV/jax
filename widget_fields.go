@@ -11,9 +11,10 @@ import (
 // Widget field types
 //
 // The catalog of field kinds a stream widget can carry, managed from the
-// Stream Widgets tab's "Manage Field Types" dialog. Three defaults seed the
-// catalog on first read (an image/animation, a markdown message, and a short
-// status line); the producer can add, rename, or remove types after that.
+// Stream Widgets tab's "Manage Field Types" dialog. Four defaults seed the
+// catalog on first read (an image/animation, a markdown message, a short
+// status line, and a sound); the producer can add, rename, or remove types
+// after that.
 //
 // Every field type also publishes a dynamic Application Skill — the brief
 // behind generating that field's content — listed alongside the fixed skill
@@ -29,6 +30,9 @@ const (
 	widgetFieldMessage = "message"
 	// widgetFieldStatus is a short plain-text line.
 	widgetFieldStatus = "status"
+	// widgetFieldSound is an uploaded audio file (mp3/wav/ogg/…) the widget
+	// plays when called upon.
+	widgetFieldSound = "sound"
 )
 
 // Default caps for the text kinds.
@@ -41,7 +45,7 @@ const (
 type WidgetFieldType struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
-	// Kind is the input variety: "image", "message", or "status".
+	// Kind is the input variety: "image", "message", "status", or "sound".
 	Kind string `json:"kind"`
 	// MaxLength caps the text kinds' content; 0 for image kinds.
 	MaxLength int    `json:"maxLength"`
@@ -56,7 +60,41 @@ func defaultWidgetFieldTypes() []WidgetFieldType {
 		{ID: "field_image", Name: "Image/Animation", Kind: widgetFieldImage, CreatedAt: now},
 		{ID: "field_message", Name: "Message", Kind: widgetFieldMessage, MaxLength: widgetMessageMaxLen, CreatedAt: now},
 		{ID: "field_status", Name: "Status", Kind: widgetFieldStatus, MaxLength: widgetStatusMaxLen, CreatedAt: now},
+		{ID: "field_sound", Name: "Sound", Kind: widgetFieldSound, CreatedAt: now},
 	}
+}
+
+// keyWidgetSoundSeeded marks that the sound default has been offered to a
+// catalog stored before the kind existed — once, so a producer who removes
+// it is not fighting a reseed.
+const keyWidgetSoundSeeded = "widget_field_sound_seeded"
+
+// topUpWidgetFieldTypes appends later-added defaults to a catalog stored
+// before they existed. Each new default is offered exactly once.
+func (a *App) topUpWidgetFieldTypes(types []WidgetFieldType) []WidgetFieldType {
+	if done, _ := a.store.getSetting(keyWidgetSoundSeeded); done != "" {
+		return types
+	}
+	present := false
+	for _, ft := range types {
+		if ft.ID == "field_sound" {
+			present = true
+			break
+		}
+	}
+	if !present {
+		now := time.Now().UTC().Format(time.RFC3339)
+		types = append(types, WidgetFieldType{
+			ID: "field_sound", Name: "Sound", Kind: widgetFieldSound, CreatedAt: now,
+		})
+		if err := a.store.setJSON(keyWidgetFieldTypes, types); err != nil {
+			log.Printf("jax: top up widget field types: %v", err)
+		}
+	}
+	if err := a.store.setSetting(keyWidgetSoundSeeded, "1"); err != nil {
+		log.Printf("jax: mark sound default seeded: %v", err)
+	}
+	return types
 }
 
 // getWidgetFieldTypes reads the stored catalog, seeding the defaults the
@@ -77,12 +115,15 @@ func (a *App) getWidgetFieldTypes() []WidgetFieldType {
 		if err := a.store.setJSON(keyWidgetFieldTypes, types); err != nil {
 			log.Printf("jax: seed widget field types: %v", err)
 		}
+		if err := a.store.setSetting(keyWidgetSoundSeeded, "1"); err != nil {
+			log.Printf("jax: mark sound default seeded: %v", err)
+		}
 		return types
 	}
 	if types == nil {
-		return []WidgetFieldType{}
+		types = []WidgetFieldType{}
 	}
-	return types
+	return a.topUpWidgetFieldTypes(types)
 }
 
 // GetWidgetFieldTypes returns the field types available to stream widgets,
@@ -95,7 +136,7 @@ func (a *App) GetWidgetFieldTypes() []WidgetFieldType {
 // defaults.
 func normalizeWidgetFieldType(ft WidgetFieldType) (WidgetFieldType, error) {
 	switch ft.Kind {
-	case widgetFieldImage:
+	case widgetFieldImage, widgetFieldSound:
 		ft.MaxLength = 0
 	case widgetFieldMessage:
 		if ft.MaxLength <= 0 {
@@ -234,6 +275,17 @@ A short plain-text status line shown on stream as part of a widget — at most %
 - Present tense and concrete ("Building the parser", not "Working on stuff").
 - Stay within the character cap.
 `, ft.MaxLength)
+	case widgetFieldSound:
+		b.WriteString(`## What this field holds
+
+An uploaded audio file (MP3, WAV, OGG, …) the widget plays when called upon — an alert, a sting, a jingle.
+
+## Guidelines
+
+- Keep alerts short: a sound that outstays its moment talks over the stream.
+- Normalize loudness against stream audio — an alert should cut through without clipping or startling.
+- Pick sounds that stay pleasant on the fiftieth play of the night.
+`)
 	}
 	return b.String()
 }
@@ -245,6 +297,8 @@ func widgetFieldSkillDescription(ft WidgetFieldType) string {
 		return fmt.Sprintf("The brief behind generating the %q widget field's image/animation.", ft.Name)
 	case widgetFieldMessage:
 		return fmt.Sprintf("The writing guide behind the %q widget field (markdown, max %d characters).", ft.Name, ft.MaxLength)
+	case widgetFieldSound:
+		return fmt.Sprintf("The brief behind the %q widget field's alert sound.", ft.Name)
 	default:
 		return fmt.Sprintf("The writing guide behind the %q widget field (text, max %d characters).", ft.Name, ft.MaxLength)
 	}
