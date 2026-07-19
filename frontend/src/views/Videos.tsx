@@ -675,8 +675,10 @@ export function Videos({onOpenVideo, onOpenVideoPlan, onPlanVideo}: VideosProps)
  * under.
  *
  * The source streams are the point. A plan called "Boss fight highlights" tells
- * you nothing about which broadcasts it cuts together; "S2 · EP04" with the
- * stream's own screenshot tells you exactly.
+ * you nothing about which broadcasts it cuts together, so their screenshots
+ * form the card's own backdrop — every referenced thumbnail visible at once,
+ * faded under the card surface — which frees the foreground for the plan's
+ * metadata: sources, clips, age, tags.
  */
 function PlannedVideoCard({
   plan,
@@ -688,17 +690,39 @@ function PlannedVideoCard({
   onOpen: () => void
 }) {
   const short = plan.format === 'short'
-  // Three is enough to recognize the plan; more turns the card into a list.
+  const backdrop = sources.filter((s) => s.thumbnailUrl).slice(0, 4)
+  // Three badges are enough to recognize the plan; more turns it into a list.
   const shown = sources.slice(0, 3)
   const hidden = sources.length - shown.length
+  const clipCount = (plan.files ?? []).length
 
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="flex h-full w-full flex-col rounded-xl border border-edge bg-surface p-4 text-left transition-colors hover:bg-surface-hover"
+      className="relative flex h-full w-full flex-col overflow-hidden rounded-xl border border-edge bg-surface p-4 text-left transition-colors hover:border-accent/50"
     >
-      <div className="flex items-start justify-between gap-3">
+      {/* The referenced footage as the card's backdrop: every source
+          screenshot side by side, dimmed under a surface gradient that keeps
+          the foreground readable while letting the thumbnails show. */}
+      {backdrop.length > 0 && (
+        <span aria-hidden className="absolute inset-0">
+          <span className="absolute inset-0 flex">
+            {backdrop.map((s) => (
+              <img
+                key={s.startedAt}
+                src={s.thumbnailUrl}
+                alt=""
+                className="h-full w-full min-w-0 flex-1 object-cover"
+              />
+            ))}
+          </span>
+          <span className="absolute inset-0 bg-gradient-to-r from-surface via-surface/95 to-surface/70" />
+          <span className="absolute inset-0 bg-gradient-to-t from-surface via-surface/60 to-surface/30" />
+        </span>
+      )}
+
+      <div className="relative flex items-start justify-between gap-3">
         <p className="min-w-0 flex-1 text-sm font-semibold text-fg">
           {plan.title}
         </p>
@@ -708,7 +732,7 @@ function PlannedVideoCard({
         </span>
       </div>
 
-      <div className="mt-3 flex gap-3">
+      <div className="relative mt-3 flex gap-3">
         {/* The thumbnail this video will publish under, once it has one. Shaped
             to the format — a short's cover is vertical, and cropping it into a
             16:9 box would misrepresent what goes out. */}
@@ -731,9 +755,10 @@ function PlannedVideoCard({
             </p>
           )}
 
-          {/* The footage it's cut from. */}
+          {/* The footage it's cut from, as compact badges — the screenshots
+              themselves are the card's backdrop. */}
           {shown.length > 0 ? (
-            <ul className="flex flex-col gap-1.5">
+            <ul className="flex flex-wrap items-center gap-1.5">
               {shown.map((s) => {
                 const badge = [s.season, s.episodeNumber > 0 ? `EP${s.episodeNumber}` : '']
                   .filter(Boolean)
@@ -741,39 +766,28 @@ function PlannedVideoCard({
                 return (
                   <li
                     key={s.startedAt}
-                    className="flex items-center gap-2"
+                    className="inline-flex max-w-48 items-center gap-1.5 rounded-full border border-edge bg-bg/80 px-2 py-0.5"
                     title={`${badge ? badge + ' — ' : ''}${s.title}`}
                   >
-                    {s.thumbnailUrl ? (
-                      <img
-                        src={s.thumbnailUrl}
-                        alt=""
-                        aria-hidden
-                        className="h-7 w-[50px] shrink-0 rounded border border-edge object-cover"
-                      />
-                    ) : (
-                      <span
-                        aria-hidden
-                        className="flex h-7 w-[50px] shrink-0 items-center justify-center rounded border border-edge bg-bg text-fg-muted"
-                      >
-                        <Radio size={11} />
+                    {badge ? (
+                      <span className="shrink-0 text-[10px] font-semibold text-accent">
+                        {badge}
                       </span>
+                    ) : (
+                      <Radio
+                        size={10}
+                        aria-hidden
+                        className="shrink-0 text-fg-muted"
+                      />
                     )}
-                    <span className="min-w-0 flex-1">
-                      {badge && (
-                        <span className="mr-1.5 rounded bg-accent/15 px-1.5 py-px text-[10px] font-semibold text-accent">
-                          {badge}
-                        </span>
-                      )}
-                      <span className="text-xs text-fg-muted">{s.title}</span>
+                    <span className="min-w-0 truncate text-xs text-fg-muted">
+                      {s.title}
                     </span>
                   </li>
                 )
               })}
               {hidden > 0 && (
-                <li className="text-xs text-fg-muted">
-                  + {hidden} more source{hidden === 1 ? '' : 's'}
-                </li>
+                <li className="text-xs text-fg-muted">+{hidden} more</li>
               )}
             </ul>
           ) : (
@@ -782,15 +796,25 @@ function PlannedVideoCard({
               No source streams picked yet
             </p>
           )}
+
+          {/* What the plan amounts to so far, at a glance. */}
+          <p className="text-xs text-fg-muted">
+            {sources.length > 0 &&
+              `${sources.length} source${sources.length === 1 ? '' : 's'}`}
+            {sources.length > 0 && clipCount > 0 && ' · '}
+            {clipCount > 0 && `${clipCount} clip${clipCount === 1 ? '' : 's'}`}
+            {(sources.length > 0 || clipCount > 0) && plan.createdAt && ' · '}
+            {plan.createdAt && `planned ${formatAgo(plan.createdAt)}`}
+          </p>
         </div>
       </div>
 
       {(plan.tags ?? []).length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
+        <div className="relative mt-3 flex flex-wrap gap-1.5">
           {(plan.tags ?? []).map((t) => (
             <span
               key={t}
-              className="rounded-full border border-edge bg-bg px-2 py-0.5 text-xs font-medium text-fg-muted"
+              className="rounded-full border border-edge bg-bg/80 px-2 py-0.5 text-xs font-medium text-fg-muted"
             >
               {t}
             </span>
