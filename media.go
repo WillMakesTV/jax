@@ -81,6 +81,13 @@ func (h mediaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	// Widget Browser Source pages render content rather than serving files;
+	// they get their own handler (see widget_source.go).
+	if strings.HasPrefix(r.URL.Path, widgetSourcePrefix) {
+		h.app.serveWidgetSource(w, r)
+		return
+	}
+
 	var base, rel string
 	switch {
 	case strings.HasPrefix(r.URL.Path, mediaPrefix):

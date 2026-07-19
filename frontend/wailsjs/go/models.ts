@@ -1661,7 +1661,10 @@ export class StreamWidget {
     name: string;
     fields: WidgetField[];
     template: string;
+    css: string;
+    js: string;
     createdAt: string;
+    sourceUrl: string;
 
     static createFrom(source: any = {}) {
         return new StreamWidget(source);
@@ -1673,7 +1676,10 @@ export class StreamWidget {
         this.name = source["name"];
         this.fields = this.convertValues(source["fields"], WidgetField);
         this.template = source["template"];
+        this.css = source["css"];
+        this.js = source["js"];
         this.createdAt = source["createdAt"];
+        this.sourceUrl = source["sourceUrl"];
     }
 
 	convertValues(a: any, classs: any, asMap: boolean = false): any {

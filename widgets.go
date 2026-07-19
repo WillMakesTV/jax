@@ -37,12 +37,20 @@ type StreamWidget struct {
 	ID     string        `json:"id"`
 	Name   string        `json:"name"`
 	Fields []WidgetField `json:"fields"`
-	// Template is the widget's JSX display template ("" = no custom
-	// display). It receives `widget` (the widget itself) and `fields` (a
+	// Template is the widget's JSX display template ("" = the default
+	// rendering). It receives `widget` (the widget itself) and `fields` (a
 	// label → value map of the widget's fields); authored on the widget's
 	// details page, stored verbatim.
-	Template  string `json:"template"`
+	Template string `json:"template"`
+	// CSS styles the Browser Source page (a plain stylesheet, injected as
+	// written); JS is custom logic/animation run on that page after each
+	// render. Both authored alongside the template.
+	CSS       string `json:"css"`
+	JS        string `json:"js"`
 	CreatedAt string `json:"createdAt"` // RFC3339
+	// SourceURL is the widget's local OBS Browser Source address, derived
+	// on read and never persisted.
+	SourceURL string `json:"sourceUrl"`
 }
 
 // fillWidgetURLs stamps each file-backed field's served URL (derived per
@@ -53,6 +61,10 @@ func (a *App) fillWidgetURLs(w *StreamWidget) {
 	base := a.mediaBaseURL
 	a.mu.Unlock()
 
+	w.SourceURL = ""
+	if base != "" {
+		w.SourceURL = base + widgetSourcePrefix + url.PathEscape(w.ID)
+	}
 	fileTypes := map[string]bool{}
 	for _, ft := range a.getWidgetFieldTypes() {
 		if ft.Kind == widgetFieldImage || ft.Kind == widgetFieldSound {
@@ -139,6 +151,8 @@ func (a *App) SaveStreamWidget(w StreamWidget) (StreamWidget, error) {
 	if w.Name == "" {
 		return w, fmt.Errorf("a widget name is required")
 	}
+	// Derived on read, never stored; a round-tripped value is dropped.
+	w.SourceURL = ""
 	fields, err := a.validateWidgetFields(w.Fields)
 	if err != nil {
 		return w, err

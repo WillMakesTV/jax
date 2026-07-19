@@ -242,21 +242,32 @@ func (a *App) widgetBySkillID(id string) (StreamWidget, bool) {
 }
 
 // widgetSkillContent is a widget's default skill content: the creative brief
-// behind generating this widget's imagery.
+// behind generating this widget's imagery and its display template.
 func widgetSkillContent(w StreamWidget) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "This is the creative brief for the %q stream widget. ", w.Name)
-	b.WriteString("When an image is generated for one of this widget's fields, this document is sent to the image model together with the widget's context — edit it to change the style every generation follows.\n\n")
-	b.WriteString(`## What a widget image is
+	b.WriteString("When an image or a display template is generated for this widget, this document is sent to the model together with the widget's context — edit it to change the style every generation follows.\n\n")
+	b.WriteString(`## Widget images
 
-An image shown on stream as part of this widget — an overlay element, not a thumbnail or a full scene.
-
-## Guidelines
+An image generated for one of this widget's fields is an overlay element shown on stream — not a thumbnail, not a full scene.
 
 - Design for on-stream legibility at overlay size: bold shapes, high contrast, no fine detail that vanishes small.
 - Match the brand's identity — its assets and palette ride along when available, and they win over generic style choices.
 - Keep the composition self-contained and free of surrounding chrome; the widget frames it.
 - No platform logos, no watermark text, no fine print.
+
+## Display template
+
+The widget's display is a JSX template plus CSS and optional JS, rendered on a Browser Source page this application serves locally — the producer adds its URL to OBS as a Browser Source layered over the scene.
+
+The template's contract:
+
+- One JSX expression with a single root element ("className", not "class").
+- It receives "widget" (with "widget.name") and "fields", a map from each field's label to its value — text kinds give the text, image and sound kinds give a local URL. Render images with <img src={fields['Label']} />.
+- "playSound('Label')" plays a sound field's audio — call it from event handlers or the custom JS, never unconditionally on render (the page re-renders whenever data changes).
+- The custom JS runs after each render as function(widget, fields, playSound, root) — the place for animations and timed behaviour.
+- The page background is transparent; OBS composites it over the scene. Style everything explicitly (fonts, colors, sizes) — there is no surrounding app chrome to inherit from.
+- Design for stream legibility: large type, strong contrast, and animation that draws the eye without looping distractingly forever.
 `)
 	if len(w.Fields) > 0 {
 		b.WriteString("\n## This widget's fields\n\n")
@@ -269,5 +280,5 @@ An image shown on stream as part of this widget — an overlay element, not a th
 
 // widgetSkillDescription is the catalog line for a widget's skill.
 func widgetSkillDescription(w StreamWidget) string {
-	return fmt.Sprintf("The creative brief behind generating imagery for the %q stream widget.", w.Name)
+	return fmt.Sprintf("The creative brief behind the %q stream widget's imagery and display template.", w.Name)
 }

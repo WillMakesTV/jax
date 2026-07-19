@@ -146,6 +146,8 @@ export function GenerateVideoPublishFields(arg1:string,arg2:main.VideoPublishDra
 
 export function GenerateWidgetFieldImage(arg1:string,arg2:string,arg3:string):Promise<main.StreamWidget>;
 
+export function GenerateWidgetTemplate(arg1:string,arg2:string):Promise<main.StreamWidget>;
+
 export function GetAppAbout():Promise<string>;
 
 export function GetActiveStreamSession():Promise<main.ActiveStreamSession>;

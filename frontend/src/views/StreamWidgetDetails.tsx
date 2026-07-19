@@ -1,6 +1,9 @@
 import {
+  Check,
+  Copy,
   Image,
   LayoutGrid,
+  MonitorPlay,
   Music,
   Plus,
   Sparkles,
@@ -12,6 +15,7 @@ import {useCallback, useEffect, useState} from 'react'
 import {
   AddWidgetField,
   GenerateWidgetFieldImage,
+  GenerateWidgetTemplate,
   GetStreamWidgets,
   GetWidgetFieldTypes,
   RemoveWidgetField,
@@ -22,6 +26,7 @@ import {
 import {main} from '../../wailsjs/go/models'
 import {useAiQueue} from '../ai/AiQueueProvider'
 import {JsxTemplateField} from '../components/JsxTemplateField'
+import {Modal} from '../components/Modal'
 import {useDataChanged} from '../lib/dataChanged'
 import {formatDate} from '../lib/format'
 
@@ -60,6 +65,14 @@ export function StreamWidgetDetails({
   const [w, setW] = useState(widget)
   const [name, setName] = useState(widget.name)
   const [template, setTemplate] = useState(widget.template ?? '')
+  const [css, setCss] = useState(widget.css ?? '')
+  const [js, setJs] = useState(widget.js ?? '')
+  const [displayTab, setDisplayTab] = useState<'template' | 'css' | 'js'>(
+    'template',
+  )
+  const [genOpen, setGenOpen] = useState(false)
+  const [genDesc, setGenDesc] = useState('')
+  const [copied, setCopied] = useState(false)
   // Field values being edited, keyed by field id; unsaved edits live here.
   const [values, setValues] = useState<Record<string, string>>({})
   // Revision notes for image generation, keyed by field id.
@@ -95,6 +108,8 @@ export function StreamWidgetDetails({
     setSynced(w)
     setName(w.name)
     setTemplate(w.template ?? '')
+    setCss(w.css ?? '')
+    setJs(w.js ?? '')
     setValues({})
   }
 
@@ -105,6 +120,8 @@ export function StreamWidgetDetails({
   const dirty =
     name.trim() !== w.name ||
     template !== (w.template ?? '') ||
+    css !== (w.css ?? '') ||
+    js !== (w.js ?? '') ||
     fields.some((f) => valueOf(f) !== f.value)
 
   const save = async () => {
@@ -120,6 +137,8 @@ export function StreamWidgetDetails({
           ...w,
           name: name.trim(),
           template,
+          css,
+          js,
           fields: fields.map((f) => ({...f, value: valueOf(f)})),
         }),
       )
@@ -221,6 +240,52 @@ export function StreamWidgetDetails({
         j.targetId === w.id &&
         j.dedupe === fieldID,
     )
+
+  // Template generation also rides the AI queue; the backend stores the
+  // result, so the modal can close as soon as the job is queued.
+  const generateTemplate = async () => {
+    const desc = genDesc.trim()
+    if (!desc) return
+    setError('')
+    setGenOpen(false)
+    setGenDesc('')
+    try {
+      const saved = await queue.enqueue({
+        kind: 'widget-template',
+        targetId: w.id,
+        title: w.name,
+        label: `Generating display — ${w.name || 'widget'}`,
+        doneDetail: `Widget display ready — ${w.name || 'widget'}`,
+        failDetail: 'Widget display failed',
+        busyError: 'a display is already being generated for this widget',
+        work: () => GenerateWidgetTemplate(w.id, desc),
+      })
+      setW(saved)
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string' && err
+            ? err
+            : 'The display could not be generated.',
+      )
+    }
+  }
+
+  const templateBusy = queue.jobs.some(
+    (j) => j.kind === 'widget-template' && j.targetId === w.id,
+  )
+
+  const copySourceUrl = async () => {
+    if (!w.sourceUrl) return
+    try {
+      await navigator.clipboard.writeText(w.sourceUrl)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard unavailable; the URL is still visible to copy by hand.
+    }
+  }
 
   return (
     <div className="flex max-w-2xl flex-col gap-5">
@@ -455,42 +520,143 @@ export function StreamWidgetDetails({
         )}
       </div>
 
-      {/* The JSX display template: complete control over how the widget
-          renders, with every field's value in reach. */}
+      {/* The widget's display: JSX template, stylesheet, and custom logic,
+          hand-written or generated from a layout description. */}
       <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-semibold text-fg">Display template</h2>
-        <p className="text-xs text-fg-muted">
-          JSX that fully controls the widget's display.{' '}
-          <code className="rounded bg-surface px-1">widget</code> is the widget
-          itself and <code className="rounded bg-surface px-1">fields</code>{' '}
-          maps each field's label to its value.
-        </p>
-        <JsxTemplateField
-          id="widget-template"
-          value={template}
-          onChange={setTemplate}
-          placeholder={templateStarter(w, fields)}
-        />
-        <div className="rounded-lg border border-edge bg-surface px-3 py-2">
-          <p className="text-xs font-medium text-fg">Available values</p>
-          <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-            <li className="font-mono text-xs text-fg-muted">
-              {'{widget.name}'}
-            </li>
-            {fields.map((f) => (
-              <li key={f.id} className="font-mono text-xs text-fg-muted">
-                {`{fields['${f.label}']}`}
-              </li>
-            ))}
-          </ul>
-          {fields.length === 0 && (
-            <p className="mt-1 text-xs text-fg-muted">
-              Add fields above and each one appears here as{' '}
-              <code className="rounded bg-bg px-1">{"{fields['Label']}"}</code>.
-            </p>
-          )}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-fg">Display</h2>
+          <button
+            type="button"
+            onClick={() => setGenOpen(true)}
+            disabled={templateBusy}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            <Sparkles size={14} aria-hidden />
+            {templateBusy ? 'Generating…' : 'Generate with AI'}
+          </button>
         </div>
+        <p className="text-xs text-fg-muted">
+          JSX that fully controls the widget's display, with a stylesheet and
+          custom JS for animation.{' '}
+          <code className="rounded bg-surface px-1">widget</code> is the widget
+          itself, <code className="rounded bg-surface px-1">fields</code> maps
+          each field's label to its value (file fields give a URL), and{' '}
+          <code className="rounded bg-surface px-1">playSound('Label')</code>{' '}
+          plays a sound field.
+        </p>
+        <div className="flex items-center gap-1">
+          {(['template', 'css', 'js'] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setDisplayTab(tab)}
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                displayTab === tab
+                  ? 'bg-accent/15 text-accent'
+                  : 'text-fg-muted hover:bg-surface-hover hover:text-fg'
+              }`}
+            >
+              {tab === 'template'
+                ? 'Template'
+                : tab === 'css'
+                  ? 'CSS'
+                  : 'JS / Logic'}
+            </button>
+          ))}
+        </div>
+        {displayTab === 'template' ? (
+          <>
+            <JsxTemplateField
+              id="widget-template"
+              value={template}
+              onChange={setTemplate}
+              placeholder={templateStarter(w, fields)}
+            />
+            <div className="rounded-lg border border-edge bg-surface px-3 py-2">
+              <p className="text-xs font-medium text-fg">Available values</p>
+              <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                <li className="font-mono text-xs text-fg-muted">
+                  {'{widget.name}'}
+                </li>
+                {fields.map((f) => (
+                  <li key={f.id} className="font-mono text-xs text-fg-muted">
+                    {`{fields['${f.label}']}`}
+                  </li>
+                ))}
+              </ul>
+              {fields.length === 0 && (
+                <p className="mt-1 text-xs text-fg-muted">
+                  Add fields above and each one appears here as{' '}
+                  <code className="rounded bg-bg px-1">
+                    {"{fields['Label']}"}
+                  </code>
+                  .
+                </p>
+              )}
+            </div>
+          </>
+        ) : displayTab === 'css' ? (
+          <textarea
+            value={css}
+            onChange={(e) => setCss(e.target.value)}
+            rows={10}
+            spellCheck={false}
+            placeholder={'.widget {\n  font-size: 32px;\n  color: #fff;\n}'}
+            aria-label="Widget stylesheet"
+            className="w-full resize-y rounded-lg border border-edge bg-bg px-4 py-3 font-mono text-xs leading-relaxed text-fg outline-none focus:border-accent"
+          />
+        ) : (
+          <textarea
+            value={js}
+            onChange={(e) => setJs(e.target.value)}
+            rows={10}
+            spellCheck={false}
+            placeholder={
+              '// Runs after each render as (widget, fields, playSound, root).\n// The place for animations and timed behaviour.'
+            }
+            aria-label="Widget custom logic"
+            className="w-full resize-y rounded-lg border border-edge bg-bg px-4 py-3 font-mono text-xs leading-relaxed text-fg outline-none focus:border-accent"
+          />
+        )}
       </div>
+
+      {/* Where the widget shows up in OBS: its locally served page. */}
+      {w.sourceUrl && (
+        <div className="flex flex-col gap-2 rounded-xl border border-edge bg-surface p-3">
+          <div className="flex items-center gap-2">
+            <MonitorPlay
+              size={16}
+              aria-hidden
+              className="shrink-0 text-accent"
+            />
+            <h2 className="text-sm font-semibold text-fg">
+              OBS Browser Source
+            </h2>
+          </div>
+          <p className="text-xs text-fg-muted">
+            Add a Browser Source in OBS pointed at this address — the page is
+            served locally by Jax, renders this widget over a transparent
+            background, and follows saved changes live.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded-lg border border-edge bg-bg px-3 py-2 font-mono text-xs text-fg">
+              {w.sourceUrl}
+            </code>
+            <button
+              type="button"
+              onClick={() => void copySourceUrl()}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+            >
+              {copied ? (
+                <Check size={14} aria-hidden />
+              ) : (
+                <Copy size={14} aria-hidden />
+              )}
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && (
         <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
@@ -515,6 +681,50 @@ export function StreamWidgetDetails({
           Back to widgets
         </button>
       </div>
+
+      <Modal
+        open={genOpen}
+        onClose={() => setGenOpen(false)}
+        title="Generate the widget's display"
+        icon={<Sparkles size={18} aria-hidden />}
+        maxWidthClass="max-w-lg"
+      >
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-fg-muted">
+            Describe the layout you want and the AI writes the JSX template,
+            stylesheet, and any custom logic — guided by this widget's skill and
+            aware of its fields. The current display, if any, is revised rather
+            than discarded.
+          </p>
+          <textarea
+            value={genDesc}
+            onChange={(e) => setGenDesc(e.target.value)}
+            rows={5}
+            autoFocus
+            placeholder="e.g. A compact lower-third bar: the image on the left, the status line big and bold beside it, sliding in from the left when shown…"
+            aria-label="Layout description"
+            className={`${field} resize-y`}
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setGenOpen(false)}
+              className="rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void generateTemplate()}
+              disabled={!genDesc.trim()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              <Sparkles size={14} aria-hidden />
+              Generate
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
