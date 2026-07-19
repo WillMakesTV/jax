@@ -31,10 +31,15 @@ type WidgetField struct {
 
 // StreamWidget is one stream widget.
 type StreamWidget struct {
-	ID        string        `json:"id"`
-	Name      string        `json:"name"`
-	Fields    []WidgetField `json:"fields"`
-	CreatedAt string        `json:"createdAt"` // RFC3339
+	ID     string        `json:"id"`
+	Name   string        `json:"name"`
+	Fields []WidgetField `json:"fields"`
+	// Template is the widget's JSX display template ("" = no custom
+	// display). It receives `widget` (the widget itself) and `fields` (a
+	// label → value map of the widget's fields); authored on the widget's
+	// details page, stored verbatim.
+	Template  string `json:"template"`
+	CreatedAt string `json:"createdAt"` // RFC3339
 }
 
 // getStreamWidgets reads the raw stored widget list. Never nil.

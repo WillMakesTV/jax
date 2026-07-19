@@ -8,12 +8,28 @@ import {
   SaveStreamWidget,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
+import {JsxTemplateField} from '../components/JsxTemplateField'
 import {useDataChanged} from '../lib/dataChanged'
 import {formatDate} from '../lib/format'
 
 const field =
   'w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent'
 const labelCls = 'mb-1.5 block text-sm font-medium text-fg'
+
+/** A starter template built from the widget's actual fields, shown as the
+ *  editor's placeholder so the syntax is one copy away. */
+const templateStarter = (
+  w: main.StreamWidget,
+  fields: main.WidgetField[],
+): string => {
+  const lines = fields.map((f) => `  <p>{fields['${f.label}']}</p>`)
+  return [
+    '<div className="widget">',
+    '  <h2>{widget.name}</h2>',
+    ...lines,
+    '</div>',
+  ].join('\n')
+}
 
 /**
  * A stream widget's own page, opened from the OBS section's Stream Widgets
@@ -30,6 +46,7 @@ export function StreamWidgetDetails({
 }) {
   const [w, setW] = useState(widget)
   const [name, setName] = useState(widget.name)
+  const [template, setTemplate] = useState(widget.template ?? '')
   // Field values being edited, keyed by field id; unsaved edits live here.
   const [values, setValues] = useState<Record<string, string>>({})
   const [types, setTypes] = useState<main.WidgetFieldType[]>([])
@@ -59,6 +76,7 @@ export function StreamWidgetDetails({
   if (w !== synced) {
     setSynced(w)
     setName(w.name)
+    setTemplate(w.template ?? '')
     setValues({})
   }
 
@@ -67,7 +85,9 @@ export function StreamWidgetDetails({
   const valueOf = (f: main.WidgetField) => values[f.id] ?? f.value
 
   const dirty =
-    name.trim() !== w.name || fields.some((f) => valueOf(f) !== f.value)
+    name.trim() !== w.name ||
+    template !== (w.template ?? '') ||
+    fields.some((f) => valueOf(f) !== f.value)
 
   const save = async () => {
     if (!name.trim()) {
@@ -81,6 +101,7 @@ export function StreamWidgetDetails({
         main.StreamWidget.createFrom({
           ...w,
           name: name.trim(),
+          template,
           fields: fields.map((f) => ({...f, value: valueOf(f)})),
         }),
       )
@@ -267,6 +288,43 @@ export function StreamWidgetDetails({
             })}
           </ul>
         )}
+      </div>
+
+      {/* The JSX display template: complete control over how the widget
+          renders, with every field's value in reach. */}
+      <div className="flex flex-col gap-2">
+        <h2 className="text-sm font-semibold text-fg">Display template</h2>
+        <p className="text-xs text-fg-muted">
+          JSX that fully controls the widget's display.{' '}
+          <code className="rounded bg-surface px-1">widget</code> is the widget
+          itself and <code className="rounded bg-surface px-1">fields</code>{' '}
+          maps each field's label to its value.
+        </p>
+        <JsxTemplateField
+          id="widget-template"
+          value={template}
+          onChange={setTemplate}
+          placeholder={templateStarter(w, fields)}
+        />
+        <div className="rounded-lg border border-edge bg-surface px-3 py-2">
+          <p className="text-xs font-medium text-fg">Available values</p>
+          <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+            <li className="font-mono text-xs text-fg-muted">
+              {'{widget.name}'}
+            </li>
+            {fields.map((f) => (
+              <li key={f.id} className="font-mono text-xs text-fg-muted">
+                {`{fields['${f.label}']}`}
+              </li>
+            ))}
+          </ul>
+          {fields.length === 0 && (
+            <p className="mt-1 text-xs text-fg-muted">
+              Add fields above and each one appears here as{' '}
+              <code className="rounded bg-bg px-1">{"{fields['Label']}"}</code>.
+            </p>
+          )}
+        </div>
       </div>
 
       {error && (
