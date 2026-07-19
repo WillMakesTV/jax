@@ -35,7 +35,7 @@ import {CampaignDetails} from './views/CampaignDetails'
 import {SponsorDetails} from './views/SponsorDetails'
 import {Sponsors} from './views/Sponsors'
 import {StreamDetails, type StreamTab} from './views/StreamDetails'
-import {StreamWidgetDetails} from './views/StreamWidgetDetails'
+import {StreamWidgetDetails, type WidgetTab} from './views/StreamWidgetDetails'
 import {Videos} from './views/Videos'
 import {VideoDetails} from './views/VideoDetails'
 import {VideoPlanDetails, type VideoPlanTab} from './views/VideoPlanDetails'
@@ -72,6 +72,8 @@ interface NavState {
   routine: main.Routine | null
   /** The stream widget being configured; null = none. */
   widget: main.StreamWidget | null
+  /** Tab to land on when opening widget-details; null = default. */
+  widgetTab: WidgetTab | null
   /** The stream plan being viewed/edited; null = creating a new one. */
   plan: main.PlannedStream | null
   /** The video plan being viewed/edited; null = creating a new one. */
@@ -102,6 +104,7 @@ const INITIAL_NAV: NavState = {
   series: null,
   routine: null,
   widget: null,
+  widgetTab: null,
   plan: null,
   videoPlan: null,
   videoPlanTab: null,
@@ -124,6 +127,7 @@ const sameNav = (a: NavState, b: NavState) =>
   a.series === b.series &&
   a.routine === b.routine &&
   a.widget === b.widget &&
+  a.widgetTab === b.widgetTab &&
   a.plan === b.plan &&
   a.videoPlan === b.videoPlan &&
   a.videoPlanTab === b.videoPlanTab &&
@@ -319,7 +323,8 @@ function App() {
     [navigate],
   )
   const openWidgetDetails = useCallback(
-    (widget: main.StreamWidget) => navigate({view: 'widget-details', widget}),
+    (widget: main.StreamWidget) =>
+      navigate({view: 'widget-details', widget, widgetTab: null}),
     [navigate],
   )
   const backToWidgets = useCallback(
@@ -481,14 +486,15 @@ function App() {
     [navigate],
   )
 
-  // Status-bar chip for a widget field's image generation: resolve the
-  // widget by id and open its details page.
+  // Status-bar chips for a widget's generations: resolve the widget by id
+  // and open its details page, landing on the tab the job concerns.
   const openWidgetById = useCallback(
-    async (widgetId: string) => {
+    async (widgetId: string, tab?: WidgetTab) => {
       try {
         const widgets = await GetStreamWidgets()
         const widget = (widgets ?? []).find((w) => w.id === widgetId)
-        if (widget) navigate({view: 'widget-details', widget})
+        if (widget)
+          navigate({view: 'widget-details', widget, widgetTab: tab ?? null})
       } catch {
         // Lookup failed; stay where we are.
       }
@@ -515,11 +521,15 @@ function App() {
           void openSponsorById(targetId)
           break
         case 'widget-image':
-        case 'widget-skill':
         case 'widget-sound':
+          void openWidgetById(targetId, 'fields')
+          break
+        case 'widget-skill':
+          void openWidgetById(targetId, 'skill')
+          break
         case 'widget-template':
         case 'widget-test':
-          void openWidgetById(targetId)
+          void openWidgetById(targetId, 'display')
           break
       }
     },
@@ -774,7 +784,11 @@ function App() {
               />
             )}
             {view === 'widget-details' && cur.widget && (
-              <StreamWidgetDetails widget={cur.widget} onBack={backToWidgets} />
+              <StreamWidgetDetails
+                widget={cur.widget}
+                initialTab={cur.widgetTab ?? undefined}
+                onBack={backToWidgets}
+              />
             )}
             {view === 'stream-details' && detailStream && (
               <StreamDetails

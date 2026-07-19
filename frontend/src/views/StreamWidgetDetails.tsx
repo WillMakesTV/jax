@@ -73,6 +73,10 @@ const templateStarter = (
   ].join('\n')
 }
 
+/** The widget details page's sections, addressable from outside (AI-queue
+ *  notifications land on the tab their job concerns). */
+export type WidgetTab = 'fields' | 'items' | 'display' | 'skill'
+
 /**
  * A stream widget's own page, opened from the OBS section's Stream Widgets
  * tab: configure the widget here — its name and the fields it carries,
@@ -80,10 +84,13 @@ const templateStarter = (
  */
 export function StreamWidgetDetails({
   widget,
+  initialTab,
   onBack,
 }: {
   /** The widget being configured. */
   widget: main.StreamWidget
+  /** Tab to land on; omitted = Fields. */
+  initialTab?: WidgetTab
   onBack: () => void
 }) {
   const [w, setW] = useState(widget)
@@ -99,9 +106,7 @@ export function StreamWidgetDetails({
   const [copied, setCopied] = useState(false)
   // The page's sections: the field schema, the widget's entries, the
   // display, and the widget's skill.
-  const [pageTab, setPageTab] = useState<
-    'fields' | 'items' | 'display' | 'skill'
-  >('fields')
+  const [pageTab, setPageTab] = useState<WidgetTab>(initialTab ?? 'fields')
   // Field values being edited, keyed by field id; unsaved edits live here.
   const [values, setValues] = useState<Record<string, string>>({})
   // Revision notes for image generation, keyed by field id.
@@ -150,6 +155,14 @@ export function StreamWidgetDetails({
 
   useEffect(load, [load])
   useDataChanged(['stream_widgets', 'widget_field_types'], load)
+
+  // A repeat navigation to this page (e.g. a second notification) reuses the
+  // mounted instance, so a changed initialTab is adopted here.
+  const [tabSynced, setTabSynced] = useState(initialTab)
+  if (initialTab !== tabSynced) {
+    setTabSynced(initialTab)
+    if (initialTab) setPageTab(initialTab)
+  }
 
   // Adopt the freshly reloaded record once, but never clobber typing.
   const [synced, setSynced] = useState(w)
