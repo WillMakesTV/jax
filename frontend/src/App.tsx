@@ -36,6 +36,7 @@ import {Sponsors} from './views/Sponsors'
 import {CustomTokens} from './views/CustomTokens'
 import {EditSmartSource} from './views/EditSmartSource'
 import {StreamDetails, type StreamTab} from './views/StreamDetails'
+import {StreamWidgetDetails} from './views/StreamWidgetDetails'
 import {Videos} from './views/Videos'
 import {VideoDetails} from './views/VideoDetails'
 import {VideoPlanDetails, type VideoPlanTab} from './views/VideoPlanDetails'
@@ -70,6 +71,8 @@ interface NavState {
   series: main.ContentSeries | null
   /** The routine being edited; null = creating a new one. */
   routine: main.Routine | null
+  /** The stream widget being configured; null = none. */
+  widget: main.StreamWidget | null
   /** The smart source whose template is being edited; null = none. */
   smartSource: string | null
   /** The stream plan being viewed/edited; null = creating a new one. */
@@ -101,6 +104,7 @@ const INITIAL_NAV: NavState = {
   download: null,
   series: null,
   routine: null,
+  widget: null,
   smartSource: null,
   plan: null,
   videoPlan: null,
@@ -123,6 +127,7 @@ const sameNav = (a: NavState, b: NavState) =>
   a.download === b.download &&
   a.series === b.series &&
   a.routine === b.routine &&
+  a.widget === b.widget &&
   a.smartSource === b.smartSource &&
   a.plan === b.plan &&
   a.videoPlan === b.videoPlan &&
@@ -318,6 +323,14 @@ function App() {
     () => navigate({view: 'obs', obsTab: 'routines', routine: null}),
     [navigate],
   )
+  const openWidgetDetails = useCallback(
+    (widget: main.StreamWidget) => navigate({view: 'widget-details', widget}),
+    [navigate],
+  )
+  const backToWidgets = useCallback(
+    () => navigate({view: 'obs', obsTab: 'widgets', widget: null}),
+    [navigate],
+  )
   const openEditSmartSource = useCallback(
     (name: string) => navigate({view: 'edit-smart-source', smartSource: name}),
     [navigate],
@@ -391,6 +404,7 @@ function App() {
         'plan-stream': 'broadcasting',
         'edit-series': 'broadcasting',
         'edit-routine': 'obs',
+        'widget-details': 'obs',
         'edit-smart-source': 'obs',
         'custom-tokens': 'settings',
         'broadcast-plan': 'broadcasting',
@@ -583,6 +597,8 @@ function App() {
         return cur.series ? 'Edit series' : 'New content series'
       case 'edit-routine':
         return cur.routine ? 'Edit routine' : 'New routine'
+      case 'widget-details':
+        return cur.widget?.name || 'Stream widget'
       case 'edit-smart-source':
         return cur.smartSource || 'Smart source'
       case 'custom-tokens':
@@ -598,6 +614,7 @@ function App() {
     detailDownload,
     cur.series,
     cur.routine,
+    cur.widget,
     cur.plan,
     cur.videoPlan,
     cur.project,
@@ -648,6 +665,7 @@ function App() {
                 : view === 'sponsor-details' || view === 'campaign-details'
                   ? 'sponsors'
                   : view === 'edit-routine' ||
+                      view === 'widget-details' ||
                       view === 'edit-smart-source' ||
                       view === 'custom-tokens'
                     ? 'obs'
@@ -744,6 +762,7 @@ function App() {
                 onEditRoutine={openEditRoutine}
                 onEditSmartSource={openEditSmartSource}
                 onOpenCustomTokens={openCustomTokens}
+                onOpenWidget={openWidgetDetails}
               />
             )}
             {view === 'edit-smart-source' && cur.smartSource && (
@@ -761,6 +780,9 @@ function App() {
                 onBack={() => back()}
                 onSaved={backToRoutines}
               />
+            )}
+            {view === 'widget-details' && cur.widget && (
+              <StreamWidgetDetails widget={cur.widget} onBack={backToWidgets} />
             )}
             {view === 'stream-details' && detailStream && (
               <StreamDetails

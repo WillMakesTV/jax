@@ -19,6 +19,7 @@ export function ObsStudio({
   onEditRoutine,
   onEditSmartSource,
   onOpenCustomTokens,
+  onOpenWidget,
 }: {
   tab: ObsTab
   onTabChange: (tab: ObsTab) => void
@@ -28,6 +29,8 @@ export function ObsStudio({
   onEditSmartSource: (name: string) => void
   /** Open the custom-tokens page. */
   onOpenCustomTokens: () => void
+  /** Open a stream widget's configuration page. */
+  onOpenWidget: (widget: main.StreamWidget) => void
 }) {
   const tabs: {id: ObsTab; label: string}[] = [
     {id: 'dashboard', label: 'Dashboard'},
@@ -70,7 +73,7 @@ export function ObsStudio({
           onOpenCustomTokens={onOpenCustomTokens}
         />
       )}
-      {tab === 'widgets' && <StreamWidgetsPanel />}
+      {tab === 'widgets' && <StreamWidgetsPanel onOpenWidget={onOpenWidget} />}
     </div>
   )
 }

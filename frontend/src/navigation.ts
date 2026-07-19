@@ -34,6 +34,7 @@ export type ViewId =
   | 'video-plan'
   | 'edit-series'
   | 'edit-routine'
+  | 'widget-details'
   | 'edit-smart-source'
   | 'custom-tokens'
   | 'settings'
