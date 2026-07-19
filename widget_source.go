@@ -642,6 +642,47 @@ Respond with the markdown document only — no code fences around the whole docu
 	return a.SaveAppSkill(widgetSkillID(*widget), strings.TrimSpace(text))
 }
 
+// ReviseWidgetSkill applies the producer's requested edits to the widget's
+// skill: the connected text AI rewrites the current brief per the request —
+// keeping everything not asked to change — and the revision is stored as
+// the skill's content. Returns the updated skill.
+func (a *App) ReviseWidgetSkill(widgetID, request string) (AppSkill, error) {
+	request = strings.TrimSpace(request)
+	if request == "" {
+		return AppSkill{}, fmt.Errorf("describe the edits you want first")
+	}
+
+	var widget *StreamWidget
+	for _, sw := range a.getStreamWidgets() {
+		if sw.ID == widgetID {
+			cp := sw
+			widget = &cp
+			break
+		}
+	}
+	if widget == nil {
+		return AppSkill{}, fmt.Errorf("that stream widget no longer exists")
+	}
+	skill, err := a.getAppSkill(widgetSkillID(*widget))
+	if err != nil {
+		return AppSkill{}, err
+	}
+
+	system := `You are revising the skill document (the creative brief) for one stream widget in the Jax streaming app. The document is markdown; it is sent to AI models whenever imagery, spoken audio, or the display template is generated for this widget, and agents read it over MCP before working with the widget — it defines how the widget works, looks, and animates.
+
+Apply the producer's requested edits to the current document. Change what the request asks for and keep everything else — structure, conventions, and content not touched by the request stay as they are. Respond with the complete revised markdown document only — no code fences around it, no preamble, no commentary.`
+
+	var in strings.Builder
+	fmt.Fprintf(&in, "# Widget\nName: %s\n\n# Current skill document\n%s\n\n# Requested edits\n%s\n",
+		widget.Name, skill.Content, request)
+
+	text, err := a.askAIText(system, in.String())
+	if err != nil {
+		return AppSkill{}, err
+	}
+	return a.SaveAppSkill(widgetSkillID(*widget), strings.TrimSpace(text))
+}
+
 // widgetTemplateResult is the shape GenerateWidgetTemplate asks the model
 // for.
 type widgetTemplateResult struct {

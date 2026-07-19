@@ -6,6 +6,7 @@ import {
   LayoutGrid,
   MonitorPlay,
   Music,
+  Pencil,
   Plus,
   RotateCcw,
   Sparkles,
@@ -26,6 +27,7 @@ import {
   ListAppSkills,
   RemoveWidgetField,
   ResetAppSkill,
+  ReviseWidgetSkill,
   SaveAppSkill,
   SaveStreamWidget,
   UploadWidgetFieldImage,
@@ -104,6 +106,9 @@ export function StreamWidgetDetails({
   const [skillDraft, setSkillDraft] = useState<string | null>(null)
   const [skillSaved, setSkillSaved] = useState(false)
   const [skillResetArmed, setSkillResetArmed] = useState(false)
+  // The Request Edits modal: a markdown brief of what should change.
+  const [editsOpen, setEditsOpen] = useState(false)
+  const [editsRequest, setEditsRequest] = useState('')
   // Deleting asks for a second click before it happens.
   const [deleteArmed, setDeleteArmed] = useState(false)
   const queue = useAiQueue()
@@ -430,6 +435,39 @@ export function StreamWidgetDetails({
           : typeof err === 'string' && err
             ? err
             : 'The skill could not be generated.',
+      )
+    }
+  }
+
+  // Requested edits revise the current skill (rather than rebuilding it
+  // from the widget); same queue identity, so one skill job runs at a time.
+  const requestSkillEdits = async () => {
+    const request = editsRequest.trim()
+    if (!request) return
+    setError('')
+    setEditsOpen(false)
+    setEditsRequest('')
+    try {
+      const updated = await queue.enqueue({
+        kind: 'widget-skill',
+        targetId: w.id,
+        title: w.name,
+        label: `Revising widget skill — ${w.name || 'widget'}`,
+        doneDetail: `Widget skill revised — ${w.name || 'widget'}`,
+        failDetail: 'Widget skill revision failed',
+        busyError: 'a skill is already being generated for this widget',
+        work: () => ReviseWidgetSkill(w.id, request),
+      })
+      setSkill(updated)
+      setSkillDraft(null)
+      setSkillSaved(true)
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string' && err
+            ? err
+            : 'The skill could not be revised.',
       )
     }
   }
@@ -877,16 +915,28 @@ export function StreamWidgetDetails({
                 Unsaved changes
               </span>
             )}
-            <button
-              type="button"
-              onClick={() => void generateSkill()}
-              disabled={skillBusy}
-              title="Write the brief from the widget's fields, template, styles, and animations"
-              className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              <Sparkles size={14} aria-hidden />
-              {skillBusy ? 'Generating…' : 'Generate'}
-            </button>
+            <span className="ml-auto flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setEditsOpen(true)}
+                disabled={skillBusy}
+                title="Describe changes to how the widget works, looks, or animates — the AI revises the brief"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+              >
+                <Pencil size={14} aria-hidden />
+                Request Edits
+              </button>
+              <button
+                type="button"
+                onClick={() => void generateSkill()}
+                disabled={skillBusy}
+                title="Write the brief from the widget's fields, template, styles, and animations"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                <Sparkles size={14} aria-hidden />
+                {skillBusy ? 'Generating…' : 'Generate'}
+              </button>
+            </span>
           </div>
           <p className="text-xs text-fg-muted">
             The brief behind everything generated for this widget — images,
@@ -981,6 +1031,46 @@ export function StreamWidgetDetails({
           {deleteArmed ? 'Really delete this widget?' : 'Delete widget'}
         </button>
       </div>
+
+      <Modal
+        open={editsOpen}
+        onClose={() => setEditsOpen(false)}
+        title="Request edits to the widget skill"
+        icon={<Pencil size={18} aria-hidden />}
+        maxWidthClass="max-w-lg"
+      >
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-fg-muted">
+            Describe what should change about how this widget works, looks, or
+            animates. The AI revises the current brief with your edits —
+            everything you don't mention stays as it is.
+          </p>
+          <MarkdownField
+            id="widget-skill-edits"
+            value={editsRequest}
+            onChange={setEditsRequest}
+            placeholder="e.g. The card should slide in from the right instead of popping, stay on screen twice as long, and use a calmer voice for spoken alerts…"
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setEditsOpen(false)}
+              className="rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void requestSkillEdits()}
+              disabled={!editsRequest.trim()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              <Pencil size={14} aria-hidden />
+              Revise skill
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={genOpen}

@@ -356,6 +356,8 @@ export function ResetPlannedStream(arg1:string):Promise<void>;
 
 export function RestoreEditVersion(arg1:string,arg2:string):Promise<main.EditWorkspaceInfo>;
 
+export function ReviseWidgetSkill(arg1:string,arg2:string):Promise<main.AppSkill>;
+
 export function SaveAppSkill(arg1:string,arg2:string):Promise<main.AppSkill>;
 
 export function SaveBrandLink(arg1:main.BrandLink):Promise<Array<main.BrandLink>>;

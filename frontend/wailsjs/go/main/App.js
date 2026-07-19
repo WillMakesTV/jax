@@ -710,6 +710,10 @@ export function RestoreEditVersion(arg1, arg2) {
   return window['go']['main']['App']['RestoreEditVersion'](arg1, arg2);
 }
 
+export function ReviseWidgetSkill(arg1, arg2) {
+  return window['go']['main']['App']['ReviseWidgetSkill'](arg1, arg2);
+}
+
 export function SaveAppSkill(arg1, arg2) {
   return window['go']['main']['App']['SaveAppSkill'](arg1, arg2);
 }
