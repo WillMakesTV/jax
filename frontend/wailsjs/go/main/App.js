@@ -342,6 +342,10 @@ export function GetChatUserInfo(arg1, arg2, arg3) {
   return window['go']['main']['App']['GetChatUserInfo'](arg1, arg2, arg3);
 }
 
+export function GetClearedStreamWidgets() {
+  return window['go']['main']['App']['GetClearedStreamWidgets']();
+}
+
 export function GetClipIdeas(arg1, arg2) {
   return window['go']['main']['App']['GetClipIdeas'](arg1, arg2);
 }
@@ -868,6 +872,10 @@ export function SetStreamThumbnail(arg1, arg2) {
 
 export function SetStreamTitle(arg1, arg2) {
   return window['go']['main']['App']['SetStreamTitle'](arg1, arg2);
+}
+
+export function SetStreamWidgetCleared(arg1, arg2) {
+  return window['go']['main']['App']['SetStreamWidgetCleared'](arg1, arg2);
 }
 
 export function SetVideoPlanShares(arg1, arg2) {

@@ -172,6 +172,8 @@ export function GetChatHistory(arg1:number):Promise<Array<main.StoredChatMessage
 
 export function GetChatUserInfo(arg1:string,arg2:string,arg3:string):Promise<main.ChatUserInfo>;
 
+export function GetClearedStreamWidgets():Promise<Array<string>>;
+
 export function GetClipIdeas(arg1:string,arg2:string):Promise<main.ClipIdeaSet>;
 
 export function GetContentSeries():Promise<Array<main.ContentSeries>>;
@@ -435,6 +437,8 @@ export function SetStreamEpisode(arg1:Array<string>,arg2:number,arg3:string):Pro
 export function SetStreamThumbnail(arg1:string,arg2:string):Promise<main.StreamThumbInfo>;
 
 export function SetStreamTitle(arg1:string,arg2:string):Promise<void>;
+
+export function SetStreamWidgetCleared(arg1:string,arg2:boolean):Promise<void>;
 
 export function SetVideoPlanShares(arg1:string,arg2:Array<string>):Promise<main.TrackedVideo>;
 

@@ -468,7 +468,10 @@ export function Videos({onOpenVideo, onOpenVideoPlan, onPlanVideo}: VideosProps)
                           alt=""
                           className="h-full w-full object-cover"
                         />
-                        <span className="absolute inset-0 bg-gradient-to-t from-surface via-surface/85 to-surface/30" />
+                        {/* Anchored at the top so the title always sits on a
+                            solid surface; the thumbnail shows through lower
+                            down. */}
+                        <span className="absolute inset-0 bg-gradient-to-b from-surface via-surface/80 to-surface/50" />
                       </span>
                     )}
                     <button
@@ -617,13 +620,14 @@ export function Videos({onOpenVideo, onOpenVideoPlan, onPlanVideo}: VideosProps)
         </p>
       ) : (
         // Shorts are tall, so they tile narrower — six across at full width,
-        // four on medium viewports, two on the narrowest.
+        // four on medium viewports, two on the narrowest. Long form runs
+        // three across on medium viewports and five at full-screen widths.
         <div
           className={clsx(
             'grid grid-cols-1 gap-4',
             kindTab === 'short'
               ? 'grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6'
-              : 'sm:grid-cols-2 lg:grid-cols-3',
+              : 'sm:grid-cols-2 md:grid-cols-3 2xl:grid-cols-5',
           )}
         >
           {kindTab === 'short'

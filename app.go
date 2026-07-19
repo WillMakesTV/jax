@@ -93,6 +93,10 @@ type App struct {
 	// reports a widget as testing until its window expires.
 	widgetTests map[string]time.Time
 
+	// widgetCleared marks widgets whose Browser Source is blanked (guarded
+	// by mu; see widget_source.go). A test window shows through a clear.
+	widgetCleared map[string]bool
+
 	// In-progress headless editing session and the plan it belongs to
 	// (guarded by mu; see editor.go). One edit runs at a time.
 	editCmd    *exec.Cmd

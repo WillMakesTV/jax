@@ -51,6 +51,9 @@ type widgetSourceData struct {
 	// the page remounts the display and plays sound fields when it flips
 	// on, and clears back to the normal render when it flips off.
 	Testing bool `json:"testing"`
+	// Cleared blanks the page (the Clear button on the widget's card);
+	// a test window shows through it.
+	Cleared bool `json:"cleared"`
 }
 
 // widgetTestWindow is how long a widget test shows before clearing.
@@ -85,6 +88,53 @@ func (a *App) widgetTesting(id string) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return time.Now().Before(a.widgetTests[id])
+}
+
+// SetStreamWidgetCleared blanks (or restores) a widget's Browser Source:
+// while cleared the page renders nothing, so the element leaves the stream
+// without touching OBS. A test window shows through a clear, and the state
+// lives in memory — a restart shows everything again.
+func (a *App) SetStreamWidgetCleared(id string, cleared bool) error {
+	found := false
+	for _, w := range a.getStreamWidgets() {
+		if w.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("that stream widget no longer exists")
+	}
+	a.mu.Lock()
+	if a.widgetCleared == nil {
+		a.widgetCleared = map[string]bool{}
+	}
+	if cleared {
+		a.widgetCleared[id] = true
+	} else {
+		delete(a.widgetCleared, id)
+	}
+	a.mu.Unlock()
+	return nil
+}
+
+// widgetIsCleared reports whether a widget's Browser Source is blanked.
+func (a *App) widgetIsCleared(id string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.widgetCleared[id]
+}
+
+// GetClearedStreamWidgets lists the ids of widgets whose Browser Source is
+// currently blanked.
+func (a *App) GetClearedStreamWidgets() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	out := make([]string, 0, len(a.widgetCleared))
+	for id := range a.widgetCleared {
+		out = append(out, id)
+	}
+	return out
 }
 
 // serveWidgetSource handles everything under /widget/: the runtime assets,
@@ -129,6 +179,7 @@ func (a *App) serveWidgetSource(w http.ResponseWriter, r *http.Request) {
 			JS:       widget.JS,
 			Fields:   []widgetSourceField{},
 			Testing:  a.widgetTesting(widget.ID),
+			Cleared:  a.widgetIsCleared(widget.ID),
 		}
 		for _, f := range widget.Fields {
 			value := f.Value
@@ -230,6 +281,13 @@ var widgetSourcePage = template.Must(template.New("widget").Parse(`<!DOCTYPE htm
       })
     }
     wasTesting = widget.testing
+
+    // A cleared widget shows nothing — unless a test window is open, which
+    // shows through the clear.
+    if (data.cleared && !widget.testing) {
+      root.render(null)
+      return
+    }
 
     var render = compileTemplate(data.template)
     root.render(render(React, widget, fields, window.playSound))

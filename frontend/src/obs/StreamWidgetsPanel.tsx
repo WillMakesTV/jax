@@ -1,6 +1,8 @@
 import {
   Check,
   Copy,
+  Eye,
+  EyeOff,
   FlaskConical,
   Image,
   LayoutGrid,
@@ -13,10 +15,12 @@ import {useCallback, useEffect, useState} from 'react'
 import {
   DeleteStreamWidget,
   DeleteWidgetFieldType,
+  GetClearedStreamWidgets,
   GetStreamWidgets,
   GetWidgetFieldTypes,
   SaveStreamWidget,
   SaveWidgetFieldType,
+  SetStreamWidgetCleared,
   TestStreamWidget,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
@@ -43,12 +47,18 @@ export function StreamWidgetsPanel({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  // Widgets whose Browser Source is blanked (in-memory app state).
+  const [clearedIds, setClearedIds] = useState<string[]>([])
+
   const load = useCallback(() => {
     GetStreamWidgets()
       .then((w) => setWidgets(w ?? []))
       .catch(() => {})
     GetWidgetFieldTypes()
       .then((t) => setTypes(t ?? []))
+      .catch(() => {})
+    GetClearedStreamWidgets()
+      .then((ids) => setClearedIds(ids ?? []))
       .catch(() => {})
   }, [])
 
@@ -121,6 +131,26 @@ export function StreamWidgetsPanel({
           : typeof err === 'string' && err
             ? err
             : 'The test could not be started.',
+      )
+    }
+  }
+
+  // Blank (or restore) a widget's Browser Source without touching OBS.
+  const toggleCleared = async (w: main.StreamWidget) => {
+    const cleared = clearedIds.includes(w.id)
+    setError('')
+    try {
+      await SetStreamWidgetCleared(w.id, !cleared)
+      setClearedIds((prev) =>
+        cleared ? prev.filter((id) => id !== w.id) : [...prev, w.id],
+      )
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string' && err
+            ? err
+            : 'The widget could not be cleared.',
       )
     }
   }
@@ -237,6 +267,25 @@ export function StreamWidgetsPanel({
                   {w.name}
                 </span>
               </button>
+              {w.sourceUrl && (
+                <button
+                  type="button"
+                  onClick={() => void toggleCleared(w)}
+                  title={
+                    clearedIds.includes(w.id)
+                      ? 'Show this widget on its Browser Source again'
+                      : "Clear this widget's Browser Source (show nothing)"
+                  }
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                >
+                  {clearedIds.includes(w.id) ? (
+                    <Eye size={12} aria-hidden />
+                  ) : (
+                    <EyeOff size={12} aria-hidden />
+                  )}
+                  {clearedIds.includes(w.id) ? 'Show' : 'Clear'}
+                </button>
+              )}
               {w.sourceUrl && (
                 <button
                   type="button"

@@ -1,5 +1,6 @@
-import {Check, Code2, Pencil} from 'lucide-react'
+import {Check, Code2, Pencil, WandSparkles} from 'lucide-react'
 import {useMemo, useState} from 'react'
+import {formatJsxTemplate} from '../lib/formatTemplate'
 
 /**
  * Quick structural checks for a JSX template: balanced braces outside
@@ -84,6 +85,19 @@ export function JsxTemplateField({
     value.trim() ? 'view' : 'edit',
   )
   const problems = useMemo(() => lintJsx(value), [value])
+  const [formatError, setFormatError] = useState('')
+
+  // Real prettier (standalone) lays the template out properly; a syntax
+  // error surfaces in the diagnostics footer instead of eating the source.
+  const formatNow = async () => {
+    try {
+      const formatted = await formatJsxTemplate(value)
+      if (formatted !== value) onChange(formatted)
+      setFormatError('')
+    } catch {
+      setFormatError('Cannot format — fix the syntax errors first.')
+    }
+  }
 
   if (mode === 'view') {
     return (
@@ -111,17 +125,28 @@ export function JsxTemplateField({
           <Code2 size={13} aria-hidden />
           JSX
         </span>
-        <button
-          type="button"
-          onClick={() => {
-            setMode('view')
-            onDone?.()
-          }}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
-        >
-          <Check size={12} aria-hidden />
-          Done
-        </button>
+        <span className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => void formatNow()}
+            disabled={!value.trim()}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
+          >
+            <WandSparkles size={12} aria-hidden />
+            Format
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMode('view')
+              onDone?.()
+            }}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+          >
+            <Check size={12} aria-hidden />
+            Done
+          </button>
+        </span>
       </div>
       <textarea
         id={id}
@@ -133,8 +158,15 @@ export function JsxTemplateField({
         className="w-full resize-y bg-transparent px-4 py-3 font-mono text-xs leading-relaxed text-fg outline-none"
       />
       <div className="border-t border-edge px-3 py-1.5">
+        {formatError && (
+          <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+            {formatError}
+          </p>
+        )}
         {problems.length === 0 ? (
-          <p className="text-xs text-fg-muted">No issues found.</p>
+          !formatError && (
+            <p className="text-xs text-fg-muted">No issues found.</p>
+          )
         ) : (
           <ul className="flex flex-col gap-0.5">
             {problems.map((p, i) => (

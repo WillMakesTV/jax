@@ -34,6 +34,11 @@ import {useAiQueue} from '../ai/AiQueueProvider'
 import {JsxTemplateField} from '../components/JsxTemplateField'
 import {MarkdownField} from '../components/markdown/MarkdownField'
 import {Modal} from '../components/Modal'
+import {
+  formatJsxTemplate,
+  formatWidgetCss,
+  formatWidgetJs,
+} from '../lib/formatTemplate'
 import {useDataChanged} from '../lib/dataChanged'
 import {formatDate} from '../lib/format'
 
@@ -311,7 +316,7 @@ export function StreamWidgetDetails({
     setGenOpen(false)
     setGenDesc('')
     try {
-      const saved = await queue.enqueue({
+      let saved = await queue.enqueue({
         kind: 'widget-template',
         targetId: w.id,
         title: w.name,
@@ -321,6 +326,26 @@ export function StreamWidgetDetails({
         busyError: 'a display is already being generated for this widget',
         work: () => GenerateWidgetTemplate(w.id, desc),
       })
+      // Run the generated display through real prettier and persist the
+      // laid-out version; a syntax error leaves it as generated.
+      try {
+        const [template, css, js] = await Promise.all([
+          formatJsxTemplate(saved.template ?? ''),
+          formatWidgetCss(saved.css ?? ''),
+          formatWidgetJs(saved.js ?? ''),
+        ])
+        if (
+          template !== saved.template ||
+          css !== saved.css ||
+          js !== saved.js
+        ) {
+          saved = await SaveStreamWidget(
+            main.StreamWidget.createFrom({...saved, template, css, js}),
+          )
+        }
+      } catch {
+        // Unformattable output still works on the Browser Source.
+      }
       setW(saved)
     } catch (err) {
       setError(
