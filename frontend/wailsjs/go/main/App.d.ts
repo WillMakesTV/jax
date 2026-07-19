@@ -152,6 +152,8 @@ export function GenerateWidgetSkill(arg1:string):Promise<main.AppSkill>;
 
 export function GenerateWidgetTemplate(arg1:string,arg2:string):Promise<main.StreamWidget>;
 
+export function GenerateWidgetTestItem(arg1:string):Promise<void>;
+
 export function GetAppAbout():Promise<string>;
 
 export function GetActiveStreamSession():Promise<main.ActiveStreamSession>;

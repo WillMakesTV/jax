@@ -14,6 +14,7 @@ import {
 import {useCallback, useEffect, useState} from 'react'
 import {
   DeleteWidgetFieldType,
+  GenerateWidgetTestItem,
   GetClearedStreamWidgets,
   GetStreamWidgets,
   GetWidgetFieldTypes,
@@ -23,6 +24,7 @@ import {
   TestStreamWidget,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
+import {useAiQueue} from '../ai/AiQueueProvider'
 import {Modal} from '../components/Modal'
 import {useDataChanged} from '../lib/dataChanged'
 
@@ -104,25 +106,53 @@ export function StreamWidgetsPanel({
 
   // Widgets whose 15-second test window is running, for button feedback.
   const [testingIds, setTestingIds] = useState<string[]>([])
+  const queue = useAiQueue()
+
+  // Testing goes through the AI queue: the widget's skill briefs the model
+  // to stage a realistic sample item, then the window opens showing it.
+  // Without a connected AI (or on model failure) the plain window still runs.
   const test = async (w: main.StreamWidget) => {
     setError('')
-    try {
-      await TestStreamWidget(w.id)
+    const openWindow = () => {
       setTestingIds((prev) => (prev.includes(w.id) ? prev : [...prev, w.id]))
       window.setTimeout(
         () => setTestingIds((prev) => prev.filter((id) => id !== w.id)),
         15000,
       )
+    }
+    try {
+      await queue.enqueue({
+        kind: 'widget-test',
+        targetId: w.id,
+        title: w.name,
+        label: `Staging a test item — ${w.name || 'widget'}`,
+        doneDetail: `Widget test running — ${w.name || 'widget'}`,
+        failDetail: 'Widget test failed',
+        busyError: 'a test is already being staged for this widget',
+        work: () => GenerateWidgetTestItem(w.id),
+      })
+      openWindow()
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : typeof err === 'string' && err
-            ? err
-            : 'The test could not be started.',
-      )
+      if (err instanceof Error && err.message.includes('already being')) {
+        return
+      }
+      try {
+        await TestStreamWidget(w.id)
+        openWindow()
+      } catch (fallbackErr) {
+        setError(
+          fallbackErr instanceof Error
+            ? fallbackErr.message
+            : typeof fallbackErr === 'string' && fallbackErr
+              ? fallbackErr
+              : 'The test could not be started.',
+        )
+      }
     }
   }
+
+  const staging = (id: string) =>
+    queue.jobs.some((j) => j.kind === 'widget-test' && j.targetId === id)
 
   // Blank (or restore) a widget's Browser Source without touching OBS.
   const toggleCleared = async (w: main.StreamWidget) => {
@@ -279,12 +309,16 @@ export function StreamWidgetsPanel({
                 <button
                   type="button"
                   onClick={() => void test(w)}
-                  disabled={testingIds.includes(w.id)}
-                  title="Show this widget on its Browser Source for 15 seconds"
+                  disabled={testingIds.includes(w.id) || staging(w.id)}
+                  title="Stage an AI sample item from the widget's skill and show it on the Browser Source for 15 seconds"
                   className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
                 >
                   <FlaskConical size={12} aria-hidden />
-                  {testingIds.includes(w.id) ? 'Testing…' : 'Test'}
+                  {staging(w.id)
+                    ? 'Staging…'
+                    : testingIds.includes(w.id)
+                      ? 'Testing…'
+                      : 'Test'}
                 </button>
               )}
               {w.sourceUrl && (

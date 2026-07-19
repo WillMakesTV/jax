@@ -22,6 +22,7 @@ export type AiJobKind =
   | 'widget-skill'
   | 'widget-sound'
   | 'widget-template'
+  | 'widget-test'
 
 /** One AI generation, queued or running. */
 export interface AiJob {

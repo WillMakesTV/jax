@@ -27,6 +27,73 @@ func TestParseWidgetTemplate(t *testing.T) {
 	}
 }
 
+func TestParseWidgetTestItem(t *testing.T) {
+	got, err := parseWidgetTestItem("Sure:\n```json\n" +
+		`{"Status": "Live now", "Message": "Big moment"}` + "\n```")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got["Status"] != "Live now" || got["Message"] != "Big moment" {
+		t.Fatalf("parse mismatch: %+v", got)
+	}
+	if _, err := parseWidgetTestItem("no json"); err == nil {
+		t.Fatal("want error for a response without JSON")
+	}
+}
+
+func TestWidgetTestItemOverlay(t *testing.T) {
+	a := newTestApp(t)
+	a.mediaBaseURL = "http://127.0.0.1:9999"
+	a.GetWidgetFieldTypes() // seed the catalog
+
+	w, err := a.SaveStreamWidget(StreamWidget{Name: "Goal"})
+	if err != nil {
+		t.Fatalf("save widget: %v", err)
+	}
+	w, err = a.AddWidgetField(w.ID, "field_status", "")
+	if err != nil {
+		t.Fatalf("add status field: %v", err)
+	}
+	w, err = a.setWidgetFieldFile(w.ID, w.Fields[0].ID, "Real value")
+	if err != nil {
+		t.Fatalf("set real value: %v", err)
+	}
+	a.setWidgetTestItem(w.ID, map[string]string{w.Fields[0].ID: "Sample value"})
+
+	h := mediaHandler{app: a}
+	fetch := func() widgetSourceData {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", widgetSourcePrefix+w.ID+"/data", nil))
+		var data widgetSourceData
+		if err := json.Unmarshal(rec.Body.Bytes(), &data); err != nil {
+			t.Fatalf("data decode: %v", err)
+		}
+		return data
+	}
+
+	// The staged item shows only while a test window is open.
+	if got := fetch(); got.Fields[0].Value != "Real value" {
+		t.Fatalf("no window yet: %+v", got.Fields[0])
+	}
+	if err := a.TestStreamWidget(w.ID); err != nil {
+		t.Fatalf("open window: %v", err)
+	}
+	if got := fetch(); got.Fields[0].Value != "Sample value" {
+		t.Fatalf("window open, want the sample: %+v", got.Fields[0])
+	}
+	a.mu.Lock()
+	a.widgetTests[w.ID] = time.Now().Add(-time.Second)
+	a.mu.Unlock()
+	if got := fetch(); got.Fields[0].Value != "Real value" {
+		t.Fatalf("window closed, want the real value back: %+v", got.Fields[0])
+	}
+	// The real stored value never changed.
+	if raw := a.getStreamWidgets(); raw[0].Fields[0].Value != "Real value" {
+		t.Fatalf("stored value touched: %+v", raw[0].Fields[0])
+	}
+}
+
 func TestWidgetSourceEndpoints(t *testing.T) {
 	a := newTestApp(t)
 	a.mediaBaseURL = "http://127.0.0.1:9999"

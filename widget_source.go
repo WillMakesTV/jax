@@ -90,6 +90,121 @@ func (a *App) widgetTesting(id string) bool {
 	return time.Now().Before(a.widgetTests[id])
 }
 
+// setWidgetTestItem stages a sample item for a widget: text-field values the
+// data feed substitutes while the widget's test window is open. Real field
+// values are untouched.
+func (a *App) setWidgetTestItem(widgetID string, values map[string]string) {
+	a.mu.Lock()
+	if a.widgetTestItems == nil {
+		a.widgetTestItems = map[string]map[string]string{}
+	}
+	a.widgetTestItems[widgetID] = values
+	a.mu.Unlock()
+}
+
+// widgetTestItem returns a widget's staged sample item (nil when none).
+func (a *App) widgetTestItem(widgetID string) map[string]string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.widgetTestItems[widgetID]
+}
+
+// GenerateWidgetTestItem tests a widget the way it will really be used: the
+// widget's own skill briefs the connected text AI to write one realistic
+// sample item for the widget's text fields, the item is staged (real values
+// untouched), and the 15-second test window opens showing it — sounds and
+// all. With no text fields to write, the plain test window opens instead.
+func (a *App) GenerateWidgetTestItem(widgetID string) error {
+	var widget *StreamWidget
+	for _, sw := range a.getStreamWidgets() {
+		if sw.ID == widgetID {
+			cp := sw
+			widget = &cp
+			break
+		}
+	}
+	if widget == nil {
+		return fmt.Errorf("that stream widget no longer exists")
+	}
+
+	kinds := map[string]WidgetFieldType{}
+	for _, ft := range a.getWidgetFieldTypes() {
+		kinds[ft.ID] = ft
+	}
+	type textField struct {
+		field WidgetField
+		ft    WidgetFieldType
+	}
+	var texts []textField
+	for _, f := range widget.Fields {
+		ft := kinds[f.TypeID]
+		if ft.Kind == widgetFieldMessage || ft.Kind == widgetFieldStatus {
+			texts = append(texts, textField{field: f, ft: ft})
+		}
+	}
+	if len(texts) == 0 {
+		return a.TestStreamWidget(widgetID)
+	}
+
+	skill, err := a.getAppSkill(widgetSkillID(*widget))
+	if err != nil {
+		return err
+	}
+	system := `You are staging a realistic test item for a stream widget in the Jax streaming app. The widget's skill below describes what the widget is for and how its content reads; write ONE sample item that shows the widget at its best on stream — representative, concrete, and in the skill's voice. Respond with a single JSON object mapping each listed field label to its sample text, and nothing else. Respect each field's character cap.`
+
+	var in strings.Builder
+	fmt.Fprintf(&in, "# Widget skill\n%s\n\n# Fields to fill\n", skill.Content)
+	for _, tf := range texts {
+		fmt.Fprintf(&in, "- %q (%s", tf.field.Label, tf.ft.Kind)
+		if tf.ft.MaxLength > 0 {
+			fmt.Fprintf(&in, ", max %d characters", tf.ft.MaxLength)
+		}
+		in.WriteString(")\n")
+	}
+
+	text, err := a.askAIText(system, in.String())
+	if err != nil {
+		return err
+	}
+	byLabel, err := parseWidgetTestItem(text)
+	if err != nil {
+		return err
+	}
+	values := map[string]string{}
+	for _, tf := range texts {
+		v, ok := byLabel[tf.field.Label]
+		if !ok {
+			continue
+		}
+		if tf.ft.MaxLength > 0 {
+			if r := []rune(v); len(r) > tf.ft.MaxLength {
+				v = string(r[:tf.ft.MaxLength])
+			}
+		}
+		values[tf.field.ID] = v
+	}
+	if len(values) == 0 {
+		return fmt.Errorf("the model returned no usable sample values — try again")
+	}
+	a.setWidgetTestItem(widgetID, values)
+	return a.TestStreamWidget(widgetID)
+}
+
+// parseWidgetTestItem extracts the sample-item JSON from the model's
+// response, tolerating stray prose or code fences around the object.
+func parseWidgetTestItem(text string) (map[string]string, error) {
+	lo := strings.Index(text, "{")
+	hi := strings.LastIndex(text, "}")
+	if lo < 0 || hi <= lo {
+		return nil, fmt.Errorf("the model returned an unexpected format — try again")
+	}
+	var out map[string]string
+	if err := json.Unmarshal([]byte(text[lo:hi+1]), &out); err != nil {
+		return nil, fmt.Errorf("the model returned an unexpected format — try again")
+	}
+	return out, nil
+}
+
 // SetStreamWidgetCleared blanks (or restores) a widget's Browser Source:
 // while cleared the page renders nothing, so the element leaves the stream
 // without touching OBS. A test window shows through a clear, and the state
@@ -181,10 +296,20 @@ func (a *App) serveWidgetSource(w http.ResponseWriter, r *http.Request) {
 			Testing:  a.widgetTesting(widget.ID),
 			Cleared:  a.widgetIsCleared(widget.ID),
 		}
+		// An open test window shows the staged sample item's text values in
+		// place of the real ones (see GenerateWidgetTestItem); the real
+		// values return the moment the window closes.
+		var sample map[string]string
+		if data.Testing {
+			sample = a.widgetTestItem(widget.ID)
+		}
 		for _, f := range widget.Fields {
 			value := f.Value
 			if f.ValueURL != "" {
 				value = f.ValueURL
+			}
+			if v, ok := sample[f.ID]; ok {
+				value = v
 			}
 			data.Fields = append(data.Fields, widgetSourceField{
 				Label: f.Label,

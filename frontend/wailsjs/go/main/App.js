@@ -302,6 +302,10 @@ export function GenerateWidgetTemplate(arg1, arg2) {
   return window['go']['main']['App']['GenerateWidgetTemplate'](arg1, arg2);
 }
 
+export function GenerateWidgetTestItem(arg1) {
+  return window['go']['main']['App']['GenerateWidgetTestItem'](arg1);
+}
+
 export function GetAppAbout() {
   return window['go']['main']['App']['GetAppAbout']();
 }

@@ -97,6 +97,11 @@ type App struct {
 	// by mu; see widget_source.go). A test window shows through a clear.
 	widgetCleared map[string]bool
 
+	// widgetTestItems holds each widget's staged sample item — text-field
+	// values (field id → value) the data feed substitutes while that
+	// widget's test window is open (guarded by mu; see widget_source.go).
+	widgetTestItems map[string]map[string]string
+
 	// In-progress headless editing session and the plan it belongs to
 	// (guarded by mu; see editor.go). One edit runs at a time.
 	editCmd    *exec.Cmd

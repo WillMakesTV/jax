@@ -518,6 +518,7 @@ function App() {
         case 'widget-skill':
         case 'widget-sound':
         case 'widget-template':
+        case 'widget-test':
           void openWidgetById(targetId)
           break
       }
