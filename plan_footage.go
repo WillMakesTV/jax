@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -88,12 +89,9 @@ func (a *App) ImportVideoPlanFootage(planID string, paths []string) (VideoPlan, 
 		}
 		name := uniqueWorkspaceName(dir, filepath.Base(src))
 		dst := filepath.Join(dir, name)
-		if insideDir(dir, src) {
-			if err := os.Rename(src, dst); err != nil {
-				return VideoPlan{}, fmt.Errorf("could not move %s: %w", filepath.Base(src), err)
-			}
-		} else if err := copyFile(src, dst); err != nil {
-			return VideoPlan{}, fmt.Errorf("could not copy %s: %w", filepath.Base(src), err)
+		if err := importFile(dir, src, dst); err != nil {
+			return VideoPlan{}, fmt.Errorf("could not import %s (is it still being written?): %w",
+				filepath.Base(src), err)
 		}
 		imported = append(imported, name)
 	}
@@ -104,6 +102,28 @@ func (a *App) ImportVideoPlanFootage(planID string, paths []string) (VideoPlan, 
 		p.Files = append(p.Files, imported...)
 		return nil
 	})
+}
+
+// importFile lands src at dst: a file already inside the workspace is moved,
+// anything else is copied. An OBS recording is handed over the moment
+// StopRecord returns, while OBS may still be finalizing the file — on
+// Windows that surfaces as a sharing violation — so failures retry briefly
+// before giving up.
+func importFile(dir, src, dst string) error {
+	attempt := func() error {
+		if insideDir(dir, src) {
+			return os.Rename(src, dst)
+		}
+		return copyFile(src, dst)
+	}
+	var err error
+	for tries := 0; tries < 10; tries++ {
+		if err = attempt(); err == nil {
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return err
 }
 
 // insideDir reports whether path sits inside dir (at any depth).

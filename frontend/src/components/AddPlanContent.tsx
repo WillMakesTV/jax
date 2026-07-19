@@ -117,9 +117,11 @@ export function AddContentModal({
       onUpdated(saved)
     } catch (err) {
       setError(
-        err instanceof Error && err.message
+        err instanceof Error
           ? err.message
-          : 'The sources could not be saved.',
+          : typeof err === 'string' && err
+            ? err
+            : 'The sources could not be saved.',
       )
     } finally {
       setSaving(false)
@@ -137,9 +139,11 @@ export function AddContentModal({
       onUpdated(updated)
     } catch (err) {
       setError(
-        err instanceof Error && err.message
+        err instanceof Error
           ? err.message
-          : 'The footage could not be imported.',
+          : typeof err === 'string' && err
+            ? err
+            : 'The footage could not be imported.',
       )
     }
   }
@@ -151,9 +155,11 @@ export function AddContentModal({
       await importPaths(paths ?? [])
     } catch (err) {
       setError(
-        err instanceof Error && err.message
+        err instanceof Error
           ? err.message
-          : 'The files could not be picked.',
+          : typeof err === 'string' && err
+            ? err
+            : 'The files could not be picked.',
       )
     }
   }
@@ -166,9 +172,11 @@ export function AddContentModal({
       onUpdated(updated)
     } catch (err) {
       setError(
-        err instanceof Error && err.message
+        err instanceof Error
           ? err.message
-          : 'The footage could not be removed.',
+          : typeof err === 'string' && err
+            ? err
+            : 'The footage could not be removed.',
       )
     }
   }
