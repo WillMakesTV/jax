@@ -190,6 +190,10 @@ export function DeleteSponsorCampaign(arg1, arg2) {
   return window['go']['main']['App']['DeleteSponsorCampaign'](arg1, arg2);
 }
 
+export function DeleteStreamWidget(arg1) {
+  return window['go']['main']['App']['DeleteStreamWidget'](arg1);
+}
+
 export function DeleteVideoPlan(arg1) {
   return window['go']['main']['App']['DeleteVideoPlan'](arg1);
 }
@@ -478,6 +482,10 @@ export function GetStreamOutline(arg1) {
   return window['go']['main']['App']['GetStreamOutline'](arg1);
 }
 
+export function GetStreamWidgets() {
+  return window['go']['main']['App']['GetStreamWidgets']();
+}
+
 export function GetStreamdeckMultiActions() {
   return window['go']['main']['App']['GetStreamdeckMultiActions']();
 }
@@ -732,6 +740,10 @@ export function SaveSponsor(arg1) {
 
 export function SaveSponsorCampaign(arg1, arg2) {
   return window['go']['main']['App']['SaveSponsorCampaign'](arg1, arg2);
+}
+
+export function SaveStreamWidget(arg1) {
+  return window['go']['main']['App']['SaveStreamWidget'](arg1);
 }
 
 export function SaveStreams(arg1) {

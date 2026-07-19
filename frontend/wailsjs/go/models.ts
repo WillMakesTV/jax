@@ -1615,6 +1615,23 @@ export class Sponsor {
 }
 
 
+export class StreamWidget {
+    id: string;
+    name: string;
+    createdAt: string;
+
+    static createFrom(source: any = {}) {
+        return new StreamWidget(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.id = source["id"];
+        this.name = source["name"];
+        this.createdAt = source["createdAt"];
+    }
+}
+
 export class RoutineStep {
 	    kind: string;
 	    scene?: string;

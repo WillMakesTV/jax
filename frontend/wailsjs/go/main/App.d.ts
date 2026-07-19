@@ -96,6 +96,8 @@ export function DeleteSponsorBranding(arg1:string,arg2:string):Promise<main.Spon
 
 export function DeleteSponsorCampaign(arg1:string,arg2:string):Promise<main.Sponsor>;
 
+export function DeleteStreamWidget(arg1:string):Promise<void>;
+
 export function DeleteVideoPlan(arg1:string):Promise<void>;
 
 export function DisconnectGitHub():Promise<void>;
@@ -240,6 +242,8 @@ export function GetSponsors():Promise<Array<main.Sponsor>>;
 
 export function GetStreamOutline(arg1:string):Promise<main.StreamOutline>;
 
+export function GetStreamWidgets():Promise<Array<main.StreamWidget>>;
+
 export function GetStreamdeckMultiActions():Promise<Array<main.StreamdeckMultiAction>>;
 
 export function GetStreams():Promise<Array<main.Stream>>;
@@ -367,6 +371,8 @@ export function SaveServiceConfig(arg1:main.ServiceConfig):Promise<void>;
 export function SaveSponsor(arg1:main.Sponsor):Promise<main.Sponsor>;
 
 export function SaveSponsorCampaign(arg1:string,arg2:main.SponsorCampaign):Promise<main.Sponsor>;
+
+export function SaveStreamWidget(arg1:main.StreamWidget):Promise<main.StreamWidget>;
 
 export function SaveStreams(arg1:Array<main.Stream>):Promise<void>;
 

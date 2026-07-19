@@ -21,6 +21,9 @@ const (
 	keyRoutines       = "routines"
 	keyProjects       = "projects"
 	keySponsors       = "sponsors"
+	// keyStreamWidgets holds the Stream Widgets managed on the OBS section
+	// (see widgets.go).
+	keyStreamWidgets = "stream_widgets"
 	// keyYouTubeLivePrefix holds the "🔴 LIVE: "-style prefix for YouTube
 	// broadcast titles; shared with the frontend's SETTING_KEYS.
 	keyYouTubeLivePrefix = "youtube_live_prefix"

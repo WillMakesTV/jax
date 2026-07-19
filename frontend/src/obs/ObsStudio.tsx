@@ -3,8 +3,9 @@ import {main} from '../../wailsjs/go/models'
 import {ObsPanel} from './ObsPanel'
 import {RoutinesPanel} from './RoutinesPanel'
 import {SmartSourcesPanel} from './SmartSourcesPanel'
+import {StreamWidgetsPanel} from './StreamWidgetsPanel'
 
-export type ObsTab = 'dashboard' | 'routines' | 'smart-sources'
+export type ObsTab = 'dashboard' | 'routines' | 'smart-sources' | 'widgets'
 
 /**
  * The OBS Studio section: its main dashboard (preview, scenes, sources,
@@ -32,6 +33,7 @@ export function ObsStudio({
     {id: 'dashboard', label: 'Dashboard'},
     {id: 'routines', label: 'Routines'},
     {id: 'smart-sources', label: 'Smart Sources'},
+    {id: 'widgets', label: 'Stream Widgets'},
   ]
 
   return (
@@ -68,6 +70,7 @@ export function ObsStudio({
           onOpenCustomTokens={onOpenCustomTokens}
         />
       )}
+      {tab === 'widgets' && <StreamWidgetsPanel />}
     </div>
   )
 }
