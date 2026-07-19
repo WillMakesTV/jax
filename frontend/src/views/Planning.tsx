@@ -35,11 +35,12 @@ interface PlanningProps {
 
 /**
  * The Broadcasting section — planning and the live broadcast in one place.
- * Dashboard: unread notifications up top, then one stream-planning list (whose
- * cards open a plan's broadcast page to go live / update info / conclude /
- * edit), then past streams. Chat, Events, and Transcript follow the broadcast;
- * Content Series holds the reusable context for recurring shows. Going live
- * also lives in the header; OBS Studio has the top bar's CTA.
+ * The header carries the tabs with the unread-notification chips inline
+ * beside them. Dashboard: one stream-planning list (whose cards open a
+ * plan's broadcast page to go live / update info / conclude / edit), then
+ * past streams. Chat, Events, and Transcript follow the broadcast; Content
+ * Series holds the reusable context for recurring shows. Going live also
+ * lives in the header; OBS Studio has the top bar's CTA.
  */
 export function Planning({
   tab,
@@ -69,50 +70,52 @@ export function Planning({
   return (
     <div className={clsx('flex flex-col gap-6', fills && 'h-full')}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div
-          role="tablist"
-          aria-label="Broadcasting sections"
-          className="flex w-fit items-center gap-1 rounded-lg border border-edge bg-surface p-1"
-        >
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.id}
-              onClick={() => onTabChange(t.id)}
-              className={clsx(
-                'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                tab === t.id
-                  ? 'bg-accent text-accent-fg'
-                  : 'text-fg-muted hover:bg-surface-hover hover:text-fg',
-              )}
-            >
-              {t.label}
-              {Boolean(t.badge) && (
-                <span
-                  className={clsx(
-                    'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
-                    tab === t.id
-                      ? 'bg-accent-fg/20 text-accent-fg'
-                      : 'bg-accent text-accent-fg',
-                  )}
-                >
-                  {t.badge}
-                </span>
-              )}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-3">
+          <div
+            role="tablist"
+            aria-label="Broadcasting sections"
+            className="flex w-fit items-center gap-1 rounded-lg border border-edge bg-surface p-1"
+          >
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => onTabChange(t.id)}
+                className={clsx(
+                  'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                  tab === t.id
+                    ? 'bg-accent text-accent-fg'
+                    : 'text-fg-muted hover:bg-surface-hover hover:text-fg',
+                )}
+              >
+                {t.label}
+                {Boolean(t.badge) && (
+                  <span
+                    className={clsx(
+                      'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
+                      tab === t.id
+                        ? 'bg-accent-fg/20 text-accent-fg'
+                        : 'bg-accent text-accent-fg',
+                    )}
+                  >
+                    {t.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+          <BroadcastNotifications
+            onOpenChat={() => onTabChange('chat')}
+            onOpenEvents={() => onTabChange('events')}
+          />
         </div>
         <GoLiveButton />
       </div>
 
       {tab === 'dashboard' && (
         <div className="flex flex-col gap-8">
-          <BroadcastNotifications
-            onOpenChat={() => onTabChange('chat')}
-            onOpenEvents={() => onTabChange('events')}
-          />
           <PlanningSection
             onPlanStream={onPlanStream}
             onOpenPlan={onOpenBroadcast}

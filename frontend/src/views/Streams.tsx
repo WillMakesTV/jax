@@ -701,7 +701,8 @@ export function PlanningSection({
           </div>
         </button>
       ) : (
-        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        // Three across on medium viewports, five at full width.
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
           {plans.map((plan) => (
             <PlanCard
               key={plan.id}

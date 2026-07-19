@@ -1,4 +1,4 @@
-import {ArrowRight, Bell, MessageSquare, type LucideIcon} from 'lucide-react'
+import {Bell, MessageSquare, type LucideIcon} from 'lucide-react'
 import clsx from 'clsx'
 import {useChat} from '../chat/ChatProvider'
 import {useEvents} from '../events/EventsProvider'
@@ -11,9 +11,10 @@ interface BroadcastNotificationsProps {
 }
 
 /**
- * The Broadcasting dashboard's notification cards: unread chat and unread
- * events, each deep-linking to its tab. (The OBS preview that used to sit
- * beside them moved out entirely — OBS Studio has the top bar's CTA.)
+ * The Broadcasting header's notification chips: unread chat and unread
+ * events, each deep-linking to its tab. They sit inline with the section's
+ * tablist — visible from every tab, not just the dashboard (where they used
+ * to be a full card section).
  */
 export function BroadcastNotifications({
   onOpenChat,
@@ -23,40 +24,31 @@ export function BroadcastNotifications({
   const {unreadCount: unreadEvents} = useEvents()
 
   return (
-    <section aria-label="Notifications">
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-fg-muted">
-        Notifications
-      </h2>
-      <div className="grid max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2">
-        <UnreadCard
-          icon={MessageSquare}
-          label="Unread messages"
-          hint="from the unified chat"
-          count={unreadChat}
-          onClick={onOpenChat}
-        />
-        <UnreadCard
-          icon={Bell}
-          label="Unread events"
-          hint="follows, subs & more"
-          count={unreadEvents}
-          onClick={onOpenEvents}
-        />
-      </div>
-    </section>
+    <div aria-label="Notifications" className="flex items-center gap-2">
+      <UnreadChip
+        icon={MessageSquare}
+        label="Unread messages"
+        count={unreadChat}
+        onClick={onOpenChat}
+      />
+      <UnreadChip
+        icon={Bell}
+        label="Unread events"
+        count={unreadEvents}
+        onClick={onOpenEvents}
+      />
+    </div>
   )
 }
 
-function UnreadCard({
+function UnreadChip({
   icon: Icon,
   label,
-  hint,
   count,
   onClick,
 }: {
   icon: LucideIcon
   label: string
-  hint: string
   count: number
   onClick: () => void
 }) {
@@ -65,30 +57,15 @@ function UnreadCard({
     <button
       type="button"
       onClick={onClick}
+      title={label}
+      aria-label={`${label}: ${count}`}
       className={clsx(
-        'flex items-center gap-3 rounded-xl border bg-surface p-4 text-left transition-colors hover:bg-surface-hover',
-        active ? 'border-accent/50' : 'border-edge',
+        'inline-flex items-center gap-1.5 rounded-lg border bg-surface px-2.5 py-2 transition-colors hover:bg-surface-hover',
+        active ? 'border-accent/50 text-fg' : 'border-edge text-fg-muted',
       )}
     >
-      <span
-        aria-hidden
-        className={clsx(
-          'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg',
-          active
-            ? 'bg-accent text-accent-fg'
-            : 'bg-surface-hover text-fg-muted',
-        )}
-      >
-        <Icon size={20} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-xl font-semibold text-fg">{count}</span>
-          <span className="truncate text-sm font-medium text-fg">{label}</span>
-        </div>
-        <p className="truncate text-xs text-fg-muted">{hint}</p>
-      </div>
-      <ArrowRight size={16} aria-hidden className="shrink-0 text-fg-muted" />
+      <Icon size={14} aria-hidden className={clsx(active && 'text-accent')} />
+      <span className="text-xs font-semibold">{count}</span>
     </button>
   )
 }
