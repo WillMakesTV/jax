@@ -938,6 +938,10 @@ export function SyncPlatformEvents() {
   return window['go']['main']['App']['SyncPlatformEvents']();
 }
 
+export function TestStreamWidget(arg1) {
+  return window['go']['main']['App']['TestStreamWidget'](arg1);
+}
+
 export function TikTokRedirectURI() {
   return window['go']['main']['App']['TikTokRedirectURI']();
 }

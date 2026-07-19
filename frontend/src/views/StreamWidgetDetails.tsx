@@ -27,6 +27,7 @@ import {
 import {main} from '../../wailsjs/go/models'
 import {useAiQueue} from '../ai/AiQueueProvider'
 import {JsxTemplateField} from '../components/JsxTemplateField'
+import {MarkdownField} from '../components/markdown/MarkdownField'
 import {Modal} from '../components/Modal'
 import {useDataChanged} from '../lib/dataChanged'
 import {formatDate} from '../lib/format'
@@ -760,14 +761,11 @@ export function StreamWidgetDetails({
             aware of its fields. The current display, if any, is revised rather
             than discarded.
           </p>
-          <textarea
+          <MarkdownField
+            id="widget-display-brief"
             value={genDesc}
-            onChange={(e) => setGenDesc(e.target.value)}
-            rows={5}
-            autoFocus
+            onChange={setGenDesc}
             placeholder="e.g. A compact lower-third bar: the image on the left, the status line big and bold beside it, sliding in from the left when shown…"
-            aria-label="Layout description"
-            className={`${field} resize-y`}
           />
           <div className="flex justify-end gap-2">
             <button

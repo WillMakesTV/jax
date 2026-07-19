@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -46,6 +47,44 @@ type widgetSourceData struct {
 	CSS      string              `json:"css"`
 	JS       string              `json:"js"`
 	Fields   []widgetSourceField `json:"fields"`
+	// Testing is true while a test window fired from the app is running;
+	// the page remounts the display and plays sound fields when it flips
+	// on, and clears back to the normal render when it flips off.
+	Testing bool `json:"testing"`
+}
+
+// widgetTestWindow is how long a widget test shows before clearing.
+const widgetTestWindow = 15 * time.Second
+
+// TestStreamWidget starts a widget's test window: for the next 15 seconds
+// its Browser Source reports testing, remounts the display (restarting any
+// entrance animation), and plays its sound fields once — then clears back
+// to the normal render.
+func (a *App) TestStreamWidget(id string) error {
+	found := false
+	for _, w := range a.getStreamWidgets() {
+		if w.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("that stream widget no longer exists")
+	}
+	a.mu.Lock()
+	if a.widgetTests == nil {
+		a.widgetTests = map[string]time.Time{}
+	}
+	a.widgetTests[id] = time.Now().Add(widgetTestWindow)
+	a.mu.Unlock()
+	return nil
+}
+
+// widgetTesting reports whether a widget's test window is still open.
+func (a *App) widgetTesting(id string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return time.Now().Before(a.widgetTests[id])
 }
 
 // serveWidgetSource handles everything under /widget/: the runtime assets,
@@ -89,6 +128,7 @@ func (a *App) serveWidgetSource(w http.ResponseWriter, r *http.Request) {
 			CSS:      widget.CSS,
 			JS:       widget.JS,
 			Fields:   []widgetSourceField{},
+			Testing:  a.widgetTesting(widget.ID),
 		}
 		for _, f := range widget.Fields {
 			value := f.Value
@@ -172,11 +212,25 @@ var widgetSourcePage = template.Must(template.New("widget").Parse(`<!DOCTYPE htm
     return compiled.render
   }
 
+  var wasTesting = false
+
   function apply(data) {
     fields = {}
     data.fields.forEach(function (f) { fields[f.label] = f.value })
     cssTag.textContent = data.css || ''
-    var widget = {name: data.name}
+    var widget = {name: data.name, testing: !!data.testing}
+
+    // A test window opening remounts the display (restarting entrance
+    // animations) and plays each sound field once; the window closing
+    // clears back to the normal render below.
+    if (widget.testing && !wasTesting) {
+      root.render(null)
+      data.fields.forEach(function (f) {
+        if (f.kind === 'sound' && f.value) new Audio(f.value).play().catch(function () {})
+      })
+    }
+    wasTesting = widget.testing
+
     var render = compileTemplate(data.template)
     root.render(render(React, widget, fields, window.playSound))
     if (data.js && data.js.trim()) {
@@ -281,9 +335,11 @@ root). Do not wrap the JSON in code fences.`
 		return StreamWidget{}, err
 	}
 	return a.mutateStreamWidget(widgetID, func(sw *StreamWidget) error {
-		sw.Template = parsed.Template
-		sw.CSS = parsed.CSS
-		sw.JS = parsed.JS
+		// Models often return everything on one line; pretty-print that
+		// case so the editors read properly (see widget_format.go).
+		sw.Template = formatWidgetJSX(parsed.Template)
+		sw.CSS = formatWidgetCSS(parsed.CSS)
+		sw.JS = formatWidgetJS(parsed.JS)
 		return nil
 	})
 }

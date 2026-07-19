@@ -88,6 +88,11 @@ type App struct {
 	// downloaded videos (guarded by mu; see media.go). Empty until startup.
 	mediaBaseURL string
 
+	// widgetTests holds each stream widget's active test window's end time
+	// (guarded by mu; see widget_source.go). The Browser Source data feed
+	// reports a widget as testing until its window expires.
+	widgetTests map[string]time.Time
+
 	// In-progress headless editing session and the plan it belongs to
 	// (guarded by mu; see editor.go). One edit runs at a time.
 	editCmd    *exec.Cmd

@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseWidgetTemplate(t *testing.T) {
@@ -99,5 +100,31 @@ func TestWidgetSourceEndpoints(t *testing.T) {
 	wantSound := "http://127.0.0.1:9999" + widgetFilesPrefix + w.ID + "/ding.mp3"
 	if data.Fields[1].Kind != "sound" || data.Fields[1].Value != wantSound {
 		t.Fatalf("sound field mismatch: %+v", data.Fields[1])
+	}
+	if data.Testing {
+		t.Fatal("no test window should be open yet")
+	}
+
+	// A test window flips the feed's testing flag for its 15 seconds.
+	if err := a.TestStreamWidget("nope"); err == nil {
+		t.Fatal("want error testing an unknown widget")
+	}
+	if err := a.TestStreamWidget(w.ID); err != nil {
+		t.Fatalf("test widget: %v", err)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", widgetSourcePrefix+w.ID+"/data", nil))
+	if err := json.Unmarshal(rec.Body.Bytes(), &data); err != nil {
+		t.Fatalf("data decode after test: %v", err)
+	}
+	if !data.Testing {
+		t.Fatal("the feed should report the open test window")
+	}
+	// An expired window reads as cleared.
+	a.mu.Lock()
+	a.widgetTests[w.ID] = time.Now().Add(-time.Second)
+	a.mu.Unlock()
+	if a.widgetTesting(w.ID) {
+		t.Fatal("an expired test window should read as cleared")
 	}
 }

@@ -1,4 +1,7 @@
 import {
+  Check,
+  Copy,
+  FlaskConical,
   Image,
   LayoutGrid,
   Plus,
@@ -14,6 +17,7 @@ import {
   GetWidgetFieldTypes,
   SaveStreamWidget,
   SaveWidgetFieldType,
+  TestStreamWidget,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {Modal} from '../components/Modal'
@@ -96,6 +100,44 @@ export function StreamWidgetsPanel({
       setWidgets((prev) => prev.filter((w) => w.id !== id))
     } catch {
       // Non-fatal; the list reconciles on the next load.
+    }
+  }
+
+  // Widgets whose 15-second test window is running, for button feedback.
+  const [testingIds, setTestingIds] = useState<string[]>([])
+  const test = async (w: main.StreamWidget) => {
+    setError('')
+    try {
+      await TestStreamWidget(w.id)
+      setTestingIds((prev) => (prev.includes(w.id) ? prev : [...prev, w.id]))
+      window.setTimeout(
+        () => setTestingIds((prev) => prev.filter((id) => id !== w.id)),
+        15000,
+      )
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string' && err
+            ? err
+            : 'The test could not be started.',
+      )
+    }
+  }
+
+  // Which widget's Browser Source address was just copied, for feedback.
+  const [copiedId, setCopiedId] = useState('')
+  const copySource = async (w: main.StreamWidget) => {
+    if (!w.sourceUrl) return
+    try {
+      await navigator.clipboard.writeText(w.sourceUrl)
+      setCopiedId(w.id)
+      window.setTimeout(
+        () => setCopiedId((cur) => (cur === w.id ? '' : cur)),
+        2000,
+      )
+    } catch {
+      // Clipboard unavailable; the details page still shows the address.
     }
   }
 
@@ -195,6 +237,33 @@ export function StreamWidgetsPanel({
                   {w.name}
                 </span>
               </button>
+              {w.sourceUrl && (
+                <button
+                  type="button"
+                  onClick={() => void test(w)}
+                  disabled={testingIds.includes(w.id)}
+                  title="Show this widget on its Browser Source for 15 seconds"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-50"
+                >
+                  <FlaskConical size={12} aria-hidden />
+                  {testingIds.includes(w.id) ? 'Testing…' : 'Test'}
+                </button>
+              )}
+              {w.sourceUrl && (
+                <button
+                  type="button"
+                  onClick={() => void copySource(w)}
+                  title="Copy the OBS Browser Source address"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                >
+                  {copiedId === w.id ? (
+                    <Check size={12} aria-hidden />
+                  ) : (
+                    <Copy size={12} aria-hidden />
+                  )}
+                  {copiedId === w.id ? 'Copied' : 'Copy Browser Source'}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => void remove(w.id)}

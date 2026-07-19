@@ -470,6 +470,8 @@ export function SummarizePlanChanges(arg1:string):Promise<main.PlanChanges>;
 
 export function SyncPlatformEvents():Promise<Array<main.StoredLiveEvent>>;
 
+export function TestStreamWidget(arg1:string):Promise<void>;
+
 export function TikTokRedirectURI():Promise<string>;
 
 export function TranscribeDownload(arg1:string):Promise<void>;
