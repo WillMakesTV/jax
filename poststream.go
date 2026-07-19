@@ -16,21 +16,26 @@ import (
 // EndStreamSession) kicks off an automatic wrap-up pipeline, gated on the
 // Settings → Streams "Download past streams" toggle:
 //
-//   1. VODs   — the platforms' listings (Twitch, YouTube, Kick, Facebook) are
+//   1. Live   — every connected channel is polled until none still reports
+//               the broadcast live, so the VODs the next stages fetch are
+//               complete recordings rather than still-growing ones (a
+//               platform can keep a stream on the air for a while after the
+//               End Stream routine stops the encoder).
+//   2. VODs   — the platforms' listings (Twitch, YouTube, Kick, Facebook) are
 //               re-fetched until the finished stream appears; it waits a
 //               settle period for every connected channel's copy so the
 //               aggregated stream's identity (its startedAt key) is stable.
-//   2. Download   — the stream's videos are fetched with the usual download
+//   3. Download   — the stream's videos are fetched with the usual download
 //                   sidecar (downloadPastStream), one download at a time.
-//   3. Transcribe — the downloaded video is re-transcribed, replacing the
+//   4. Transcribe — the downloaded video is re-transcribed, replacing the
 //                   live-captured transcript (TranscribeDownload).
-//   4. Outline    — the stream's outline is generated from the transcript
+//   5. Outline    — the stream's outline is generated from the transcript
 //                   and chat (GenerateStreamOutline).
-//   5. Thumbnail  — a custom thumbnail is generated from the outline and
+//   6. Thumbnail  — a custom thumbnail is generated from the outline and
 //                   applied (GenerateStreamThumbnail + SetStreamThumbnail).
-//   6. Description — a past-framed description is drafted from the outline
+//   7. Description — a past-framed description is drafted from the outline
 //                    and applied (GenerateStreamDescription).
-//   7. Clip scripts — three short-form clip scripts are pitched from the
+//   8. Clip scripts — three short-form clip scripts are pitched from the
 //                     fresh transcript and outline (GenerateClipIdeas),
 //                     waiting on the stream's Clips tab.
 //
@@ -49,6 +54,13 @@ import (
 const keyDownloadPastStreams = "download_past_streams"
 
 const (
+	// livePollInterval is how often the connected channels are re-checked
+	// while any of them still reports the broadcast live.
+	livePollInterval = 30 * time.Second
+	// liveWaitDeadline bounds the live wait; a channel still live past it is
+	// warned about and the pipeline moves on (a 24/7 restream would
+	// otherwise stall the wrap-up forever).
+	liveWaitDeadline = 30 * time.Minute
 	// vodPollInterval is how often the platforms are re-fetched while waiting
 	// for the finished stream's VODs to be listed.
 	vodPollInterval = time.Minute
@@ -70,9 +82,9 @@ const (
 // PostStreamStatus is the pipeline's state as shown in the status bar.
 type PostStreamStatus struct {
 	Active bool `json:"active"`
-	// Stage: "vods" | "download" | "transcribe" | "outline" | "thumbnail" |
-	// "description" | "clips" while active; "done" | "error" | "cancelled"
-	// after; "" when the pipeline has never run.
+	// Stage: "live" | "vods" | "download" | "transcribe" | "outline" |
+	// "thumbnail" | "description" | "clips" while active; "done" | "error" |
+	// "cancelled" after; "" when the pipeline has never run.
 	Stage  string `json:"stage"`
 	Detail string `json:"detail"`
 	// StartedAt keys the matched past stream ("" until it is identified), so
@@ -136,8 +148,8 @@ func (a *App) maybeStartPostStream(session ActiveStreamSession) {
 	a.postStreamCancel = cancel
 	a.postStream = PostStreamStatus{
 		Active:   true,
-		Stage:    "vods",
-		Detail:   "Waiting for the stream's VODs to appear…",
+		Stage:    "live",
+		Detail:   "Waiting for every channel to finish streaming…",
 		Title:    session.Title,
 		Warnings: []string{},
 	}
@@ -192,9 +204,37 @@ func (a *App) runPostStream(session ActiveStreamSession, stoppedAt time.Time, ca
 		})
 	}
 
-	// -- Stage 1: refresh the channels until the finished stream is listed --
+	// -- Stage 1: wait until every connected channel is off the air ---------
+	// The encoder stopping does not end the broadcast everywhere at once —
+	// platforms finalize on their own clocks — and a VOD downloaded while
+	// its channel still streams would be an incomplete recording.
+	liveDeadline := stoppedAt.Add(liveWaitDeadline)
+	for a.anyChannelStillLive() {
+		if cancelled() {
+			return
+		}
+		if time.Now().After(liveDeadline) {
+			warn("A channel still reported the stream live past the wait — continuing; its VOD may be incomplete.")
+			break
+		}
+		if !postStreamWait(livePollInterval, cancel) {
+			end("cancelled", "Post-stream processing was cancelled.")
+			return
+		}
+	}
+	if cancelled() {
+		return
+	}
+	a.postStreamUpdate(func(st *PostStreamStatus) {
+		st.Stage = "vods"
+		st.Detail = "Waiting for the stream's VODs to appear…"
+	})
+
+	// -- Stage 2: refresh the channels until the finished stream is listed --
+	// The VOD deadline starts now rather than at the stop, so a long live
+	// wait does not eat into it.
 	var stream PastStream
-	deadline := stoppedAt.Add(vodWaitDeadline)
+	deadline := time.Now().Add(vodWaitDeadline)
 	for {
 		if cancelled() {
 			return
@@ -227,7 +267,7 @@ func (a *App) runPostStream(session ActiveStreamSession, stoppedAt time.Time, ca
 		st.Detail = "Downloading the stream's video…"
 	})
 
-	// -- Stage 2: download the videos (reusing an existing download) --------
+	// -- Stage 3: download the videos (reusing an existing download) --------
 	subfolder := a.subfolderForStream(stream)
 	if subfolder == "" {
 		// One download at a time: wait for the slot before claiming it.
@@ -285,7 +325,7 @@ func (a *App) runPostStream(session ActiveStreamSession, stoppedAt time.Time, ca
 		}
 	}
 
-	// -- Stage 3: re-transcribe the transcript from the downloaded video ----
+	// -- Stage 4: re-transcribe the transcript from the downloaded video ----
 	if cancelled() {
 		return
 	}
@@ -330,7 +370,7 @@ func (a *App) runPostStream(session ActiveStreamSession, stoppedAt time.Time, ca
 		}
 	}
 
-	// -- Stages 4-6 need the AI service ------------------------------------
+	// -- Stages 5-7 need the AI service ------------------------------------
 	if cancelled() {
 		return
 	}
@@ -350,7 +390,7 @@ func (a *App) runPostStream(session ActiveStreamSession, stoppedAt time.Time, ca
 		})
 	}
 
-	// -- Stage 4: outline ----------------------------------------------------
+	// -- Stage 5: outline ----------------------------------------------------
 	if existing, err := a.GetStreamOutline(stream.StartedAt); err != nil || existing.GeneratedAt == "" {
 		a.postStreamUpdate(func(st *PostStreamStatus) {
 			st.Stage = "outline"
@@ -364,7 +404,7 @@ func (a *App) runPostStream(session ActiveStreamSession, stoppedAt time.Time, ca
 		}
 	}
 
-	// -- Stage 5: thumbnail --------------------------------------------------
+	// -- Stage 6: thumbnail --------------------------------------------------
 	if cancelled() {
 		return
 	}
@@ -380,7 +420,7 @@ func (a *App) runPostStream(session ActiveStreamSession, stoppedAt time.Time, ca
 		}
 	}
 
-	// -- Stage 6: description -------------------------------------------------
+	// -- Stage 7: description -------------------------------------------------
 	if cancelled() {
 		return
 	}
@@ -398,7 +438,7 @@ func (a *App) runPostStream(session ActiveStreamSession, stoppedAt time.Time, ca
 		}
 	}
 
-	// -- Stage 7: clip scripts -----------------------------------------------
+	// -- Stage 8: clip scripts -----------------------------------------------
 	if cancelled() {
 		return
 	}
@@ -484,6 +524,18 @@ func (a *App) streamHasAllChannelVODs(stream PastStream) bool {
 		}
 	}
 	return true
+}
+
+// anyChannelStillLive reports whether any connected channel still shows the
+// broadcast on the air. With nothing connected it is false, so local-only
+// setups skip the live wait entirely.
+func (a *App) anyChannelStillLive() bool {
+	for _, ls := range a.GetLiveStreams() {
+		if ls.Live {
+			return true
+		}
+	}
+	return false
 }
 
 // subfolderForStream finds an existing download of the stream (any broadcast
