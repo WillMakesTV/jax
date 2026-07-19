@@ -445,89 +445,88 @@ export function Videos({onOpenVideo, onOpenVideoPlan, onPlanVideo}: VideosProps)
             <CheckCircle2 size={13} aria-hidden />
             Tracked Videos ({tracked.length})
           </h2>
-          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {tracked.map((t) => (
-              <li key={t.plan.id}>
-                <div className="flex items-center gap-3 rounded-xl border border-edge bg-surface p-3">
-                  <button
-                    type="button"
-                    onClick={() => onOpenVideoPlan(t.plan)}
-                    title="Open the plan this video came from"
-                    className="flex min-w-0 flex-1 items-center gap-3 text-left"
-                  >
-                    {(t.live?.thumbnailUrl || t.plan.thumbnailUrl) && (
-                      <img
-                        src={t.live?.thumbnailUrl || t.plan.thumbnailUrl}
-                        alt=""
-                        aria-hidden
-                        className={clsx(
-                          'shrink-0 rounded-md border border-edge object-cover',
-                          t.plan.format === 'short'
-                            ? 'aspect-[9/16] w-10'
-                            : 'aspect-video w-20',
-                        )}
-                      />
+          {/* Dense tiles, the thumbnail as each card's backdrop (like the
+              planned cards above): 4-up on medium viewports, 6-up on full
+              screens. The card carries the aggregate across every source —
+              per-platform numbers live on the video's page. */}
+          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4 2xl:grid-cols-6">
+            {tracked.map((t) => {
+              const thumb = t.live?.thumbnailUrl || t.plan.thumbnailUrl
+              const views =
+                t.totalViews > 0
+                  ? t.totalViews
+                  : t.live && t.live.viewCount > 0
+                    ? t.live.viewCount
+                    : 0
+              return (
+                <li key={t.plan.id}>
+                  <div className="relative flex h-full min-h-28 flex-col overflow-hidden rounded-xl border border-edge bg-surface p-3 transition-colors hover:border-accent/50">
+                    {thumb && (
+                      <span aria-hidden className="absolute inset-0">
+                        <img
+                          src={thumb}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
+                        <span className="absolute inset-0 bg-gradient-to-t from-surface via-surface/85 to-surface/30" />
+                      </span>
                     )}
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold text-fg hover:underline">
+                    <button
+                      type="button"
+                      onClick={() => onOpenVideoPlan(t.plan)}
+                      title="Open the plan this video came from"
+                      className="relative min-w-0 flex-1 text-left"
+                    >
+                      <span className="line-clamp-2 text-sm font-semibold text-fg hover:underline">
                         {t.live?.title || t.record?.title || t.plan.title}
                       </span>
                       <span className="mt-0.5 block truncate text-xs text-fg-muted">
                         {[
-                          t.plan.format === 'short' ? 'Short form' : 'Long form',
-                          t.totalViews > 0
-                            ? `${formatCompact(t.totalViews)} views total`
-                            : t.live && t.live.viewCount > 0
-                              ? `${formatCompact(t.live.viewCount)} views`
-                              : '',
+                          t.plan.format === 'short' ? 'Short' : 'Long form',
                           t.plan.completedAt
-                            ? `completed ${formatDate(t.plan.completedAt)}`
+                            ? formatDate(t.plan.completedAt)
                             : '',
                         ]
                           .filter(Boolean)
                           .join(' · ')}
                       </span>
-                      {t.shares.length > 0 && (
-                        <span className="mt-1.5 flex flex-wrap gap-1">
-                          {t.shares.map((s) => (
-                            <PlatformPill
-                              key={s.url}
-                              platform={s.platform}
-                              label={
-                                s.video
-                                  ? formatCompact(s.video.viewCount)
-                                  : '—'
-                              }
-                            />
-                          ))}
-                        </span>
-                      )}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSharesForId(t.plan.id)}
-                    title="Add links to everywhere this video was shared"
-                    aria-label="Edit share links"
-                    className="inline-flex shrink-0 items-center rounded-lg border border-edge p-1.5 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
-                  >
-                    <Link2 size={14} aria-hidden />
-                  </button>
-                  {t.record?.url && (
-                    <a
-                      href={t.record.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      title="Watch the published video"
-                      className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-edge px-2.5 py-1.5 text-xs font-semibold text-fg transition-colors hover:bg-surface-hover"
-                    >
-                      <ExternalLink size={12} aria-hidden />
-                      Watch
-                    </a>
-                  )}
-                </div>
-              </li>
-            ))}
+                    </button>
+                    <div className="relative mt-2 flex items-center justify-between gap-2">
+                      <span
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-fg"
+                        title={`${views ? formatCompact(views) : 'No'} views across ${t.shares.length + (t.record ? 1 : 0) || 1} source${t.shares.length + (t.record ? 1 : 0) === 1 ? '' : 's'}`}
+                      >
+                        <Eye size={12} aria-hidden />
+                        {views ? `${formatCompact(views)} views` : '— views'}
+                      </span>
+                      <span className="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setSharesForId(t.plan.id)}
+                          title="Add links to everywhere this video was shared"
+                          aria-label="Edit share links"
+                          className="inline-flex items-center rounded-lg border border-edge bg-bg/80 p-1.5 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                        >
+                          <Link2 size={13} aria-hidden />
+                        </button>
+                        {t.record?.url && (
+                          <a
+                            href={t.record.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Watch the published video"
+                            aria-label="Watch the published video"
+                            className="inline-flex items-center rounded-lg border border-edge bg-bg/80 p-1.5 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                          >
+                            <ExternalLink size={13} aria-hidden />
+                          </a>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                </li>
+              )
+            })}
           </ul>
         </section>
       )}
