@@ -2,10 +2,9 @@ import clsx from 'clsx'
 import {main} from '../../wailsjs/go/models'
 import {ObsPanel} from './ObsPanel'
 import {RoutinesPanel} from './RoutinesPanel'
-import {SmartSourcesPanel} from './SmartSourcesPanel'
 import {StreamWidgetsPanel} from './StreamWidgetsPanel'
 
-export type ObsTab = 'dashboard' | 'routines' | 'smart-sources' | 'widgets'
+export type ObsTab = 'dashboard' | 'routines' | 'widgets'
 
 /**
  * The OBS Studio section: its main dashboard (preview, scenes, sources,
@@ -17,25 +16,18 @@ export function ObsStudio({
   tab,
   onTabChange,
   onEditRoutine,
-  onEditSmartSource,
-  onOpenCustomTokens,
   onOpenWidget,
 }: {
   tab: ObsTab
   onTabChange: (tab: ObsTab) => void
   /** Open the routine add/edit page; null creates a new routine. */
   onEditRoutine: (routine: main.Routine | null) => void
-  /** Open the smart-source template-editor page. */
-  onEditSmartSource: (name: string) => void
-  /** Open the custom-tokens page. */
-  onOpenCustomTokens: () => void
   /** Open a stream widget's configuration page. */
   onOpenWidget: (widget: main.StreamWidget) => void
 }) {
   const tabs: {id: ObsTab; label: string}[] = [
     {id: 'dashboard', label: 'Dashboard'},
     {id: 'routines', label: 'Routines'},
-    {id: 'smart-sources', label: 'Smart Sources'},
     {id: 'widgets', label: 'Stream Widgets'},
   ]
 
@@ -67,12 +59,6 @@ export function ObsStudio({
 
       {tab === 'dashboard' && <ObsPanel />}
       {tab === 'routines' && <RoutinesPanel onEditRoutine={onEditRoutine} />}
-      {tab === 'smart-sources' && (
-        <SmartSourcesPanel
-          onEditSource={onEditSmartSource}
-          onOpenCustomTokens={onOpenCustomTokens}
-        />
-      )}
       {tab === 'widgets' && <StreamWidgetsPanel onOpenWidget={onOpenWidget} />}
     </div>
   )

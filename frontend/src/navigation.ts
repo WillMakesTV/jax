@@ -35,8 +35,6 @@ export type ViewId =
   | 'edit-series'
   | 'edit-routine'
   | 'widget-details'
-  | 'edit-smart-source'
-  | 'custom-tokens'
   | 'settings'
   | 'profile'
 

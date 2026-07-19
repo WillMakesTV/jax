@@ -33,8 +33,6 @@ import {Projects} from './views/Projects'
 import {CampaignDetails} from './views/CampaignDetails'
 import {SponsorDetails} from './views/SponsorDetails'
 import {Sponsors} from './views/Sponsors'
-import {CustomTokens} from './views/CustomTokens'
-import {EditSmartSource} from './views/EditSmartSource'
 import {StreamDetails, type StreamTab} from './views/StreamDetails'
 import {StreamWidgetDetails} from './views/StreamWidgetDetails'
 import {Videos} from './views/Videos'
@@ -73,8 +71,6 @@ interface NavState {
   routine: main.Routine | null
   /** The stream widget being configured; null = none. */
   widget: main.StreamWidget | null
-  /** The smart source whose template is being edited; null = none. */
-  smartSource: string | null
   /** The stream plan being viewed/edited; null = creating a new one. */
   plan: main.PlannedStream | null
   /** The video plan being viewed/edited; null = creating a new one. */
@@ -105,7 +101,6 @@ const INITIAL_NAV: NavState = {
   series: null,
   routine: null,
   widget: null,
-  smartSource: null,
   plan: null,
   videoPlan: null,
   videoPlanTab: null,
@@ -128,7 +123,6 @@ const sameNav = (a: NavState, b: NavState) =>
   a.series === b.series &&
   a.routine === b.routine &&
   a.widget === b.widget &&
-  a.smartSource === b.smartSource &&
   a.plan === b.plan &&
   a.videoPlan === b.videoPlan &&
   a.videoPlanTab === b.videoPlanTab &&
@@ -329,18 +323,6 @@ function App() {
   )
   const backToWidgets = useCallback(
     () => navigate({view: 'obs', obsTab: 'widgets', widget: null}),
-    [navigate],
-  )
-  const openEditSmartSource = useCallback(
-    (name: string) => navigate({view: 'edit-smart-source', smartSource: name}),
-    [navigate],
-  )
-  const openCustomTokens = useCallback(
-    () => navigate({view: 'custom-tokens'}),
-    [navigate],
-  )
-  const backToSmartSources = useCallback(
-    () => navigate({view: 'obs', obsTab: 'smart-sources', smartSource: null}),
     [navigate],
   )
   // Status-bar transcription chip: jump to the stream whose downloaded video
@@ -599,10 +581,6 @@ function App() {
         return cur.routine ? 'Edit routine' : 'New routine'
       case 'widget-details':
         return cur.widget?.name || 'Stream widget'
-      case 'edit-smart-source':
-        return cur.smartSource || 'Smart source'
-      case 'custom-tokens':
-        return 'Custom tokens'
       default:
         return 'Jax'
     }
@@ -620,7 +598,6 @@ function App() {
     cur.project,
     cur.sponsor,
     cur.campaign,
-    cur.smartSource,
   ])
 
   // Reconcile with the backend store on mount (and seed it on first run).
@@ -664,10 +641,7 @@ function App() {
                 ? 'projects'
                 : view === 'sponsor-details' || view === 'campaign-details'
                   ? 'sponsors'
-                  : view === 'edit-routine' ||
-                      view === 'widget-details' ||
-                      view === 'edit-smart-source' ||
-                      view === 'custom-tokens'
+                  : view === 'edit-routine' || view === 'widget-details'
                     ? 'obs'
                     : view === 'video-details' ||
                         view === 'plan-video' ||
@@ -760,19 +734,8 @@ function App() {
                 tab={cur.obsTab}
                 onTabChange={setObsTab}
                 onEditRoutine={openEditRoutine}
-                onEditSmartSource={openEditSmartSource}
-                onOpenCustomTokens={openCustomTokens}
                 onOpenWidget={openWidgetDetails}
               />
-            )}
-            {view === 'edit-smart-source' && cur.smartSource && (
-              <EditSmartSource
-                sourceName={cur.smartSource}
-                onBack={backToSmartSources}
-              />
-            )}
-            {view === 'custom-tokens' && (
-              <CustomTokens onBack={backToSmartSources} />
             )}
             {view === 'edit-routine' && (
               <EditRoutine
