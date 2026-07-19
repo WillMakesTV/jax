@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -51,11 +52,35 @@ const brandFilesPrefix = "/brandfiles/"
 // startMediaServer binds a loopback listener and serves downloaded media,
 // recording the base URL on the app. Best-effort: on failure media playback is
 // simply unavailable (mediaBaseURL stays empty).
+//
+// The port must survive restarts: OBS Browser Sources (and anything else
+// outside the app) hold absolute URLs to this server, and a fresh random
+// port on every launch would orphan them all. The first run's port is
+// stored and re-bound on later runs; only when it is unavailable does a new
+// one get picked — and stored in its place.
 func (a *App) startMediaServer() {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		log.Printf("jax: media server listen: %v", err)
-		return
+	var ln net.Listener
+	if a.store != nil {
+		if port, err := a.store.getSetting(keyMediaPort); err == nil && port != "" {
+			if l, lerr := net.Listen("tcp", "127.0.0.1:"+port); lerr == nil {
+				ln = l
+			} else {
+				log.Printf("jax: media server port %s unavailable, picking a new one: %v", port, lerr)
+			}
+		}
+	}
+	if ln == nil {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			log.Printf("jax: media server listen: %v", err)
+			return
+		}
+		ln = l
+	}
+	if addr, ok := ln.Addr().(*net.TCPAddr); ok && a.store != nil {
+		if err := a.store.setSetting(keyMediaPort, strconv.Itoa(addr.Port)); err != nil {
+			log.Printf("jax: store media server port: %v", err)
+		}
 	}
 	a.mu.Lock()
 	a.mediaBaseURL = "http://" + ln.Addr().String()

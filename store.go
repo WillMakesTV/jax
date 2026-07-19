@@ -39,6 +39,9 @@ const (
 	// keyGitHubRepo holds the "owner/repo" the AI-debugging workflow files
 	// issues and pushes fixes against (see github.go).
 	keyGitHubRepo = "github_repo"
+	// keyMediaPort holds the media server's port so external absolute URLs
+	// (OBS Browser Sources above all) survive app restarts (see media.go).
+	keyMediaPort = "media_server_port"
 	// keyAppAbout holds the producer-authored description of the app itself
 	// (Settings → About; see about.go).
 	keyAppAbout = "app_about"
