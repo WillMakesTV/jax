@@ -286,6 +286,10 @@ export function GenerateVideoPublishFields(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['GenerateVideoPublishFields'](arg1, arg2, arg3, arg4);
 }
 
+export function GenerateWidgetFieldImage(arg1, arg2, arg3) {
+  return window['go']['main']['App']['GenerateWidgetFieldImage'](arg1, arg2, arg3);
+}
+
 export function GetAppAbout() {
   return window['go']['main']['App']['GetAppAbout']();
 }
@@ -960,6 +964,10 @@ export function UpdateYouTubeThumbnail(arg1, arg2) {
 
 export function UploadPlanThumbnail() {
   return window['go']['main']['App']['UploadPlanThumbnail']();
+}
+
+export function UploadWidgetFieldImage(arg1, arg2) {
+  return window['go']['main']['App']['UploadWidgetFieldImage'](arg1, arg2);
 }
 
 export function UsedEpisodeNumbers(arg1) {

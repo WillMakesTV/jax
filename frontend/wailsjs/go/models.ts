@@ -1641,6 +1641,7 @@ export class WidgetField {
     typeId: string;
     label: string;
     value: string;
+    valueUrl: string;
 
     static createFrom(source: any = {}) {
         return new WidgetField(source);
@@ -1652,6 +1653,7 @@ export class WidgetField {
         this.typeId = source["typeId"];
         this.label = source["label"];
         this.value = source["value"];
+        this.valueUrl = source["valueUrl"];
     }
 }
 export class StreamWidget {

@@ -4,6 +4,7 @@ import {
   GetPastStreams,
   GetProjects,
   GetSponsors,
+  GetStreamWidgets,
   GetVideoPlans,
 } from '../wailsjs/go/main/App'
 import {main} from '../wailsjs/go/models'
@@ -480,6 +481,21 @@ function App() {
     [navigate],
   )
 
+  // Status-bar chip for a widget field's image generation: resolve the
+  // widget by id and open its details page.
+  const openWidgetById = useCallback(
+    async (widgetId: string) => {
+      try {
+        const widgets = await GetStreamWidgets()
+        const widget = (widgets ?? []).find((w) => w.id === widgetId)
+        if (widget) navigate({view: 'widget-details', widget})
+      } catch {
+        // Lookup failed; stay where we are.
+      }
+    },
+    [navigate],
+  )
+
   // A job (or finished notice) in the status bar's AI queue opens the page
   // its result lands on.
   const openAiItem = useCallback(
@@ -498,9 +514,18 @@ function App() {
         case 'sponsor-research':
           void openSponsorById(targetId)
           break
+        case 'widget-image':
+          void openWidgetById(targetId)
+          break
       }
     },
-    [openStreamByStart, openVideoPlanById, openProjectById, openSponsorById],
+    [
+      openStreamByStart,
+      openVideoPlanById,
+      openProjectById,
+      openSponsorById,
+      openWidgetById,
+    ],
   )
 
   // Mouse buttons 4/5 (back/forward) navigate history.

@@ -140,15 +140,34 @@ func (a *App) ListAppSkills() ([]AppSkill, error) {
 			Overridden:  overridden,
 		})
 	}
+	// So does each stream widget: its skill is the creative brief behind
+	// generating the widget's imagery (see widget_images.go).
+	for _, w := range a.getStreamWidgets() {
+		id := widgetSkillID(w)
+		content, overridden := overrides[id]
+		if !overridden {
+			content = widgetSkillContent(w)
+		}
+		out = append(out, AppSkill{
+			ID:          id,
+			Title:       "Stream widget: " + w.Name,
+			Description: widgetSkillDescription(w),
+			Content:     content,
+			Overridden:  overridden,
+		})
+	}
 	return out, nil
 }
 
 // defaultContentFor returns a skill's default content: the embedded markdown
-// for catalog skills, or the generated brief for a widget field type's
-// dynamic skill.
+// for catalog skills, or the generated brief for a widget field type's or
+// stream widget's dynamic skill.
 func (a *App) defaultContentFor(id string) (string, error) {
 	if ft, ok := a.widgetFieldBySkillID(id); ok {
 		return widgetFieldSkillContent(ft), nil
+	}
+	if w, ok := a.widgetBySkillID(id); ok {
+		return widgetSkillContent(w), nil
 	}
 	return defaultSkillContent(id)
 }

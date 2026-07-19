@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -24,9 +25,11 @@ type WidgetField struct {
 	TypeID string `json:"typeId"`
 	// Label names the field on the widget; defaults to the type's name.
 	Label string `json:"label"`
-	// Value is the field's content: text for the message/status kinds.
-	// Image kinds hold a file reference once uploads/generation land.
-	Value string `json:"value"`
+	// Value is the field's content: text for the message/status kinds, or
+	// the image file's bare name (in ~/.jax/widgets/<widgetID>) for image
+	// kinds. ValueURL is the image's served address, derived on read.
+	Value    string `json:"value"`
+	ValueURL string `json:"valueUrl"`
 }
 
 // StreamWidget is one stream widget.
@@ -40,6 +43,29 @@ type StreamWidget struct {
 	// details page, stored verbatim.
 	Template  string `json:"template"`
 	CreatedAt string `json:"createdAt"` // RFC3339
+}
+
+// fillWidgetURLs stamps each image field's served URL (derived per read,
+// never persisted). Fields whose type is not an image kind carry none.
+func (a *App) fillWidgetURLs(w *StreamWidget) {
+	a.mu.Lock()
+	base := a.mediaBaseURL
+	a.mu.Unlock()
+
+	imageTypes := map[string]bool{}
+	for _, ft := range a.getWidgetFieldTypes() {
+		if ft.Kind == widgetFieldImage {
+			imageTypes[ft.ID] = true
+		}
+	}
+	for i := range w.Fields {
+		w.Fields[i].ValueURL = ""
+		if base == "" || w.Fields[i].Value == "" || !imageTypes[w.Fields[i].TypeID] {
+			continue
+		}
+		w.Fields[i].ValueURL = base + widgetFilesPrefix +
+			url.PathEscape(w.ID) + "/" + url.PathEscape(w.Fields[i].Value)
+	}
 }
 
 // getStreamWidgets reads the raw stored widget list. Never nil.
@@ -64,7 +90,11 @@ func (a *App) getStreamWidgets() []StreamWidget {
 
 // GetStreamWidgets returns the saved stream widgets, newest first. Never nil.
 func (a *App) GetStreamWidgets() []StreamWidget {
-	return a.getStreamWidgets()
+	widgets := a.getStreamWidgets()
+	for i := range widgets {
+		a.fillWidgetURLs(&widgets[i])
+	}
+	return widgets
 }
 
 // validateWidgetFields checks each field's value against its type's cap and
@@ -80,6 +110,8 @@ func (a *App) validateWidgetFields(fields []WidgetField) ([]WidgetField, error) 
 	}
 	for i := range fields {
 		fields[i].Label = strings.TrimSpace(fields[i].Label)
+		// Derived on read, never stored; a round-tripped value is dropped.
+		fields[i].ValueURL = ""
 		ft, ok := types[fields[i].TypeID]
 		if !ok {
 			continue
@@ -135,6 +167,7 @@ func (a *App) SaveStreamWidget(w StreamWidget) (StreamWidget, error) {
 	if err := a.store.setJSON(keyStreamWidgets, all); err != nil {
 		return w, err
 	}
+	a.fillWidgetURLs(&w)
 	return w, nil
 }
 
@@ -155,7 +188,9 @@ func (a *App) mutateStreamWidget(id string, fn func(w *StreamWidget) error) (Str
 		if err := a.store.setJSON(keyStreamWidgets, all); err != nil {
 			return StreamWidget{}, err
 		}
-		return all[i], nil
+		out := all[i]
+		a.fillWidgetURLs(&out)
+		return out, nil
 	}
 	return StreamWidget{}, fmt.Errorf("that stream widget no longer exists")
 }

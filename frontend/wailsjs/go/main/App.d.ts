@@ -144,6 +144,8 @@ export function GenerateVideoPlanThumbnail(arg1:string,arg2:string,arg3:string,a
 
 export function GenerateVideoPublishFields(arg1:string,arg2:main.VideoPublishDraft,arg3:Array<string>,arg4:string):Promise<main.VideoPublishSuggestion>;
 
+export function GenerateWidgetFieldImage(arg1:string,arg2:string,arg3:string):Promise<main.StreamWidget>;
+
 export function GetAppAbout():Promise<string>;
 
 export function GetActiveStreamSession():Promise<main.ActiveStreamSession>;
@@ -481,6 +483,8 @@ export function UpdateYouTubeStreamInfo(arg1:string,arg2:Array<string>):Promise<
 export function UpdateYouTubeThumbnail(arg1:string,arg2:Array<string>):Promise<main.StreamThumbInfo>;
 
 export function UploadPlanThumbnail():Promise<main.PlanThumbnail>;
+
+export function UploadWidgetFieldImage(arg1:string,arg2:string):Promise<main.StreamWidget>;
 
 export function UsedEpisodeNumbers(arg1:string):Promise<Array<number>>;
 

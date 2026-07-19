@@ -18,6 +18,7 @@ export type AiJobKind =
   | 'plan-listing'
   | 'project-image'
   | 'sponsor-research'
+  | 'widget-image'
 
 /** One AI generation, queued or running. */
 export interface AiJob {

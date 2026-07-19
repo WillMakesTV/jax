@@ -1,13 +1,24 @@
-import {Image, LayoutGrid, Plus, Trash2, Type} from 'lucide-react'
+import {
+  Image,
+  LayoutGrid,
+  Plus,
+  Sparkles,
+  Trash2,
+  Type,
+  Upload,
+} from 'lucide-react'
 import {useCallback, useEffect, useState} from 'react'
 import {
   AddWidgetField,
+  GenerateWidgetFieldImage,
   GetStreamWidgets,
   GetWidgetFieldTypes,
   RemoveWidgetField,
   SaveStreamWidget,
+  UploadWidgetFieldImage,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
+import {useAiQueue} from '../ai/AiQueueProvider'
 import {JsxTemplateField} from '../components/JsxTemplateField'
 import {useDataChanged} from '../lib/dataChanged'
 import {formatDate} from '../lib/format'
@@ -49,10 +60,14 @@ export function StreamWidgetDetails({
   const [template, setTemplate] = useState(widget.template ?? '')
   // Field values being edited, keyed by field id; unsaved edits live here.
   const [values, setValues] = useState<Record<string, string>>({})
+  // Revision notes for image generation, keyed by field id.
+  const [feedback, setFeedback] = useState<Record<string, string>>({})
+  const [uploading, setUploading] = useState('')
   const [types, setTypes] = useState<main.WidgetFieldType[]>([])
   const [addTypeId, setAddTypeId] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const queue = useAiQueue()
 
   // The navigation history hands us a snapshot; reload the live record so
   // edits from a previous visit (or elsewhere) are current.
@@ -143,6 +158,61 @@ export function StreamWidgetDetails({
       // Non-fatal; the record reconciles on the next load.
     }
   }
+
+  const uploadImage = async (fieldID: string) => {
+    setError('')
+    setUploading(fieldID)
+    try {
+      setW(await UploadWidgetFieldImage(w.id, fieldID))
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string' && err
+            ? err
+            : 'The image could not be uploaded.',
+      )
+    } finally {
+      setUploading('')
+    }
+  }
+
+  // Generation runs through the app-wide AI queue: the backend persists the
+  // result, so navigating away mid-run loses nothing.
+  const generateImage = async (f: main.WidgetField) => {
+    setError('')
+    try {
+      const saved = await queue.enqueue({
+        kind: 'widget-image',
+        targetId: w.id,
+        dedupe: f.id,
+        title: w.name,
+        label: `Generating ${f.label} — ${w.name || 'widget'}`,
+        doneDetail: `Widget image ready — ${w.name || 'widget'}`,
+        failDetail: 'Widget image failed',
+        busyError: 'an image is already being generated for this field',
+        work: () => GenerateWidgetFieldImage(w.id, f.id, feedback[f.id] ?? ''),
+      })
+      setW(saved)
+      setFeedback((prev) => ({...prev, [f.id]: ''}))
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string' && err
+            ? err
+            : 'The image could not be generated.',
+      )
+    }
+  }
+
+  const imageBusy = (fieldID: string) =>
+    queue.jobs.some(
+      (j) =>
+        j.kind === 'widget-image' &&
+        j.targetId === w.id &&
+        j.dedupe === fieldID,
+    )
 
   return (
     <div className="flex max-w-2xl flex-col gap-5">
@@ -256,11 +326,59 @@ export function StreamWidgetDetails({
                   </div>
 
                   {kind === 'image' ? (
-                    <p className="text-xs text-fg-muted">
-                      Image/animation content (upload or AI generation) lands
-                      here in a follow-up — the field is on the widget and ready
-                      for it.
-                    </p>
+                    <div className="flex flex-col gap-2">
+                      {f.valueUrl && (
+                        <img
+                          src={f.valueUrl}
+                          alt={f.label}
+                          className="max-h-40 w-fit max-w-full rounded-lg border border-edge"
+                        />
+                      )}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void uploadImage(f.id)}
+                          disabled={uploading === f.id}
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+                        >
+                          <Upload size={14} aria-hidden />
+                          {uploading === f.id ? 'Uploading…' : 'Upload'}
+                        </button>
+                        <input
+                          value={feedback[f.id] ?? ''}
+                          onChange={(e) =>
+                            setFeedback((prev) => ({
+                              ...prev,
+                              [f.id]: e.target.value,
+                            }))
+                          }
+                          placeholder={
+                            f.valueUrl
+                              ? 'Describe what to change (optional)…'
+                              : 'Describe the image to generate (optional)…'
+                          }
+                          aria-label={`Generation notes for ${f.label}`}
+                          className={`${field} min-w-40 flex-1`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void generateImage(f)}
+                          disabled={imageBusy(f.id)}
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+                        >
+                          <Sparkles size={14} aria-hidden />
+                          {imageBusy(f.id)
+                            ? 'Generating…'
+                            : f.valueUrl
+                              ? 'Revise with AI'
+                              : 'Generate with AI'}
+                        </button>
+                      </div>
+                      <p className="text-xs text-fg-muted">
+                        Generation follows this widget's own skill — tune its
+                        creative brief under Settings → Skills.
+                      </p>
+                    </div>
                   ) : kind === 'message' ? (
                     <textarea
                       value={value}

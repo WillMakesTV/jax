@@ -31,6 +31,10 @@ const projectFilesPrefix = "/projectfiles/"
 // (~/.jax/sponsors, see sponsors.go).
 const sponsorFilesPrefix = "/sponsorfiles/"
 
+// widgetFilesPrefix serves stream-widget images (~/.jax/widgets, see
+// widget_images.go).
+const widgetFilesPrefix = "/widgetfiles/"
+
 // editsPrefix serves the video-plan edit workspaces (see editor.go). Their
 // root is configured independently of the download folder (Settings →
 // Videos), so it gets its own route.
@@ -101,6 +105,14 @@ func (h mediaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		base = dir
 		rel = strings.TrimPrefix(r.URL.Path, sponsorFilesPrefix)
+	case strings.HasPrefix(r.URL.Path, widgetFilesPrefix):
+		dir, err := widgetsDir()
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		base = dir
+		rel = strings.TrimPrefix(r.URL.Path, widgetFilesPrefix)
 	case strings.HasPrefix(r.URL.Path, planThumbsPrefix):
 		dir, err := planThumbsDir()
 		if err != nil {
