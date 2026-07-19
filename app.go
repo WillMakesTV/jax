@@ -99,8 +99,8 @@ type App struct {
 	widgetReload map[string]int
 
 	// widgetTestRestores holds each widget's pending test restore: the
-	// original field values written back when the staged test item's window
-	// ends (guarded by mu; see widget_source.go).
+	// staged test item removed when its window ends (guarded by mu; see
+	// widget_source.go).
 	widgetTestRestores map[string]*widgetTestRestore
 
 	// In-progress headless editing session and the plan it belongs to

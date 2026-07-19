@@ -102,25 +102,22 @@ func (a *App) widgetTesting(id string) bool {
 	return time.Now().Before(a.widgetTests[id])
 }
 
-// widgetTestRestore is one pending test cleanup: the field values to write
-// back — and the staged item to remove — when the test window ends.
+// widgetTestRestore is one pending test cleanup: the staged item to remove
+// when the test window ends.
 type widgetTestRestore struct {
-	timer    *time.Timer
-	original map[string]string // field id → value
-	itemID   string            // the staged test item, removed on restore
+	timer  *time.Timer
+	itemID string // the staged test item, removed on restore
 }
 
-// stageWidgetTestValues writes a sample item into the widget's REAL fields —
-// the same path an MCP set_widget_field takes — AND prepends it as a real
-// timestamped item — the path add_widget_item takes — so every display
-// reacts to a genuine change: field-driven layouts see the new defaults,
-// item-driven layouts (lists rendering `items`) see a new entry, entrance
-// animation, sounds, all of it. The original values are written back and
-// the staged item removed when the window ends, and the source then reloads
-// into a clean state. Re-testing before the restore fires keeps the first
-// snapshot, so originals are never overwritten by sample values; the prior
-// staged item is swapped for the new one.
-func (a *App) stageWidgetTestValues(widgetID string, values map[string]string) error {
+// stageWidgetTestItem prepends the sample as a real timestamped item — the
+// same path an MCP add_widget_item takes — so the widget's display reacts
+// to a genuine new entry: it joins whatever items are already on screen,
+// entrance animation, sounds, all of it. The widget's FIELD values are the
+// schema's defaults, configuration rather than content, and stay untouched.
+// The staged item is removed when the window ends and the source reloads
+// into a clean state; re-testing before then swaps the staged item for the
+// new one rather than stacking a second.
+func (a *App) stageWidgetTestItem(widgetID string, values map[string]string) error {
 	a.mu.Lock()
 	pending := a.widgetTestRestores[widgetID]
 	if pending != nil {
@@ -128,30 +125,8 @@ func (a *App) stageWidgetTestValues(widgetID string, values map[string]string) e
 	}
 	a.mu.Unlock()
 
-	var original map[string]string
-	if pending != nil {
-		original = pending.original
-	} else {
-		original = map[string]string{}
-		for _, w := range a.getStreamWidgets() {
-			if w.ID != widgetID {
-				continue
-			}
-			for _, f := range w.Fields {
-				if _, ok := values[f.ID]; ok {
-					original[f.ID] = f.Value
-				}
-			}
-		}
-	}
-
 	staged := fmt.Sprintf("item_%d", time.Now().UnixNano())
 	if _, err := a.mutateStreamWidget(widgetID, func(w *StreamWidget) error {
-		for i := range w.Fields {
-			if v, ok := values[w.Fields[i].ID]; ok {
-				w.Fields[i].Value = v
-			}
-		}
 		if pending != nil && pending.itemID != "" {
 			w.Items = removeWidgetItem(w.Items, pending.itemID)
 		}
@@ -178,11 +153,7 @@ func (a *App) stageWidgetTestValues(widgetID string, values map[string]string) e
 	if a.widgetTestRestores == nil {
 		a.widgetTestRestores = map[string]*widgetTestRestore{}
 	}
-	a.widgetTestRestores[widgetID] = &widgetTestRestore{
-		timer:    timer,
-		original: original,
-		itemID:   staged,
-	}
+	a.widgetTestRestores[widgetID] = &widgetTestRestore{timer: timer, itemID: staged}
 	a.mu.Unlock()
 	return nil
 }
@@ -198,9 +169,8 @@ func removeWidgetItem(items []WidgetItem, id string) []WidgetItem {
 	return out
 }
 
-// restoreWidgetTest ends a staged test: the original field values return,
-// the staged item goes, and the Browser Source reloads fresh so no test
-// state lingers.
+// restoreWidgetTest ends a staged test: the staged item goes and the
+// Browser Source reloads fresh so no test state lingers.
 func (a *App) restoreWidgetTest(widgetID string) {
 	a.mu.Lock()
 	pending := a.widgetTestRestores[widgetID]
@@ -210,11 +180,6 @@ func (a *App) restoreWidgetTest(widgetID string) {
 		return
 	}
 	if _, err := a.mutateStreamWidget(widgetID, func(w *StreamWidget) error {
-		for i := range w.Fields {
-			if v, ok := pending.original[w.Fields[i].ID]; ok {
-				w.Fields[i].Value = v
-			}
-		}
 		if pending.itemID != "" {
 			w.Items = removeWidgetItem(w.Items, pending.itemID)
 		}
@@ -229,13 +194,12 @@ func (a *App) restoreWidgetTest(widgetID string) {
 
 // GenerateWidgetTestItem tests a widget the way it is really used: the
 // widget's own skill briefs the connected text AI to write one realistic
-// sample item for the widget's text fields, and the item is written into
-// the fields themselves and staged as a real timestamped item — the same
-// paths an MCP agent's set_widget_field and add_widget_item take — so the
-// Browser Source's display logic genuinely reacts to it whether it renders
-// field values or the items list. After 15 seconds the original values
-// return, the staged item goes, and the source reloads clean. With no text
-// fields to write, the plain test window opens instead.
+// sample item for the widget's text fields, and the sample is staged as a
+// real timestamped item — the same path an MCP agent's add_widget_item
+// takes — so the display genuinely reacts to a new entry joining whatever
+// is already on screen. Field values (the schema's defaults) are left
+// alone. After 15 seconds the staged item goes and the source reloads
+// clean. With no text fields to write, the plain test window opens instead.
 func (a *App) GenerateWidgetTestItem(widgetID string) error {
 	var widget *StreamWidget
 	for _, sw := range a.getStreamWidgets() {
@@ -308,7 +272,7 @@ func (a *App) GenerateWidgetTestItem(widgetID string) error {
 	if len(values) == 0 {
 		return fmt.Errorf("the model returned no usable sample values — try again")
 	}
-	return a.stageWidgetTestValues(widgetID, values)
+	return a.stageWidgetTestItem(widgetID, values)
 }
 
 // parseWidgetTestItem extracts the sample-item JSON from the model's

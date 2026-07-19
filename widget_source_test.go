@@ -66,36 +66,31 @@ func TestWidgetTestStaging(t *testing.T) {
 		t.Fatalf("add existing item: %v", err)
 	}
 
-	// Staging writes the sample into the real field AND prepends it as a
-	// real item, so every consumer — field-driven and item-driven displays
-	// alike — sees a genuine change.
-	if err := a.stageWidgetTestValues(w.ID, map[string]string{fieldID: "Sample value"}); err != nil {
-		t.Fatalf("stage test values: %v", err)
+	// Staging prepends the sample as a real item — joining what is already
+	// on screen — and leaves the field's default (configuration) untouched.
+	if err := a.stageWidgetTestItem(w.ID, map[string]string{fieldID: "Sample value"}); err != nil {
+		t.Fatalf("stage test item: %v", err)
 	}
-	if got := a.getStreamWidgets(); got[0].Fields[0].Value != "Sample value" {
-		t.Fatalf("staged value not written: %+v", got[0].Fields[0])
+	if got := a.getStreamWidgets(); got[0].Fields[0].Value != "Real value" {
+		t.Fatalf("staging must not touch field defaults: %+v", got[0].Fields[0])
 	}
 	if got := a.getStreamWidgets(); len(got[0].Items) != 2 ||
 		got[0].Items[0].Values[fieldID] != "Sample value" {
 		t.Fatalf("staged item not prepended: %+v", got[0].Items)
 	}
 
-	// Re-staging before the restore fires keeps the ORIGINAL snapshot and
-	// swaps the staged item rather than stacking a second one.
-	if err := a.stageWidgetTestValues(w.ID, map[string]string{fieldID: "Second sample"}); err != nil {
-		t.Fatalf("re-stage test values: %v", err)
+	// Re-staging before the restore fires swaps the staged item rather than
+	// stacking a second one.
+	if err := a.stageWidgetTestItem(w.ID, map[string]string{fieldID: "Second sample"}); err != nil {
+		t.Fatalf("re-stage test item: %v", err)
 	}
 	if got := a.getStreamWidgets(); len(got[0].Items) != 2 ||
 		got[0].Items[0].Values[fieldID] != "Second sample" {
 		t.Fatalf("re-stage should swap the staged item: %+v", got[0].Items)
 	}
 
-	// The restore brings the original back, drops the staged item, and
-	// reloads the source.
+	// The restore drops the staged item and reloads the source.
 	a.restoreWidgetTest(w.ID)
-	if got := a.getStreamWidgets(); got[0].Fields[0].Value != "Real value" {
-		t.Fatalf("restore should bring the original back: %+v", got[0].Fields[0])
-	}
 	if got := a.getStreamWidgets(); len(got[0].Items) != 1 ||
 		got[0].Items[0].Values[fieldID] != "Existing entry" {
 		t.Fatalf("restore should drop only the staged item: %+v", got[0].Items)
