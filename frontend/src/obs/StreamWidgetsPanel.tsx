@@ -13,7 +13,6 @@ import {
 } from 'lucide-react'
 import {useCallback, useEffect, useState} from 'react'
 import {
-  DeleteStreamWidget,
   DeleteWidgetFieldType,
   GetClearedStreamWidgets,
   GetStreamWidgets,
@@ -100,16 +99,6 @@ export function StreamWidgetsPanel({
       )
     } finally {
       setSaving(false)
-    }
-  }
-
-  const remove = async (id: string) => {
-    setError('')
-    try {
-      await DeleteStreamWidget(id)
-      setWidgets((prev) => prev.filter((w) => w.id !== id))
-    } catch {
-      // Non-fatal; the list reconciles on the next load.
     }
   }
 
@@ -313,15 +302,6 @@ export function StreamWidgetsPanel({
                   {copiedId === w.id ? 'Copied' : 'Copy Browser Source'}
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => void remove(w.id)}
-                title="Delete widget"
-                aria-label={`Delete widget ${w.name}`}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
-              >
-                <Trash2 size={14} aria-hidden />
-              </button>
             </li>
           ))}
         </ul>

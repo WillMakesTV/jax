@@ -19,6 +19,7 @@ export type AiJobKind =
   | 'project-image'
   | 'sponsor-research'
   | 'widget-image'
+  | 'widget-skill'
   | 'widget-sound'
   | 'widget-template'
 

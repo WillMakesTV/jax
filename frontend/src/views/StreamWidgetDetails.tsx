@@ -16,8 +16,10 @@ import {
 import {useCallback, useEffect, useState} from 'react'
 import {
   AddWidgetField,
+  DeleteStreamWidget,
   GenerateWidgetFieldImage,
   GenerateWidgetFieldSound,
+  GenerateWidgetSkill,
   GenerateWidgetTemplate,
   GetStreamWidgets,
   GetWidgetFieldTypes,
@@ -102,6 +104,8 @@ export function StreamWidgetDetails({
   const [skillDraft, setSkillDraft] = useState<string | null>(null)
   const [skillSaved, setSkillSaved] = useState(false)
   const [skillResetArmed, setSkillResetArmed] = useState(false)
+  // Deleting asks for a second click before it happens.
+  const [deleteArmed, setDeleteArmed] = useState(false)
   const queue = useAiQueue()
 
   // The navigation history hands us a snapshot; reload the live record so
@@ -397,6 +401,56 @@ export function StreamWidgetDetails({
           : typeof err === 'string' && err
             ? err
             : 'The skill could not be reset.',
+      )
+    }
+  }
+
+  // Rebuild the skill brief from the widget itself — fields, template,
+  // styles, animations — through the AI queue; the backend stores it.
+  const generateSkill = async () => {
+    setError('')
+    try {
+      const updated = await queue.enqueue({
+        kind: 'widget-skill',
+        targetId: w.id,
+        title: w.name,
+        label: `Writing widget skill — ${w.name || 'widget'}`,
+        doneDetail: `Widget skill ready — ${w.name || 'widget'}`,
+        failDetail: 'Widget skill failed',
+        busyError: 'a skill is already being generated for this widget',
+        work: () => GenerateWidgetSkill(w.id),
+      })
+      setSkill(updated)
+      setSkillDraft(null)
+      setSkillSaved(true)
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string' && err
+            ? err
+            : 'The skill could not be generated.',
+      )
+    }
+  }
+
+  const skillBusy = queue.jobs.some(
+    (j) => j.kind === 'widget-skill' && j.targetId === w.id,
+  )
+
+  const deleteWidget = async () => {
+    setError('')
+    try {
+      await DeleteStreamWidget(w.id)
+      onBack()
+    } catch (err) {
+      setDeleteArmed(false)
+      setError(
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string' && err
+            ? err
+            : 'The widget could not be deleted.',
       )
     }
   }
@@ -823,6 +877,16 @@ export function StreamWidgetDetails({
                 Unsaved changes
               </span>
             )}
+            <button
+              type="button"
+              onClick={() => void generateSkill()}
+              disabled={skillBusy}
+              title="Write the brief from the widget's fields, template, styles, and animations"
+              className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              <Sparkles size={14} aria-hidden />
+              {skillBusy ? 'Generating…' : 'Generate'}
+            </button>
           </div>
           <p className="text-xs text-fg-muted">
             The brief behind everything generated for this widget — images,
@@ -900,6 +964,21 @@ export function StreamWidgetDetails({
           className="rounded-lg border border-edge bg-surface px-5 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
         >
           Back to widgets
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            deleteArmed ? void deleteWidget() : setDeleteArmed(true)
+          }
+          onBlur={() => setDeleteArmed(false)}
+          className={`ml-auto inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+            deleteArmed
+              ? 'border-red-500/50 text-red-500 hover:bg-red-500/10'
+              : 'border-edge text-fg-muted hover:bg-surface-hover hover:text-fg'
+          }`}
+        >
+          <Trash2 size={14} aria-hidden />
+          {deleteArmed ? 'Really delete this widget?' : 'Delete widget'}
         </button>
       </div>
 

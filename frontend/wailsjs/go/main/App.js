@@ -294,6 +294,10 @@ export function GenerateWidgetFieldSound(arg1, arg2, arg3) {
   return window['go']['main']['App']['GenerateWidgetFieldSound'](arg1, arg2, arg3);
 }
 
+export function GenerateWidgetSkill(arg1) {
+  return window['go']['main']['App']['GenerateWidgetSkill'](arg1);
+}
+
 export function GenerateWidgetTemplate(arg1, arg2) {
   return window['go']['main']['App']['GenerateWidgetTemplate'](arg1, arg2);
 }

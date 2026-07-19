@@ -148,6 +148,8 @@ export function GenerateWidgetFieldImage(arg1:string,arg2:string,arg3:string):Pr
 
 export function GenerateWidgetFieldSound(arg1:string,arg2:string,arg3:string):Promise<main.StreamWidget>;
 
+export function GenerateWidgetSkill(arg1:string):Promise<main.AppSkill>;
+
 export function GenerateWidgetTemplate(arg1:string,arg2:string):Promise<main.StreamWidget>;
 
 export function GetAppAbout():Promise<string>;

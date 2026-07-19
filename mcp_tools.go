@@ -812,6 +812,48 @@ func mcpToolCatalog() []mcpTool {
 			},
 		},
 		{
+			name:        "set_widget_template",
+			description: "Update a stream widget's display — the JSX template, its CSS, and its custom JS — by widget id from list_stream_widgets. Only the parts you pass change; omitted parts stay as they are (pass an empty string to clear one). Use this when edits to the widget's skill call for matching template changes: the Browser Source picks the new display up within seconds. Contract: the template is one JSX expression receiving widget, fields (label → value; file kinds are URLs), and playSound; the JS runs after each render as function(widget, fields, playSound, root).",
+			inputSchema: objSchema(map[string]any{
+				"widgetId": prop("string", "The widget id from list_stream_widgets."),
+				"template": prop("string", "The widget's JSX display template."),
+				"css":      prop("string", "The stylesheet applied on the Browser Source page."),
+				"js":       prop("string", "Custom logic/animation run after each render."),
+			}, "widgetId"),
+			handler: func(a *App, args json.RawMessage) (any, error) {
+				var in struct {
+					WidgetID string  `json:"widgetId"`
+					Template *string `json:"template"`
+					CSS      *string `json:"css"`
+					JS       *string `json:"js"`
+				}
+				if err := decodeArgs(args, &in); err != nil {
+					return nil, err
+				}
+				if in.Template == nil && in.CSS == nil && in.JS == nil {
+					return nil, fmt.Errorf("pass at least one of template, css, or js")
+				}
+				_, err := a.mutateStreamWidget(in.WidgetID, func(w *StreamWidget) error {
+					// Single-line payloads get the same pretty-print the AI
+					// generation path applies (see widget_format.go).
+					if in.Template != nil {
+						w.Template = formatWidgetJSX(*in.Template)
+					}
+					if in.CSS != nil {
+						w.CSS = formatWidgetCSS(*in.CSS)
+					}
+					if in.JS != nil {
+						w.JS = formatWidgetJS(*in.JS)
+					}
+					return nil
+				})
+				if err != nil {
+					return nil, err
+				}
+				return "display updated", nil
+			},
+		},
+		{
 			name:        "test_stream_widget",
 			description: "Fire a stream widget's 15-second test window, by id from list_stream_widgets: its Browser Source remounts the display (restarting entrance animations), plays each sound field once, and exposes widget.testing to the template — then clears back to the normal render. Use it to demonstrate or verify an on-stream element.",
 			inputSchema: objSchema(map[string]any{

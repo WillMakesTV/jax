@@ -402,6 +402,75 @@ root). Do not wrap the JSON in code fences.`
 	})
 }
 
+// GenerateWidgetSkill writes the widget's skill brief from the widget
+// itself — its fields, template, styles, and animation logic — so the brief
+// describes the widget as it actually is. The result is stored as the
+// skill's content and the updated skill returned.
+func (a *App) GenerateWidgetSkill(widgetID string) (AppSkill, error) {
+	var widget *StreamWidget
+	for _, sw := range a.getStreamWidgets() {
+		if sw.ID == widgetID {
+			cp := sw
+			widget = &cp
+			break
+		}
+	}
+	if widget == nil {
+		return AppSkill{}, fmt.Errorf("that stream widget no longer exists")
+	}
+
+	system := `You are writing the skill document (the creative brief) for one stream widget in the Jax streaming app. The document is markdown. It is sent to AI models whenever imagery, spoken audio, or the display template is generated for this widget, and agents read it over MCP before working with the widget — it defines how the widget is used.
+
+Ground the document in the widget's ACTUAL configuration given below:
+- Name each field, its kind, and its role in the display.
+- Describe the display's structure, styling, and any animations as the template/CSS/JS implement them today.
+- Note how playSound('Label') and widget.testing are (or should be) used.
+- Give concrete visual guidance consistent with the current CSS (colors, type scale, motion), plus overlay basics: transparent page background, on-stream legibility.
+- Carry forward any producer-authored conventions found in the current skill content.
+
+Respond with the markdown document only — no code fences around the whole document, no preamble.`
+
+	kinds := map[string]WidgetFieldType{}
+	for _, ft := range a.getWidgetFieldTypes() {
+		kinds[ft.ID] = ft
+	}
+	var in strings.Builder
+	fmt.Fprintf(&in, "# Widget\nName: %s\n\n## Fields\n", widget.Name)
+	for _, f := range widget.Fields {
+		ft := kinds[f.TypeID]
+		kind := ft.Kind
+		if kind == "" {
+			kind = "text"
+		}
+		fmt.Fprintf(&in, "- %s (%s", f.Label, kind)
+		if ft.MaxLength > 0 {
+			fmt.Fprintf(&in, ", max %d characters", ft.MaxLength)
+		}
+		in.WriteString(")\n")
+	}
+	if len(widget.Fields) == 0 {
+		in.WriteString("(none yet)\n")
+	}
+	if strings.TrimSpace(widget.Template) != "" {
+		fmt.Fprintf(&in, "\n## Template (JSX)\n%s\n", widget.Template)
+	}
+	if strings.TrimSpace(widget.CSS) != "" {
+		fmt.Fprintf(&in, "\n## Styles (CSS)\n%s\n", widget.CSS)
+	}
+	if strings.TrimSpace(widget.JS) != "" {
+		fmt.Fprintf(&in, "\n## Animation/logic (JS)\n%s\n", widget.JS)
+	}
+	if skill, err := a.getAppSkill(widgetSkillID(*widget)); err == nil {
+		fmt.Fprintf(&in, "\n## Current skill content\n%s\n", skill.Content)
+	}
+
+	text, err := a.askAIText(system, in.String())
+	if err != nil {
+		return AppSkill{}, err
+	}
+	return a.SaveAppSkill(widgetSkillID(*widget), strings.TrimSpace(text))
+}
+
 // widgetTemplateResult is the shape GenerateWidgetTemplate asks the model
 // for.
 type widgetTemplateResult struct {
