@@ -32,11 +32,25 @@ type WidgetField struct {
 	ValueURL string `json:"valueUrl"`
 }
 
+// WidgetItem is one entry within a stream widget: an instance of the
+// widget's field schema. Values maps field id → this entry's content; a
+// field absent from the map fell back to the field's default at creation.
+type WidgetItem struct {
+	ID        string            `json:"id"`
+	Values    map[string]string `json:"values"`
+	CreatedAt string            `json:"createdAt"` // RFC3339, sorts the list
+}
+
 // StreamWidget is one stream widget.
 type StreamWidget struct {
-	ID     string        `json:"id"`
-	Name   string        `json:"name"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Fields define the widget's schema — each item carries a value per
+	// field — and each field's Value doubles as the default for new items.
 	Fields []WidgetField `json:"fields"`
+	// Items are the widget's entries, newest first. The Browser Source
+	// shows them as the widget's list.
+	Items []WidgetItem `json:"items"`
 	// Template is the widget's JSX display template ("" = the default
 	// rendering). It receives `widget` (the widget itself) and `fields` (a
 	// label → value map of the widget's fields); authored on the widget's
@@ -96,6 +110,9 @@ func (a *App) getStreamWidgets() []StreamWidget {
 	for i := range widgets {
 		if widgets[i].Fields == nil {
 			widgets[i].Fields = []WidgetField{}
+		}
+		if widgets[i].Items == nil {
+			widgets[i].Items = []WidgetItem{}
 		}
 	}
 	return widgets
@@ -266,6 +283,121 @@ func (a *App) SetWidgetFieldValue(widgetID, fieldID, value string) (StreamWidget
 			return nil
 		}
 		return fmt.Errorf("that field no longer exists")
+	})
+}
+
+// widgetValuesByID translates a label-keyed values map (the MCP surface's
+// ergonomic shape) to the field-id keys the item CRUD takes.
+func (a *App) widgetValuesByID(widgetID string, byLabel map[string]string) (map[string]string, error) {
+	if len(byLabel) == 0 {
+		return map[string]string{}, nil
+	}
+	for _, w := range a.getStreamWidgets() {
+		if w.ID != widgetID {
+			continue
+		}
+		idByLabel := map[string]string{}
+		for _, f := range w.Fields {
+			idByLabel[f.Label] = f.ID
+		}
+		out := map[string]string{}
+		for label, v := range byLabel {
+			id, ok := idByLabel[label]
+			if !ok {
+				return nil, fmt.Errorf("this widget has no field labelled %q", label)
+			}
+			out[id] = v
+		}
+		return out, nil
+	}
+	return nil, fmt.Errorf("that stream widget no longer exists")
+}
+
+// validateItemValues checks an item's values (field id → content) against
+// the widget's schema: unknown fields are rejected and text caps apply.
+func (a *App) validateItemValues(w *StreamWidget, values map[string]string) error {
+	types := map[string]WidgetFieldType{}
+	for _, ft := range a.getWidgetFieldTypes() {
+		types[ft.ID] = ft
+	}
+	byID := map[string]WidgetField{}
+	for _, f := range w.Fields {
+		byID[f.ID] = f
+	}
+	for id, v := range values {
+		f, ok := byID[id]
+		if !ok {
+			return fmt.Errorf("this widget has no field %q", id)
+		}
+		if ft, ok := types[f.TypeID]; ok && ft.MaxLength > 0 && len([]rune(v)) > ft.MaxLength {
+			return fmt.Errorf("%s is over the %d-character limit", f.Label, ft.MaxLength)
+		}
+	}
+	return nil
+}
+
+// AddWidgetItem appends a new entry to a widget — an instance of its field
+// schema. values is keyed by field id; fields absent from it inherit the
+// field's default value. Returns the updated widget, items newest first.
+func (a *App) AddWidgetItem(widgetID string, values map[string]string) (StreamWidget, error) {
+	return a.mutateStreamWidget(widgetID, func(w *StreamWidget) error {
+		if err := a.validateItemValues(w, values); err != nil {
+			return err
+		}
+		item := WidgetItem{
+			ID:        fmt.Sprintf("item_%d", time.Now().UnixNano()),
+			Values:    map[string]string{},
+			CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		}
+		for _, f := range w.Fields {
+			if v, ok := values[f.ID]; ok {
+				item.Values[f.ID] = v
+			} else {
+				item.Values[f.ID] = f.Value
+			}
+		}
+		w.Items = append([]WidgetItem{item}, w.Items...)
+		return nil
+	})
+}
+
+// UpdateWidgetItem merges values (field id → content) into an existing
+// entry and returns the updated widget.
+func (a *App) UpdateWidgetItem(widgetID, itemID string, values map[string]string) (StreamWidget, error) {
+	return a.mutateStreamWidget(widgetID, func(w *StreamWidget) error {
+		if err := a.validateItemValues(w, values); err != nil {
+			return err
+		}
+		for i := range w.Items {
+			if w.Items[i].ID != itemID {
+				continue
+			}
+			if w.Items[i].Values == nil {
+				w.Items[i].Values = map[string]string{}
+			}
+			for id, v := range values {
+				w.Items[i].Values[id] = v
+			}
+			return nil
+		}
+		return fmt.Errorf("that item no longer exists")
+	})
+}
+
+// RemoveWidgetItem deletes one entry and returns the updated widget.
+func (a *App) RemoveWidgetItem(widgetID, itemID string) (StreamWidget, error) {
+	return a.mutateStreamWidget(widgetID, func(w *StreamWidget) error {
+		out := w.Items[:0]
+		for _, item := range w.Items {
+			if item.ID != itemID {
+				out = append(out, item)
+			}
+		}
+		if len(out) == len(w.Items) {
+			return fmt.Errorf("that item no longer exists")
+		}
+		w.Items = out
+		return nil
 	})
 }
 

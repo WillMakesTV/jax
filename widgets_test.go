@@ -101,6 +101,96 @@ func TestWidgetFields(t *testing.T) {
 	}
 }
 
+func TestWidgetItems(t *testing.T) {
+	a := newTestApp(t)
+	a.GetWidgetFieldTypes() // seed the type catalog
+
+	w, err := a.SaveStreamWidget(StreamWidget{Name: "Queue"})
+	if err != nil {
+		t.Fatalf("save widget: %v", err)
+	}
+	w, err = a.AddWidgetField(w.ID, "field_status", "")
+	if err != nil {
+		t.Fatalf("add status field: %v", err)
+	}
+	w, err = a.AddWidgetField(w.ID, "field_message", "")
+	if err != nil {
+		t.Fatalf("add message field: %v", err)
+	}
+	statusID, messageID := w.Fields[0].ID, w.Fields[1].ID
+	w, err = a.setWidgetFieldFile(w.ID, messageID, "Default message")
+	if err != nil {
+		t.Fatalf("set default: %v", err)
+	}
+
+	// New items take passed values and inherit defaults for the rest.
+	w, err = a.AddWidgetItem(w.ID, map[string]string{statusID: "Working #1"})
+	if err != nil {
+		t.Fatalf("add item: %v", err)
+	}
+	if len(w.Items) != 1 || w.Items[0].Values[statusID] != "Working #1" ||
+		w.Items[0].Values[messageID] != "Default message" {
+		t.Fatalf("item mismatch: %+v", w.Items)
+	}
+	if w.Items[0].ID == "" || w.Items[0].CreatedAt == "" {
+		t.Fatalf("item identity missing: %+v", w.Items[0])
+	}
+
+	// Newest first; caps and unknown fields enforced.
+	w, err = a.AddWidgetItem(w.ID, map[string]string{statusID: "Working #2"})
+	if err != nil {
+		t.Fatalf("add second item: %v", err)
+	}
+	if w.Items[0].Values[statusID] != "Working #2" {
+		t.Fatalf("newest should lead: %+v", w.Items)
+	}
+	if _, err := a.AddWidgetItem(w.ID, map[string]string{"nope": "x"}); err == nil {
+		t.Fatal("want error for an unknown field")
+	}
+	over := strings.Repeat("x", widgetStatusMaxLen+1)
+	if _, err := a.AddWidgetItem(w.ID, map[string]string{statusID: over}); err == nil {
+		t.Fatal("want error for an over-cap item value")
+	}
+
+	// Update merges only the passed fields; remove deletes.
+	first := w.Items[1].ID
+	w, err = a.UpdateWidgetItem(w.ID, first, map[string]string{statusID: "Done #1"})
+	if err != nil {
+		t.Fatalf("update item: %v", err)
+	}
+	if w.Items[1].Values[statusID] != "Done #1" ||
+		w.Items[1].Values[messageID] != "Default message" {
+		t.Fatalf("update mismatch: %+v", w.Items[1])
+	}
+	w, err = a.RemoveWidgetItem(w.ID, first)
+	if err != nil {
+		t.Fatalf("remove item: %v", err)
+	}
+	if len(w.Items) != 1 {
+		t.Fatalf("item should be gone: %+v", w.Items)
+	}
+	if _, err := a.RemoveWidgetItem(w.ID, "nope"); err == nil {
+		t.Fatal("want error removing an unknown item")
+	}
+
+	// Clear removes every item.
+	if err := a.ClearStreamWidget(w.ID); err != nil {
+		t.Fatalf("clear widget: %v", err)
+	}
+	if got := a.getStreamWidgets(); len(got[0].Items) != 0 {
+		t.Fatalf("clear should remove items: %+v", got[0].Items)
+	}
+
+	// The label-keyed translation the MCP surface uses.
+	byID, err := a.widgetValuesByID(w.ID, map[string]string{"Status": "hi"})
+	if err != nil || byID[statusID] != "hi" {
+		t.Fatalf("label translation mismatch: %v %v", byID, err)
+	}
+	if _, err := a.widgetValuesByID(w.ID, map[string]string{"Nope": "x"}); err == nil {
+		t.Fatal("want error for an unknown label")
+	}
+}
+
 func TestSetWidgetFieldValue(t *testing.T) {
 	a := newTestApp(t)
 	a.GetWidgetFieldTypes() // seed the type catalog

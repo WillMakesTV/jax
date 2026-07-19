@@ -18,6 +18,7 @@ import {
 import {useCallback, useEffect, useState} from 'react'
 import {
   AddWidgetField,
+  AddWidgetItem,
   ClearWidgetField,
   DeleteStreamWidget,
   GenerateWidgetFieldImage,
@@ -28,6 +29,7 @@ import {
   GetWidgetFieldTypes,
   ListAppSkills,
   RemoveWidgetField,
+  RemoveWidgetItem,
   ResetAppSkill,
   ReviseWidgetSkill,
   SaveAppSkill,
@@ -91,6 +93,11 @@ export function StreamWidgetDetails({
   const [genOpen, setGenOpen] = useState(false)
   const [genDesc, setGenDesc] = useState('')
   const [copied, setCopied] = useState(false)
+  // The page's sections: the field schema (with items), the display, and
+  // the widget's skill.
+  const [pageTab, setPageTab] = useState<'fields' | 'display' | 'skill'>(
+    'fields',
+  )
   // Field values being edited, keyed by field id; unsaved edits live here.
   const [values, setValues] = useState<Record<string, string>>({})
   // Revision notes for image generation, keyed by field id.
@@ -152,7 +159,18 @@ export function StreamWidgetDetails({
   }
 
   const fields = w.fields ?? []
+  const items = w.items ?? []
   const typeById = new Map(types.map((t) => [t.id, t]))
+  // A one-line item summary from its text-field values, newest data first.
+  const itemSummary = (item: main.WidgetItem) =>
+    fields
+      .filter((f) => {
+        const kind = typeById.get(f.typeId)?.kind
+        return kind === 'message' || kind === 'status'
+      })
+      .map((f) => item.values?.[f.id])
+      .filter(Boolean)
+      .join(' · ')
   const valueOf = (f: main.WidgetField) => values[f.id] ?? f.value
 
   const dirty =
@@ -218,6 +236,37 @@ export function StreamWidgetDetails({
     setRemoveArmedId('')
     try {
       setW(await RemoveWidgetField(w.id, fieldID))
+    } catch {
+      // Non-fatal; the record reconciles on the next load.
+    }
+  }
+
+  // Add an entry: the field inputs act as the compose form — their current
+  // values (edited or default) become the new item.
+  const addItem = async () => {
+    setError('')
+    try {
+      setW(
+        await AddWidgetItem(
+          w.id,
+          Object.fromEntries(fields.map((f) => [f.id, valueOf(f)])),
+        ),
+      )
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string' && err
+            ? err
+            : 'The item could not be added.',
+      )
+    }
+  }
+
+  const removeItem = async (itemID: string) => {
+    setError('')
+    try {
+      setW(await RemoveWidgetItem(w.id, itemID))
     } catch {
       // Non-fatal; the record reconciles on the next load.
     }
@@ -393,6 +442,9 @@ export function StreamWidgetDetails({
   const templateBusy = queue.jobs.some(
     (j) => j.kind === 'widget-template' && j.targetId === w.id,
   )
+  // With display content present, generation reads as requesting edits to
+  // it — the backend already feeds the current template/css/js along.
+  const hasDisplay = Boolean(template.trim() || css.trim() || js.trim())
 
   const saveSkill = async () => {
     if (!skill || skillDraft === null || skillDraft === skill.content) return
@@ -548,410 +600,520 @@ export function StreamWidgetDetails({
         </div>
       </div>
 
-      <div>
-        <label htmlFor="widget-name" className={labelCls}>
-          Widget name
-        </label>
-        <input
-          id="widget-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. Follower goal"
-          className={field}
-        />
+      {/* The page's sections: schema and items, display, skill. */}
+      <div className="flex w-fit items-center gap-1 rounded-lg border border-edge bg-surface p-1">
+        {(['fields', 'display', 'skill'] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            aria-selected={pageTab === tab}
+            onClick={() => setPageTab(tab)}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+              pageTab === tab
+                ? 'bg-accent/15 text-accent'
+                : 'text-fg-muted hover:bg-surface-hover hover:text-fg'
+            }`}
+          >
+            {tab === 'fields'
+              ? 'Fields'
+              : tab === 'display'
+                ? 'Display'
+                : 'Skill'}
+          </button>
+        ))}
       </div>
 
-      {/* The widget's fields, drawn from the field-type catalog. */}
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-fg">Fields</h2>
-          <div className="flex items-center gap-2">
-            <select
-              value={addTypeId}
-              onChange={(e) => setAddTypeId(e.target.value)}
-              aria-label="Field type to add"
-              className="rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-sm text-fg outline-none focus:border-accent"
-            >
-              <option value="">Choose a field type…</option>
-              {types.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
+      {pageTab === 'fields' && (
+        <>
+          <div>
+            <label htmlFor="widget-name" className={labelCls}>
+              Widget name
+            </label>
             <input
-              value={addLabel}
-              onChange={(e) => setAddLabel(e.target.value)}
-              placeholder="Field name (optional)"
-              aria-label="Name for the new field"
-              className="w-40 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-sm text-fg outline-none focus:border-accent"
+              id="widget-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Follower goal"
+              className={field}
             />
-            <button
-              type="button"
-              onClick={() => void addField()}
-              disabled={!addTypeId}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              <Plus size={14} aria-hidden />
-              Add field
-            </button>
           </div>
-        </div>
 
-        {fields.length === 0 ? (
-          <p className="text-sm text-fg-muted">
-            No fields yet — pick a field type above to give this widget its
-            content. Manage the available types from the Stream Widgets tab.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-3">
-            {fields.map((f) => {
-              const t = typeById.get(f.typeId)
-              const kind = t?.kind ?? ''
-              const cap = t?.maxLength ?? 0
-              const value = valueOf(f)
-              return (
-                <li
-                  key={f.id}
-                  className="flex flex-col gap-2 rounded-xl border border-edge bg-surface p-3"
+          {/* The widget's fields, drawn from the field-type catalog. Their
+          values double as the defaults new items inherit. */}
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold text-fg">Fields</h2>
+              <div className="flex items-center gap-2">
+                <select
+                  value={addTypeId}
+                  onChange={(e) => setAddTypeId(e.target.value)}
+                  aria-label="Field type to add"
+                  className="rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-sm text-fg outline-none focus:border-accent"
                 >
-                  <div className="flex items-center gap-2">
-                    <span
-                      aria-hidden
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent"
+                  <option value="">Choose a field type…</option>
+                  {types.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  value={addLabel}
+                  onChange={(e) => setAddLabel(e.target.value)}
+                  placeholder="Field name (optional)"
+                  aria-label="Name for the new field"
+                  className="w-40 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-sm text-fg outline-none focus:border-accent"
+                />
+                <button
+                  type="button"
+                  onClick={() => void addField()}
+                  disabled={!addTypeId}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+                >
+                  <Plus size={14} aria-hidden />
+                  Add field
+                </button>
+              </div>
+            </div>
+
+            {fields.length === 0 ? (
+              <p className="text-sm text-fg-muted">
+                No fields yet — pick a field type above to give this widget its
+                content. Manage the available types from the Stream Widgets tab.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-3">
+                {fields.map((f) => {
+                  const t = typeById.get(f.typeId)
+                  const kind = t?.kind ?? ''
+                  const cap = t?.maxLength ?? 0
+                  const value = valueOf(f)
+                  return (
+                    <li
+                      key={f.id}
+                      className="flex flex-col gap-2 rounded-xl border border-edge bg-surface p-3"
                     >
+                      <div className="flex items-center gap-2">
+                        <span
+                          aria-hidden
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent"
+                        >
+                          {kind === 'image' ? (
+                            <Image size={14} />
+                          ) : kind === 'sound' ? (
+                            <Music size={14} />
+                          ) : (
+                            <Type size={14} />
+                          )}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
+                          {f.label}
+                        </span>
+                        {cap > 0 && (
+                          <span className="shrink-0 text-xs text-fg-muted">
+                            {[...value].length}/{cap}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => void clearField(f.id)}
+                          disabled={!value}
+                          title="Clear this field's value"
+                          aria-label={`Clear field ${f.label}`}
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-40"
+                        >
+                          <Eraser size={14} aria-hidden />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            removeArmedId === f.id
+                              ? void removeField(f.id)
+                              : setRemoveArmedId(f.id)
+                          }
+                          onBlur={() =>
+                            setRemoveArmedId((cur) => (cur === f.id ? '' : cur))
+                          }
+                          title={
+                            removeArmedId === f.id
+                              ? 'Click again to remove this field'
+                              : 'Remove field'
+                          }
+                          aria-label={`Remove field ${f.label}`}
+                          className={`flex h-7 shrink-0 items-center justify-center gap-1 rounded-lg px-1.5 transition-colors ${
+                            removeArmedId === f.id
+                              ? 'text-red-500 hover:bg-red-500/10'
+                              : 'text-fg-muted hover:bg-surface-hover hover:text-fg'
+                          }`}
+                        >
+                          <Trash2 size={14} aria-hidden />
+                          {removeArmedId === f.id && (
+                            <span className="text-xs font-medium">Sure?</span>
+                          )}
+                        </button>
+                      </div>
+
                       {kind === 'image' ? (
-                        <Image size={14} />
+                        <div className="flex flex-col gap-2">
+                          {f.valueUrl && (
+                            <img
+                              src={f.valueUrl}
+                              alt={f.label}
+                              className="max-h-40 w-fit max-w-full rounded-lg border border-edge"
+                            />
+                          )}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void uploadMedia(f.id, kind)}
+                              disabled={uploading === f.id}
+                              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+                            >
+                              <Upload size={14} aria-hidden />
+                              {uploading === f.id ? 'Uploading…' : 'Upload'}
+                            </button>
+                            <input
+                              value={feedback[f.id] ?? ''}
+                              onChange={(e) =>
+                                setFeedback((prev) => ({
+                                  ...prev,
+                                  [f.id]: e.target.value,
+                                }))
+                              }
+                              placeholder={
+                                f.valueUrl
+                                  ? 'Describe what to change (optional)…'
+                                  : 'Describe the image to generate (optional)…'
+                              }
+                              aria-label={`Generation notes for ${f.label}`}
+                              className={`${field} min-w-40 flex-1`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => void generateImage(f)}
+                              disabled={imageBusy(f.id)}
+                              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+                            >
+                              <Sparkles size={14} aria-hidden />
+                              {imageBusy(f.id)
+                                ? 'Generating…'
+                                : f.valueUrl
+                                  ? 'Revise with AI'
+                                  : 'Generate with AI'}
+                            </button>
+                          </div>
+                          <p className="text-xs text-fg-muted">
+                            Generation follows this widget's own skill — tune
+                            its creative brief under Settings → Skills.
+                          </p>
+                        </div>
                       ) : kind === 'sound' ? (
-                        <Music size={14} />
+                        <div className="flex flex-col gap-2">
+                          {f.valueUrl && (
+                            // The field's key remounts the player when the file
+                            // changes, so a re-upload is picked up immediately.
+                            <audio
+                              key={f.valueUrl}
+                              controls
+                              src={f.valueUrl}
+                              className="w-full max-w-md"
+                            />
+                          )}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void uploadMedia(f.id, kind)}
+                              disabled={uploading === f.id}
+                              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+                            >
+                              <Upload size={14} aria-hidden />
+                              {uploading === f.id
+                                ? 'Uploading…'
+                                : 'Upload sound'}
+                            </button>
+                            <input
+                              value={speech[f.id] ?? ''}
+                              onChange={(e) =>
+                                setSpeech((prev) => ({
+                                  ...prev,
+                                  [f.id]: e.target.value,
+                                }))
+                              }
+                              placeholder="Or type a line to speak…"
+                              aria-label={`Text to speak for ${f.label}`}
+                              className={`${field} min-w-40 flex-1`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => void generateSpeech(f)}
+                              disabled={
+                                soundBusy(f.id) || !(speech[f.id] ?? '').trim()
+                              }
+                              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+                            >
+                              <Sparkles size={14} aria-hidden />
+                              {soundBusy(f.id) ? 'Speaking…' : 'Speak it'}
+                            </button>
+                          </div>
+                          <p className="text-xs text-fg-muted">
+                            MP3, WAV, OGG and friends — played on stream when
+                            the widget calls for it. Typed lines become speech
+                            via OpenAI TTS (API key) or the local Windows voice.
+                          </p>
+                        </div>
+                      ) : kind === 'message' ? (
+                        <textarea
+                          value={value}
+                          onChange={(e) =>
+                            setValues((prev) => ({
+                              ...prev,
+                              [f.id]: e.target.value,
+                            }))
+                          }
+                          rows={3}
+                          maxLength={cap > 0 ? cap : undefined}
+                          placeholder="Markdown message shown on stream…"
+                          className={`${field} resize-y`}
+                        />
                       ) : (
-                        <Type size={14} />
+                        <input
+                          value={value}
+                          onChange={(e) =>
+                            setValues((prev) => ({
+                              ...prev,
+                              [f.id]: e.target.value,
+                            }))
+                          }
+                          maxLength={cap > 0 ? cap : undefined}
+                          placeholder="Status shown on stream…"
+                          className={field}
+                        />
                       )}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+
+          {/* The widget's entries: instances of the field schema, newest
+          first — what the Browser Source shows as the widget's list. */}
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold text-fg">Items</h2>
+              <button
+                type="button"
+                onClick={() => void addItem()}
+                disabled={fields.length === 0}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                <Plus size={14} aria-hidden />
+                Add item
+              </button>
+            </div>
+            <p className="text-xs text-fg-muted">
+              Entries shown on the widget, newest first. The fields above are
+              the compose form — Add item snapshots their current values as a
+              new entry, and saved field values act as the defaults.
+            </p>
+            {items.length === 0 ? (
+              <p className="text-sm text-fg-muted">No items yet.</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {items.map((item) => (
+                  <li
+                    key={item.id}
+                    className="flex items-center gap-3 rounded-xl border border-edge bg-surface px-3 py-2"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-sm text-fg">
+                      {itemSummary(item) || '(no text content)'}
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
-                      {f.label}
+                    <span className="shrink-0 text-xs text-fg-muted">
+                      {formatDate(item.createdAt)}
                     </span>
-                    {cap > 0 && (
-                      <span className="shrink-0 text-xs text-fg-muted">
-                        {[...value].length}/{cap}
-                      </span>
-                    )}
                     <button
                       type="button"
-                      onClick={() => void clearField(f.id)}
-                      disabled={!value}
-                      title="Clear this field's value"
-                      aria-label={`Clear field ${f.label}`}
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg disabled:opacity-40"
-                    >
-                      <Eraser size={14} aria-hidden />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        removeArmedId === f.id
-                          ? void removeField(f.id)
-                          : setRemoveArmedId(f.id)
-                      }
-                      onBlur={() =>
-                        setRemoveArmedId((cur) => (cur === f.id ? '' : cur))
-                      }
-                      title={
-                        removeArmedId === f.id
-                          ? 'Click again to remove this field'
-                          : 'Remove field'
-                      }
-                      aria-label={`Remove field ${f.label}`}
-                      className={`flex h-7 shrink-0 items-center justify-center gap-1 rounded-lg px-1.5 transition-colors ${
-                        removeArmedId === f.id
-                          ? 'text-red-500 hover:bg-red-500/10'
-                          : 'text-fg-muted hover:bg-surface-hover hover:text-fg'
-                      }`}
+                      onClick={() => void removeItem(item.id)}
+                      title="Remove item"
+                      aria-label="Remove item"
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
                     >
                       <Trash2 size={14} aria-hidden />
-                      {removeArmedId === f.id && (
-                        <span className="text-xs font-medium">Sure?</span>
-                      )}
                     </button>
-                  </div>
-
-                  {kind === 'image' ? (
-                    <div className="flex flex-col gap-2">
-                      {f.valueUrl && (
-                        <img
-                          src={f.valueUrl}
-                          alt={f.label}
-                          className="max-h-40 w-fit max-w-full rounded-lg border border-edge"
-                        />
-                      )}
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => void uploadMedia(f.id, kind)}
-                          disabled={uploading === f.id}
-                          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
-                        >
-                          <Upload size={14} aria-hidden />
-                          {uploading === f.id ? 'Uploading…' : 'Upload'}
-                        </button>
-                        <input
-                          value={feedback[f.id] ?? ''}
-                          onChange={(e) =>
-                            setFeedback((prev) => ({
-                              ...prev,
-                              [f.id]: e.target.value,
-                            }))
-                          }
-                          placeholder={
-                            f.valueUrl
-                              ? 'Describe what to change (optional)…'
-                              : 'Describe the image to generate (optional)…'
-                          }
-                          aria-label={`Generation notes for ${f.label}`}
-                          className={`${field} min-w-40 flex-1`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => void generateImage(f)}
-                          disabled={imageBusy(f.id)}
-                          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
-                        >
-                          <Sparkles size={14} aria-hidden />
-                          {imageBusy(f.id)
-                            ? 'Generating…'
-                            : f.valueUrl
-                              ? 'Revise with AI'
-                              : 'Generate with AI'}
-                        </button>
-                      </div>
-                      <p className="text-xs text-fg-muted">
-                        Generation follows this widget's own skill — tune its
-                        creative brief under Settings → Skills.
-                      </p>
-                    </div>
-                  ) : kind === 'sound' ? (
-                    <div className="flex flex-col gap-2">
-                      {f.valueUrl && (
-                        // The field's key remounts the player when the file
-                        // changes, so a re-upload is picked up immediately.
-                        <audio
-                          key={f.valueUrl}
-                          controls
-                          src={f.valueUrl}
-                          className="w-full max-w-md"
-                        />
-                      )}
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => void uploadMedia(f.id, kind)}
-                          disabled={uploading === f.id}
-                          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
-                        >
-                          <Upload size={14} aria-hidden />
-                          {uploading === f.id ? 'Uploading…' : 'Upload sound'}
-                        </button>
-                        <input
-                          value={speech[f.id] ?? ''}
-                          onChange={(e) =>
-                            setSpeech((prev) => ({
-                              ...prev,
-                              [f.id]: e.target.value,
-                            }))
-                          }
-                          placeholder="Or type a line to speak…"
-                          aria-label={`Text to speak for ${f.label}`}
-                          className={`${field} min-w-40 flex-1`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => void generateSpeech(f)}
-                          disabled={
-                            soundBusy(f.id) || !(speech[f.id] ?? '').trim()
-                          }
-                          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
-                        >
-                          <Sparkles size={14} aria-hidden />
-                          {soundBusy(f.id) ? 'Speaking…' : 'Speak it'}
-                        </button>
-                      </div>
-                      <p className="text-xs text-fg-muted">
-                        MP3, WAV, OGG and friends — played on stream when the
-                        widget calls for it. Typed lines become speech via
-                        OpenAI TTS (API key) or the local Windows voice.
-                      </p>
-                    </div>
-                  ) : kind === 'message' ? (
-                    <textarea
-                      value={value}
-                      onChange={(e) =>
-                        setValues((prev) => ({...prev, [f.id]: e.target.value}))
-                      }
-                      rows={3}
-                      maxLength={cap > 0 ? cap : undefined}
-                      placeholder="Markdown message shown on stream…"
-                      className={`${field} resize-y`}
-                    />
-                  ) : (
-                    <input
-                      value={value}
-                      onChange={(e) =>
-                        setValues((prev) => ({...prev, [f.id]: e.target.value}))
-                      }
-                      maxLength={cap > 0 ? cap : undefined}
-                      placeholder="Status shown on stream…"
-                      className={field}
-                    />
-                  )}
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </div>
-
-      {/* The widget's display: JSX template, stylesheet, and custom logic,
-          hand-written or generated from a layout description. */}
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-fg">Display</h2>
-          <button
-            type="button"
-            onClick={() => setGenOpen(true)}
-            disabled={templateBusy}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            <Sparkles size={14} aria-hidden />
-            {templateBusy ? 'Generating…' : 'Generate with AI'}
-          </button>
-        </div>
-        <p className="text-xs text-fg-muted">
-          JSX that fully controls the widget's display, with a stylesheet and
-          custom JS for animation.{' '}
-          <code className="rounded bg-surface px-1">widget</code> is the widget
-          itself, <code className="rounded bg-surface px-1">fields</code> maps
-          each field's label to its value (file fields give a URL), and{' '}
-          <code className="rounded bg-surface px-1">playSound('Label')</code>{' '}
-          plays a sound field.
-        </p>
-        <div className="flex items-center gap-1">
-          {(['template', 'css', 'js'] as const).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setDisplayTab(tab)}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                displayTab === tab
-                  ? 'bg-accent/15 text-accent'
-                  : 'text-fg-muted hover:bg-surface-hover hover:text-fg'
-              }`}
-            >
-              {tab === 'template'
-                ? 'Template'
-                : tab === 'css'
-                  ? 'CSS'
-                  : 'JS / Logic'}
-            </button>
-          ))}
-        </div>
-        {displayTab === 'template' ? (
-          <>
-            <JsxTemplateField
-              id="widget-template"
-              value={template}
-              onChange={setTemplate}
-              placeholder={templateStarter(w, fields)}
-            />
-            <div className="rounded-lg border border-edge bg-surface px-3 py-2">
-              <p className="text-xs font-medium text-fg">Available values</p>
-              <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                <li className="font-mono text-xs text-fg-muted">
-                  {'{widget.name}'}
-                </li>
-                {fields.map((f) => (
-                  <li key={f.id} className="font-mono text-xs text-fg-muted">
-                    {`{fields['${f.label}']}`}
                   </li>
                 ))}
               </ul>
-              {fields.length === 0 && (
-                <p className="mt-1 text-xs text-fg-muted">
-                  Add fields above and each one appears here as{' '}
-                  <code className="rounded bg-bg px-1">
-                    {"{fields['Label']}"}
-                  </code>
-                  .
-                </p>
-              )}
-            </div>
-          </>
-        ) : displayTab === 'css' ? (
-          <textarea
-            value={css}
-            onChange={(e) => setCss(e.target.value)}
-            rows={10}
-            spellCheck={false}
-            placeholder={'.widget {\n  font-size: 32px;\n  color: #fff;\n}'}
-            aria-label="Widget stylesheet"
-            className="w-full resize-y rounded-lg border border-edge bg-bg px-4 py-3 font-mono text-xs leading-relaxed text-fg outline-none focus:border-accent"
-          />
-        ) : (
-          <textarea
-            value={js}
-            onChange={(e) => setJs(e.target.value)}
-            rows={10}
-            spellCheck={false}
-            placeholder={
-              '// Runs after each render as (widget, fields, playSound, root).\n// The place for animations and timed behaviour.'
-            }
-            aria-label="Widget custom logic"
-            className="w-full resize-y rounded-lg border border-edge bg-bg px-4 py-3 font-mono text-xs leading-relaxed text-fg outline-none focus:border-accent"
-          />
-        )}
-      </div>
+            )}
+          </div>
+        </>
+      )}
 
-      {/* Where the widget shows up in OBS: its locally served page. */}
-      {w.sourceUrl && (
-        <div className="flex flex-col gap-2 rounded-xl border border-edge bg-surface p-3">
-          <div className="flex items-center gap-2">
-            <MonitorPlay
-              size={16}
-              aria-hidden
-              className="shrink-0 text-accent"
-            />
-            <h2 className="text-sm font-semibold text-fg">
-              OBS Browser Source
-            </h2>
+      {pageTab === 'display' && (
+        <>
+          {/* The widget's display: JSX template, stylesheet, and custom logic,
+          hand-written or generated from a layout description. */}
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold text-fg">Display</h2>
+              <button
+                type="button"
+                onClick={() => setGenOpen(true)}
+                disabled={templateBusy}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {hasDisplay ? (
+                  <Pencil size={14} aria-hidden />
+                ) : (
+                  <Sparkles size={14} aria-hidden />
+                )}
+                {templateBusy
+                  ? 'Generating…'
+                  : hasDisplay
+                    ? 'Request Edits'
+                    : 'Generate with AI'}
+              </button>
+            </div>
+            <p className="text-xs text-fg-muted">
+              JSX that fully controls the widget's display, with a stylesheet
+              and custom JS for animation.{' '}
+              <code className="rounded bg-surface px-1">widget</code> is the
+              widget itself,{' '}
+              <code className="rounded bg-surface px-1">fields</code> maps each
+              field's label to its value (file fields give a URL), and{' '}
+              <code className="rounded bg-surface px-1">
+                playSound('Label')
+              </code>{' '}
+              plays a sound field.
+            </p>
+            <div className="flex items-center gap-1">
+              {(['template', 'css', 'js'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setDisplayTab(tab)}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                    displayTab === tab
+                      ? 'bg-accent/15 text-accent'
+                      : 'text-fg-muted hover:bg-surface-hover hover:text-fg'
+                  }`}
+                >
+                  {tab === 'template'
+                    ? 'Template'
+                    : tab === 'css'
+                      ? 'CSS'
+                      : 'JS / Logic'}
+                </button>
+              ))}
+            </div>
+            {displayTab === 'template' ? (
+              <>
+                <JsxTemplateField
+                  id="widget-template"
+                  value={template}
+                  onChange={setTemplate}
+                  placeholder={templateStarter(w, fields)}
+                />
+                <div className="rounded-lg border border-edge bg-surface px-3 py-2">
+                  <p className="text-xs font-medium text-fg">
+                    Available values
+                  </p>
+                  <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                    <li className="font-mono text-xs text-fg-muted">
+                      {'{widget.name}'}
+                    </li>
+                    <li className="font-mono text-xs text-fg-muted">
+                      {'items'}
+                    </li>
+                    {fields.map((f) => (
+                      <li
+                        key={f.id}
+                        className="font-mono text-xs text-fg-muted"
+                      >
+                        {`{fields['${f.label}']}`}
+                      </li>
+                    ))}
+                  </ul>
+                  {fields.length === 0 && (
+                    <p className="mt-1 text-xs text-fg-muted">
+                      Add fields above and each one appears here as{' '}
+                      <code className="rounded bg-bg px-1">
+                        {"{fields['Label']}"}
+                      </code>
+                      .
+                    </p>
+                  )}
+                </div>
+              </>
+            ) : displayTab === 'css' ? (
+              <textarea
+                value={css}
+                onChange={(e) => setCss(e.target.value)}
+                rows={10}
+                spellCheck={false}
+                placeholder={'.widget {\n  font-size: 32px;\n  color: #fff;\n}'}
+                aria-label="Widget stylesheet"
+                className="w-full resize-y rounded-lg border border-edge bg-bg px-4 py-3 font-mono text-xs leading-relaxed text-fg outline-none focus:border-accent"
+              />
+            ) : (
+              <textarea
+                value={js}
+                onChange={(e) => setJs(e.target.value)}
+                rows={10}
+                spellCheck={false}
+                placeholder={
+                  '// Runs after each render as (widget, fields, playSound, root).\n// The place for animations and timed behaviour.'
+                }
+                aria-label="Widget custom logic"
+                className="w-full resize-y rounded-lg border border-edge bg-bg px-4 py-3 font-mono text-xs leading-relaxed text-fg outline-none focus:border-accent"
+              />
+            )}
           </div>
-          <p className="text-xs text-fg-muted">
-            Add a Browser Source in OBS pointed at this address — the page is
-            served locally by Jax, renders this widget over a transparent
-            background, and follows saved changes live.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded-lg border border-edge bg-bg px-3 py-2 font-mono text-xs text-fg">
-              {w.sourceUrl}
-            </code>
-            <button
-              type="button"
-              onClick={() => void copySourceUrl()}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
-            >
-              {copied ? (
-                <Check size={14} aria-hidden />
-              ) : (
-                <Copy size={14} aria-hidden />
-              )}
-              {copied ? 'Copied' : 'Copy'}
-            </button>
-          </div>
-        </div>
+
+          {/* Where the widget shows up in OBS: its locally served page. */}
+          {w.sourceUrl && (
+            <div className="flex flex-col gap-2 rounded-xl border border-edge bg-surface p-3">
+              <div className="flex items-center gap-2">
+                <MonitorPlay
+                  size={16}
+                  aria-hidden
+                  className="shrink-0 text-accent"
+                />
+                <h2 className="text-sm font-semibold text-fg">
+                  OBS Browser Source
+                </h2>
+              </div>
+              <p className="text-xs text-fg-muted">
+                Add a Browser Source in OBS pointed at this address — the page
+                is served locally by Jax, renders this widget over a transparent
+                background, and follows saved changes live.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded-lg border border-edge bg-bg px-3 py-2 font-mono text-xs text-fg">
+                  {w.sourceUrl}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => void copySourceUrl()}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+                >
+                  {copied ? (
+                    <Check size={14} aria-hidden />
+                  ) : (
+                    <Copy size={14} aria-hidden />
+                  )}
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* The widget's own skill: the brief every image, sound, and template
           generation for this widget follows — editable right here, and the
           same document agents load over MCP (get_skill / save_skill). */}
-      {skill && (
+      {pageTab === 'skill' && skill && (
         <div className="flex flex-col gap-2 rounded-xl border border-edge bg-surface p-3">
           <div className="flex flex-wrap items-center gap-2">
             <BookOpen size={16} aria-hidden className="shrink-0 text-accent" />
@@ -1126,16 +1288,25 @@ export function StreamWidgetDetails({
       <Modal
         open={genOpen}
         onClose={() => setGenOpen(false)}
-        title="Generate the widget's display"
-        icon={<Sparkles size={18} aria-hidden />}
+        title={
+          hasDisplay
+            ? 'Request edits to the display'
+            : "Generate the widget's display"
+        }
+        icon={
+          hasDisplay ? (
+            <Pencil size={18} aria-hidden />
+          ) : (
+            <Sparkles size={18} aria-hidden />
+          )
+        }
         maxWidthClass="max-w-lg"
       >
         <div className="flex flex-col gap-3">
           <p className="text-sm text-fg-muted">
-            Describe the layout you want and the AI writes the JSX template,
-            stylesheet, and any custom logic — guided by this widget's skill and
-            aware of its fields. The current display, if any, is revised rather
-            than discarded.
+            {hasDisplay
+              ? 'Describe what should change — the AI revises the current template, stylesheet, and logic with your edits, keeping everything you leave unmentioned.'
+              : "Describe the layout you want and the AI writes the JSX template, stylesheet, and any custom logic — guided by this widget's skill and aware of its fields."}
           </p>
           <MarkdownField
             id="widget-display-brief"
@@ -1158,7 +1329,7 @@ export function StreamWidgetDetails({
               className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               <Sparkles size={14} aria-hidden />
-              Generate
+              {hasDisplay ? 'Apply edits' : 'Generate'}
             </button>
           </div>
         </div>

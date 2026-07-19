@@ -14,6 +14,8 @@ export function AddTranscriptLine(arg1:number,arg2:number,arg3:number,arg4:strin
 
 export function AddWidgetField(arg1:string,arg2:string,arg3:string):Promise<main.StreamWidget>;
 
+export function AddWidgetItem(arg1:string,arg2:Record<string, string>):Promise<main.StreamWidget>;
+
 export function ApplyChangesToSkill(arg1:string):Promise<main.AppSkill>;
 
 export function ApplyPlannedStream(arg1:string):Promise<Array<string>>;
@@ -349,6 +351,8 @@ export function RefreshChannelInfo():Promise<void>;
 export function RemoveVideoPlanFootage(arg1:string,arg2:string):Promise<main.VideoPlan>;
 
 export function RemoveWidgetField(arg1:string,arg2:string):Promise<main.StreamWidget>;
+
+export function RemoveWidgetItem(arg1:string,arg2:string):Promise<main.StreamWidget>;
 
 export function ReopenVideoPlan(arg1:string):Promise<main.VideoPlan>;
 

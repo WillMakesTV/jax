@@ -758,18 +758,34 @@ func mcpToolCatalog() []mcpTool {
 				out := make([]map[string]any, 0, len(widgets))
 				for _, w := range widgets {
 					fields := make([]map[string]any, 0, len(w.Fields))
+					labelByID := map[string]string{}
 					for _, f := range w.Fields {
 						ft := kinds[f.TypeID]
 						value := f.Value
 						if f.ValueURL != "" {
 							value = f.ValueURL
 						}
+						labelByID[f.ID] = f.Label
 						fields = append(fields, map[string]any{
 							"id":        f.ID,
 							"label":     f.Label,
 							"kind":      ft.Kind,
 							"maxLength": ft.MaxLength,
 							"value":     value,
+						})
+					}
+					items := make([]map[string]any, 0, len(w.Items))
+					for _, item := range w.Items {
+						values := map[string]string{}
+						for id, v := range item.Values {
+							if label, ok := labelByID[id]; ok {
+								values[label] = v
+							}
+						}
+						items = append(items, map[string]any{
+							"id":        item.ID,
+							"createdAt": item.CreatedAt,
+							"values":    values,
 						})
 					}
 					out = append(out, map[string]any{
@@ -781,6 +797,7 @@ func mcpToolCatalog() []mcpTool {
 						"css":       w.CSS,
 						"js":        w.JS,
 						"fields":    fields,
+						"items":     items,
 						"createdAt": w.CreatedAt,
 					})
 				}
@@ -850,6 +867,92 @@ func mcpToolCatalog() []mcpTool {
 					return nil, err
 				}
 				return "display updated", nil
+			},
+		},
+		{
+			name:        "add_widget_item",
+			description: "Add an entry to a stream widget, by widget id from list_stream_widgets: a new instance of its field schema, timestamped and shown newest-first on the Browser Source. values maps field LABELS to content; fields left out inherit their default (the field's own value). Text caps apply. This is the way to push things like queue items or alerts onto a list-style widget.",
+			inputSchema: objSchema(map[string]any{
+				"widgetId": prop("string", "The widget id from list_stream_widgets."),
+				"values": map[string]any{
+					"type":        "object",
+					"description": "Field label → content for this entry; omitted fields inherit their defaults.",
+					"additionalProperties": map[string]any{
+						"type": "string",
+					},
+				},
+			}, "widgetId"),
+			handler: func(a *App, args json.RawMessage) (any, error) {
+				var in struct {
+					WidgetID string            `json:"widgetId"`
+					Values   map[string]string `json:"values"`
+				}
+				if err := decodeArgs(args, &in); err != nil {
+					return nil, err
+				}
+				byID, err := a.widgetValuesByID(in.WidgetID, in.Values)
+				if err != nil {
+					return nil, err
+				}
+				w, err := a.AddWidgetItem(in.WidgetID, byID)
+				if err != nil {
+					return nil, err
+				}
+				return map[string]any{"itemId": w.Items[0].ID}, nil
+			},
+		},
+		{
+			name:        "update_widget_item",
+			description: "Update an existing stream widget entry, by widget and item id from list_stream_widgets. values maps field LABELS to new content; only the fields you pass change. Use this to move an item through its lifecycle (e.g. a status flip the display reacts to).",
+			inputSchema: objSchema(map[string]any{
+				"widgetId": prop("string", "The widget id from list_stream_widgets."),
+				"itemId":   prop("string", "The item id from list_stream_widgets."),
+				"values": map[string]any{
+					"type":        "object",
+					"description": "Field label → new content; omitted fields keep their values.",
+					"additionalProperties": map[string]any{
+						"type": "string",
+					},
+				},
+			}, "widgetId", "itemId", "values"),
+			handler: func(a *App, args json.RawMessage) (any, error) {
+				var in struct {
+					WidgetID string            `json:"widgetId"`
+					ItemID   string            `json:"itemId"`
+					Values   map[string]string `json:"values"`
+				}
+				if err := decodeArgs(args, &in); err != nil {
+					return nil, err
+				}
+				byID, err := a.widgetValuesByID(in.WidgetID, in.Values)
+				if err != nil {
+					return nil, err
+				}
+				if _, err := a.UpdateWidgetItem(in.WidgetID, in.ItemID, byID); err != nil {
+					return nil, err
+				}
+				return "item updated", nil
+			},
+		},
+		{
+			name:        "remove_widget_item",
+			description: "Remove one entry from a stream widget, by widget and item id from list_stream_widgets.",
+			inputSchema: objSchema(map[string]any{
+				"widgetId": prop("string", "The widget id from list_stream_widgets."),
+				"itemId":   prop("string", "The item id from list_stream_widgets."),
+			}, "widgetId", "itemId"),
+			handler: func(a *App, args json.RawMessage) (any, error) {
+				var in struct {
+					WidgetID string `json:"widgetId"`
+					ItemID   string `json:"itemId"`
+				}
+				if err := decodeArgs(args, &in); err != nil {
+					return nil, err
+				}
+				if _, err := a.RemoveWidgetItem(in.WidgetID, in.ItemID); err != nil {
+					return nil, err
+				}
+				return "item removed", nil
 			},
 		},
 		{

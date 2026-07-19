@@ -264,6 +264,7 @@ The template's contract:
 
 - One JSX expression with a single root element ("className", not "class").
 - It receives "widget" (with "widget.name") and "fields", a map from each field's label to its value — text kinds give the text, image and sound kinds give a local URL. Render images with <img src={fields['Label']} />.
+- It also receives "items" (as the LAST argument, after playSound): the widget's entries newest first, each {id, createdAt, values} with values keyed by field label like "fields". List-style widgets render items.map(...); "fields" carries the schema defaults.
 - "playSound('Label')" plays a sound field's audio — call it from event handlers or the custom JS, never unconditionally on render (the page re-renders whenever data changes).
 - "widget.testing" is true during a 15-second test fired from the app (which also remounts the display and plays sound fields once). Alert-style widgets that should stay hidden until called upon can gate their visibility on it.
 - The custom JS runs after each render as function(widget, fields, playSound, root) — the place for animations and timed behaviour.

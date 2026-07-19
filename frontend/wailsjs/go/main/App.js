@@ -26,6 +26,10 @@ export function AddWidgetField(arg1, arg2, arg3) {
   return window['go']['main']['App']['AddWidgetField'](arg1, arg2, arg3);
 }
 
+export function AddWidgetItem(arg1, arg2) {
+  return window['go']['main']['App']['AddWidgetItem'](arg1, arg2);
+}
+
 export function ApplyChangesToSkill(arg1) {
   return window['go']['main']['App']['ApplyChangesToSkill'](arg1);
 }
@@ -696,6 +700,10 @@ export function RemoveVideoPlanFootage(arg1, arg2) {
 
 export function RemoveWidgetField(arg1, arg2) {
   return window['go']['main']['App']['RemoveWidgetField'](arg1, arg2);
+}
+
+export function RemoveWidgetItem(arg1, arg2) {
+  return window['go']['main']['App']['RemoveWidgetItem'](arg1, arg2);
 }
 
 export function ReopenVideoPlan(arg1) {

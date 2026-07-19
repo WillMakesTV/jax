@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -40,6 +41,14 @@ type widgetSourceField struct {
 	Value string `json:"value"`
 }
 
+// widgetSourceItem is one widget entry as the Browser Source page sees it:
+// values keyed by field label, file kinds resolved to served URLs.
+type widgetSourceItem struct {
+	ID        string            `json:"id"`
+	CreatedAt string            `json:"createdAt"`
+	Values    map[string]string `json:"values"`
+}
+
 // widgetSourceData is the payload behind /widget/<id>/data.
 type widgetSourceData struct {
 	Name     string              `json:"name"`
@@ -47,6 +56,9 @@ type widgetSourceData struct {
 	CSS      string              `json:"css"`
 	JS       string              `json:"js"`
 	Fields   []widgetSourceField `json:"fields"`
+	// Items are the widget's entries, newest first, for list-style
+	// displays; Fields carries the schema defaults.
+	Items []widgetSourceItem `json:"items"`
 	// Testing is true while a test window fired from the app is running;
 	// the page remounts the display and plays sound fields when it flips
 	// on, and clears back to the normal render when it flips off.
@@ -273,10 +285,11 @@ func parseWidgetTestItem(text string) (map[string]string, error) {
 }
 
 // ClearStreamWidget clears the widget's populated content and its Browser
-// Source: every text field's value empties (file-backed fields keep their
-// assets — those are configuration, not items), any pending test restore is
-// dropped so it cannot resurrect the cleared values, and the page reloads
-// itself fresh via a per-widget reload count carried in the data feed.
+// Source: every item is removed, every text field's default empties
+// (file-backed fields keep their assets — those are configuration, not
+// items), any pending test restore is dropped so it cannot resurrect the
+// cleared values, and the page reloads itself fresh via a per-widget
+// reload count carried in the data feed.
 func (a *App) ClearStreamWidget(id string) error {
 	a.mu.Lock()
 	if pending := a.widgetTestRestores[id]; pending != nil {
@@ -292,6 +305,7 @@ func (a *App) ClearStreamWidget(id string) error {
 		}
 	}
 	if _, err := a.mutateStreamWidget(id, func(w *StreamWidget) error {
+		w.Items = []WidgetItem{}
 		for i := range w.Fields {
 			if textKinds[w.Fields[i].TypeID] {
 				w.Fields[i].Value = ""
@@ -368,6 +382,10 @@ func (a *App) serveWidgetSource(w http.ResponseWriter, r *http.Request) {
 			Testing:  a.widgetTesting(widget.ID),
 			Reload:   a.widgetReloadGen(widget.ID),
 		}
+		fileKind := func(typeID string) bool {
+			k := kinds[typeID]
+			return k == widgetFieldImage || k == widgetFieldSound
+		}
 		for _, f := range widget.Fields {
 			value := f.Value
 			if f.ValueURL != "" {
@@ -377,6 +395,26 @@ func (a *App) serveWidgetSource(w http.ResponseWriter, r *http.Request) {
 				Label: f.Label,
 				Kind:  kinds[f.TypeID],
 				Value: value,
+			})
+		}
+		a.mu.Lock()
+		base := a.mediaBaseURL
+		a.mu.Unlock()
+		data.Items = make([]widgetSourceItem, 0, len(widget.Items))
+		for _, item := range widget.Items {
+			values := map[string]string{}
+			for _, f := range widget.Fields {
+				v := item.Values[f.ID]
+				if v != "" && fileKind(f.TypeID) && base != "" {
+					v = base + widgetFilesPrefix +
+						url.PathEscape(widget.ID) + "/" + url.PathEscape(v)
+				}
+				values[f.Label] = v
+			}
+			data.Items = append(data.Items, widgetSourceItem{
+				ID:        item.ID,
+				CreatedAt: item.CreatedAt,
+				Values:    values,
 			})
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -445,7 +483,8 @@ var widgetSourcePage = template.Must(template.New("widget").Parse(`<!DOCTYPE htm
     }
     compiled = {
       source: source,
-      render: new Function('React', 'widget', 'fields', 'playSound', body),
+      // items rides last so displays written before it keep their bindings.
+      render: new Function('React', 'widget', 'fields', 'playSound', 'items', body),
     }
     return compiled.render
   }
@@ -483,13 +522,15 @@ var widgetSourcePage = template.Must(template.New("widget").Parse(`<!DOCTYPE htm
     first = false
     cssTag.textContent = data.css || ''
 
+    var items = data.items || []
     var render = compileTemplate(data.template)
-    root.render(render(React, widget, fields, window.playSound))
+    root.render(render(React, widget, fields, window.playSound, items))
     if (data.js && data.js.trim()) {
       // Custom logic/animation runs after each render with the same context
-      // the template gets, plus the root element.
-      new Function('widget', 'fields', 'playSound', 'root', data.js)(
-        widget, fields, window.playSound, document.getElementById('root'))
+      // the template gets, plus the root element. items rides last so
+      // displays written before it keep their bindings.
+      new Function('widget', 'fields', 'playSound', 'root', 'items', data.js)(
+        widget, fields, window.playSound, document.getElementById('root'), items)
     }
   }
 
@@ -546,10 +587,15 @@ func (a *App) GenerateWidgetTemplate(widgetID, description string) (StreamWidget
 Respond with a single JSON object and nothing else:
 {"template": "<JSX>", "css": "<stylesheet>", "js": "<custom logic, or empty string>"}
 
-template is one JSX expression (a single root element, className not class).
-css is a plain stylesheet applied to the page. js is optional plain
-JavaScript run after each render as function(widget, fields, playSound,
-root). Do not wrap the JSON in code fences.`
+template is one JSX expression (a single root element, className not class)
+receiving widget, fields (label → value; file kinds are URLs), playSound,
+and items (the widget's entries newest first, each {id, createdAt, values}
+with values keyed by label — list-style widgets render these). css is a
+plain stylesheet applied to the page. js is optional plain JavaScript run
+after each render as function(widget, fields, playSound, root, items).
+When a current template/css/js are provided below, treat the request as
+EDITS to them: keep the parts the request does not ask to change. Do not
+wrap the JSON in code fences.`
 
 	var in strings.Builder
 	fmt.Fprintf(&in, "# Widget\nName: %s\n\n## Fields\n", widget.Name)

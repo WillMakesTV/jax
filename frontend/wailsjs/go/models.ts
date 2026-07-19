@@ -1656,10 +1656,27 @@ export class WidgetField {
         this.valueUrl = source["valueUrl"];
     }
 }
+export class WidgetItem {
+    id: string;
+    values: Record<string, string>;
+    createdAt: string;
+
+    static createFrom(source: any = {}) {
+        return new WidgetItem(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.id = source["id"];
+        this.values = source["values"];
+        this.createdAt = source["createdAt"];
+    }
+}
 export class StreamWidget {
     id: string;
     name: string;
     fields: WidgetField[];
+    items: WidgetItem[];
     template: string;
     css: string;
     js: string;
@@ -1675,6 +1692,7 @@ export class StreamWidget {
         this.id = source["id"];
         this.name = source["name"];
         this.fields = this.convertValues(source["fields"], WidgetField);
+        this.items = this.convertValues(source["items"], WidgetItem);
         this.template = source["template"];
         this.css = source["css"];
         this.js = source["js"];
