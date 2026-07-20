@@ -234,6 +234,75 @@ export function StreamWidgetsPanel({
         </button>
       </div>
 
+      {/* Built-in widgets lead: fully implemented overlays the app ships,
+          enabled by default. Switching one off 404s its page, so an OBS
+          source left pointing at it goes dark rather than half-working. */}
+      {sysWidgets.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
+            System widgets
+          </h2>
+          <ul className="flex flex-col gap-2">
+            {sysWidgets.map((sw) => (
+              <li
+                key={sw.id}
+                className="flex items-center gap-3 rounded-xl border border-edge bg-surface p-3"
+              >
+                <span
+                  aria-hidden
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent"
+                >
+                  <MessageSquare size={15} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-fg">
+                    {sw.name}
+                  </span>
+                  <span className="block text-xs text-fg-muted">
+                    {sw.description}
+                  </span>
+                </span>
+                {sw.enabled && sw.sourceUrl && (
+                  <button
+                    type="button"
+                    onClick={() => void copySource(sw)}
+                    title="Copy the OBS Browser Source address"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                  >
+                    {copiedId === sw.id ? (
+                      <Check size={12} aria-hidden />
+                    ) : (
+                      <Copy size={12} aria-hidden />
+                    )}
+                    {copiedId === sw.id ? 'Copied' : 'Copy Browser Source'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void toggleSystem(sw)}
+                  title={
+                    sw.enabled
+                      ? 'Disable this widget — its Browser Source page goes dark'
+                      : 'Enable this widget'
+                  }
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                    sw.enabled
+                      ? 'bg-accent text-accent-fg hover:opacity-90'
+                      : 'border border-edge bg-bg text-fg-muted hover:bg-surface-hover hover:text-fg'
+                  }`}
+                >
+                  <Power size={12} aria-hidden />
+                  {sw.enabled ? 'Enabled' : 'Disabled'}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <h2 className="mt-2 text-sm font-semibold uppercase tracking-wide text-fg-muted">
+            Custom widgets
+          </h2>
+        </div>
+      )}
+
       <form
         onSubmit={(e) => {
           e.preventDefault()
@@ -360,72 +429,6 @@ export function StreamWidgetsPanel({
             </li>
           ))}
         </ul>
-      )}
-
-      {/* Built-in widgets: fully implemented overlays the app ships, enabled
-          by default. Switching one off 404s its page, so an OBS source left
-          pointing at it goes dark rather than half-working. */}
-      {sysWidgets.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <h2 className="mt-2 text-sm font-semibold uppercase tracking-wide text-fg-muted">
-            System widgets
-          </h2>
-          <ul className="flex flex-col gap-2">
-            {sysWidgets.map((sw) => (
-              <li
-                key={sw.id}
-                className="flex items-center gap-3 rounded-xl border border-edge bg-surface p-3"
-              >
-                <span
-                  aria-hidden
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent"
-                >
-                  <MessageSquare size={15} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-fg">
-                    {sw.name}
-                  </span>
-                  <span className="block text-xs text-fg-muted">
-                    {sw.description}
-                  </span>
-                </span>
-                {sw.enabled && sw.sourceUrl && (
-                  <button
-                    type="button"
-                    onClick={() => void copySource(sw)}
-                    title="Copy the OBS Browser Source address"
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
-                  >
-                    {copiedId === sw.id ? (
-                      <Check size={12} aria-hidden />
-                    ) : (
-                      <Copy size={12} aria-hidden />
-                    )}
-                    {copiedId === sw.id ? 'Copied' : 'Copy Browser Source'}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void toggleSystem(sw)}
-                  title={
-                    sw.enabled
-                      ? 'Disable this widget — its Browser Source page goes dark'
-                      : 'Enable this widget'
-                  }
-                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                    sw.enabled
-                      ? 'bg-accent text-accent-fg hover:opacity-90'
-                      : 'border border-edge bg-bg text-fg-muted hover:bg-surface-hover hover:text-fg'
-                  }`}
-                >
-                  <Power size={12} aria-hidden />
-                  {sw.enabled ? 'Enabled' : 'Disabled'}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
       )}
 
       <FieldTypesModal
