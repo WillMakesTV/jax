@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   Check,
   CheckCircle2,
   Image as ImageIcon,
@@ -321,15 +320,7 @@ export function BroadcastPlan({
 
   return (
     <div className="flex flex-col">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex w-fit items-center gap-1.5 text-sm text-fg-muted transition-colors hover:text-fg"
-        >
-          <ArrowLeft size={16} aria-hidden />
-          Back to Broadcast
-        </button>
+      <div className="mb-4 flex items-center justify-end gap-3">
         <button
           type="button"
           onClick={() => onEdit(plan)}
@@ -487,30 +478,87 @@ export function BroadcastPlan({
           )}
         </div>
 
-        {/* The thumbnail floats right so the description wraps around it;
-            hovering it offers the edit CTA (upload or AI-generate). */}
+        {/* The thumbnail floats right (with the broadcast channels stacked
+            beneath it) so the description wraps around them; hovering the
+            image offers the edit CTA (upload or AI-generate). */}
         <div className="text-sm text-fg-muted">
-          <div className="group relative float-right mb-2 ml-4 w-72 max-w-[50%]">
-            {thumb.url ? (
-              <img
-                src={thumb.url}
-                alt="Broadcast thumbnail"
-                className="aspect-video w-full rounded-lg border border-edge object-cover"
-              />
-            ) : (
-              <div className="flex aspect-video w-full items-center justify-center rounded-lg border border-dashed border-edge text-xs text-fg-muted">
-                <ImageIcon size={16} aria-hidden className="mr-1.5" />
-                No thumbnail yet
-              </div>
+          <div className="float-right mb-2 ml-4 flex w-72 max-w-[50%] flex-col gap-3">
+            <div className="group relative">
+              {thumb.url ? (
+                <img
+                  src={thumb.url}
+                  alt="Broadcast thumbnail"
+                  className="aspect-video w-full rounded-lg border border-edge object-cover"
+                />
+              ) : (
+                <div className="flex aspect-video w-full items-center justify-center rounded-lg border border-dashed border-edge text-xs text-fg-muted">
+                  <ImageIcon size={16} aria-hidden className="mr-1.5" />
+                  No thumbnail yet
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setEditingThumb(true)}
+                className="absolute inset-0 hidden items-center justify-center gap-1.5 rounded-lg bg-black/40 text-xs font-semibold text-white focus-visible:flex group-hover:flex"
+              >
+                <Pencil size={13} aria-hidden />
+                {thumb.url ? 'Update image' : 'Add thumbnail'}
+              </button>
+            </div>
+            {plan.channels.length > 0 && (
+              <section aria-labelledby="broadcast-channels-heading">
+                <h2
+                  id="broadcast-channels-heading"
+                  className="mb-2 text-sm font-semibold uppercase tracking-wide text-fg-muted"
+                >
+                  Broadcast channels
+                </h2>
+                <div className="flex flex-col gap-2">
+                  {plan.channels.map((c) => {
+                    const s = (infoStatus ?? []).find((x) => x.channel === c)
+                    return (
+                      <div
+                        key={c}
+                        className="rounded-lg border border-edge bg-surface px-3 py-2"
+                      >
+                        <div className="flex items-center gap-2 text-sm font-medium text-fg">
+                          <BrandTile platform={c} size={18} />
+                          {platformName(c)}
+                          {statuses[c as ServiceId]?.account && (
+                            <span className="text-xs text-fg-muted">
+                              {statuses[c as ServiceId].account}
+                            </span>
+                          )}
+                        </div>
+                        {/* The channel's current stream info vs. this plan. */}
+                        {checkingInfo ? (
+                          <p className="mt-1 text-xs text-fg-muted">
+                            Checking stream info…
+                          </p>
+                        ) : s?.matches ? (
+                          <p className="mt-1 inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                            <Check size={12} aria-hidden />
+                            Stream info matches
+                          </p>
+                        ) : s?.detail ? (
+                          <p className="mt-1 text-xs text-fg-muted">
+                            {s.detail}
+                          </p>
+                        ) : s ? (
+                          <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                            {s.currentTitle === s.wantTitle && s.thumbnailStale
+                              ? 'Thumbnail out of date'
+                              : s.currentTitle
+                                ? `Currently “${s.currentTitle}”`
+                                : 'No stream title set yet — Update Stream Info sets it.'}
+                          </p>
+                        ) : null}
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
             )}
-            <button
-              type="button"
-              onClick={() => setEditingThumb(true)}
-              className="absolute inset-0 hidden items-center justify-center gap-1.5 rounded-lg bg-black/40 text-xs font-semibold text-white focus-visible:flex group-hover:flex"
-            >
-              <Pencil size={13} aria-hidden />
-              {thumb.url ? 'Update image' : 'Add thumbnail'}
-            </button>
           </div>
           {plan.description && (
             <p className="whitespace-pre-wrap">{plan.description}</p>
@@ -533,59 +581,6 @@ export function BroadcastPlan({
             onApply={applyThumb}
           />
         </Modal>
-
-        {plan.channels.length > 0 && (
-          <section aria-labelledby="broadcast-channels-heading">
-            <h2
-              id="broadcast-channels-heading"
-              className="mb-2 text-sm font-semibold uppercase tracking-wide text-fg-muted"
-            >
-              Broadcast channels
-            </h2>
-            <div className="flex flex-wrap gap-2">
-              {plan.channels.map((c) => {
-                const s = (infoStatus ?? []).find((x) => x.channel === c)
-                return (
-                  <div
-                    key={c}
-                    className="rounded-lg border border-edge bg-surface px-3 py-2"
-                  >
-                    <div className="flex items-center gap-2 text-sm font-medium text-fg">
-                      <BrandTile platform={c} size={18} />
-                      {platformName(c)}
-                      {statuses[c as ServiceId]?.account && (
-                        <span className="text-xs text-fg-muted">
-                          {statuses[c as ServiceId].account}
-                        </span>
-                      )}
-                    </div>
-                    {/* The channel's current stream info vs. this plan. */}
-                    {checkingInfo ? (
-                      <p className="mt-1 text-xs text-fg-muted">
-                        Checking stream info…
-                      </p>
-                    ) : s?.matches ? (
-                      <p className="mt-1 inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
-                        <Check size={12} aria-hidden />
-                        Stream info matches
-                      </p>
-                    ) : s?.detail ? (
-                      <p className="mt-1 text-xs text-fg-muted">{s.detail}</p>
-                    ) : s ? (
-                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                        {s.currentTitle === s.wantTitle && s.thumbnailStale
-                          ? 'Thumbnail out of date'
-                          : s.currentTitle
-                            ? `Currently “${s.currentTitle}”`
-                            : 'No stream title set yet — Update Stream Info sets it.'}
-                      </p>
-                    ) : null}
-                  </div>
-                )
-              })}
-            </div>
-          </section>
-        )}
 
         {(plan.tags ?? []).length > 0 && (
           <section aria-labelledby="broadcast-tags-heading">
