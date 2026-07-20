@@ -478,12 +478,12 @@ export function BroadcastPlan({
           )}
         </div>
 
-        {/* The thumbnail floats right so the description wraps around it;
-            hovering it offers the edit CTA (upload or AI-generate). The
-            broadcast channels follow immediately after, directly beneath the
-            thumbnail. */}
-        <div className="text-sm text-fg-muted">
-          <div className="group relative float-right mb-2 ml-4 w-72 max-w-[50%]">
+        {/* The plan's artwork with the channel grid directly beneath it —
+            the thumbnail and where the episode airs read as one block, with
+            the description following in full width. Hovering the image
+            offers the edit CTA (upload or AI-generate). */}
+        <div className="flex flex-col gap-3">
+          <div className="group relative w-72 max-w-full">
             {thumb.url ? (
               <img
                 src={thumb.url}
@@ -505,63 +505,64 @@ export function BroadcastPlan({
               {thumb.url ? 'Update image' : 'Add thumbnail'}
             </button>
           </div>
-          {plan.description && (
-            <p className="whitespace-pre-wrap">{plan.description}</p>
+          {plan.channels.length > 0 && (
+            <section aria-labelledby="broadcast-channels-heading">
+              <h2
+                id="broadcast-channels-heading"
+                className="mb-2 text-sm font-semibold uppercase tracking-wide text-fg-muted"
+              >
+                Broadcast channels
+              </h2>
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
+                {plan.channels.map((c) => {
+                  const s = (infoStatus ?? []).find((x) => x.channel === c)
+                  return (
+                    <div
+                      key={c}
+                      className="rounded-lg border border-edge bg-surface px-3 py-2"
+                    >
+                      <div className="flex items-center gap-2 text-sm font-medium text-fg">
+                        <BrandTile platform={c} size={18} />
+                        {platformName(c)}
+                        {statuses[c as ServiceId]?.account && (
+                          <span className="text-xs text-fg-muted">
+                            {statuses[c as ServiceId].account}
+                          </span>
+                        )}
+                      </div>
+                      {/* The channel's current stream info vs. this plan. */}
+                      {checkingInfo ? (
+                        <p className="mt-1 text-xs text-fg-muted">
+                          Checking stream info…
+                        </p>
+                      ) : s?.matches ? (
+                        <p className="mt-1 inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                          <Check size={12} aria-hidden />
+                          Stream info matches
+                        </p>
+                      ) : s?.detail ? (
+                        <p className="mt-1 text-xs text-fg-muted">{s.detail}</p>
+                      ) : s ? (
+                        <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                          {s.currentTitle === s.wantTitle && s.thumbnailStale
+                            ? 'Thumbnail out of date'
+                            : s.currentTitle
+                              ? `Currently “${s.currentTitle}”`
+                              : 'No stream title set yet — Update Stream Info sets it.'}
+                        </p>
+                      ) : null}
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
           )}
-          <div className="clear-both" />
         </div>
 
-        {plan.channels.length > 0 && (
-          <section aria-labelledby="broadcast-channels-heading">
-            <h2
-              id="broadcast-channels-heading"
-              className="mb-2 text-sm font-semibold uppercase tracking-wide text-fg-muted"
-            >
-              Broadcast channels
-            </h2>
-            <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
-              {plan.channels.map((c) => {
-                const s = (infoStatus ?? []).find((x) => x.channel === c)
-                return (
-                  <div
-                    key={c}
-                    className="rounded-lg border border-edge bg-surface px-3 py-2"
-                  >
-                    <div className="flex items-center gap-2 text-sm font-medium text-fg">
-                      <BrandTile platform={c} size={18} />
-                      {platformName(c)}
-                      {statuses[c as ServiceId]?.account && (
-                        <span className="text-xs text-fg-muted">
-                          {statuses[c as ServiceId].account}
-                        </span>
-                      )}
-                    </div>
-                    {/* The channel's current stream info vs. this plan. */}
-                    {checkingInfo ? (
-                      <p className="mt-1 text-xs text-fg-muted">
-                        Checking stream info…
-                      </p>
-                    ) : s?.matches ? (
-                      <p className="mt-1 inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
-                        <Check size={12} aria-hidden />
-                        Stream info matches
-                      </p>
-                    ) : s?.detail ? (
-                      <p className="mt-1 text-xs text-fg-muted">{s.detail}</p>
-                    ) : s ? (
-                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                        {s.currentTitle === s.wantTitle && s.thumbnailStale
-                          ? 'Thumbnail out of date'
-                          : s.currentTitle
-                            ? `Currently “${s.currentTitle}”`
-                            : 'No stream title set yet — Update Stream Info sets it.'}
-                      </p>
-                    ) : null}
-                  </div>
-                )
-              })}
-            </div>
-          </section>
+        {plan.description && (
+          <p className="whitespace-pre-wrap text-sm text-fg-muted">
+            {plan.description}
+          </p>
         )}
 
         <Modal
