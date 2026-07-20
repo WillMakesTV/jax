@@ -788,25 +788,22 @@ function PlanCard({
     .join(' · ')
 
   return (
-    <li className="flex flex-col rounded-xl border border-edge bg-surface p-4">
-      <div className="flex items-start justify-between gap-3">
-        {/* The plan's generated thumbnail (from its thumbnail workbench),
-            when it has one — small, inline with the plan's metadata. */}
-        {plan.thumbnailUrl && (
-          <button
-            type="button"
-            onClick={onOpen}
-            aria-label={`Open the plan for ${plan.title}`}
-            className="shrink-0 overflow-hidden rounded-md border border-edge"
-          >
-            <img
-              src={plan.thumbnailUrl}
-              alt=""
-              aria-hidden
-              className="aspect-video w-24 object-cover transition-opacity hover:opacity-90"
-            />
-          </button>
-        )}
+    <li className="relative flex flex-col overflow-hidden rounded-xl border border-edge bg-surface p-4">
+      {/* The plan's thumbnail as the card's own backdrop, dimmed under a
+          surface gradient that keeps the metadata readable while the art
+          shows — the same treatment as the planned-video cards. */}
+      {plan.thumbnailUrl && (
+        <span aria-hidden className="absolute inset-0">
+          <img
+            src={plan.thumbnailUrl}
+            alt=""
+            className="h-full w-full object-cover"
+          />
+          <span className="absolute inset-0 bg-gradient-to-r from-surface via-surface/95 to-surface/70" />
+          <span className="absolute inset-0 bg-gradient-to-t from-surface via-surface/60 to-surface/30" />
+        </span>
+      )}
+      <div className="relative flex items-start justify-between gap-3">
         <button
           type="button"
           onClick={onOpen}
@@ -835,7 +832,7 @@ function PlanCard({
         <button
           type="button"
           onClick={onOpen}
-          className="mt-2 text-left text-sm text-fg-muted"
+          className="relative mt-2 text-left text-sm text-fg-muted"
         >
           {truncateText(plan.description, 150)}
         </button>
@@ -843,7 +840,7 @@ function PlanCard({
       {/* Channels sit on their own row below the plan's text: logos only,
           with the platform's name as each tile's tooltip. */}
       {plan.channels.length > 0 && (
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        <div className="relative mt-3 flex flex-wrap items-center gap-1.5">
           {plan.channels.map((c) => (
             <span key={c} title={platformName(c)}>
               <BrandTile platform={c} size={18} />
@@ -852,12 +849,14 @@ function PlanCard({
         </div>
       )}
       {/* Already gone live? The card wraps the episode up in place. */}
-      <PlanStreamedActions
-        planId={plan.id}
-        session={session}
-        onConcluded={onConcluded}
-        onReset={onReset}
-      />
+      <div className="relative">
+        <PlanStreamedActions
+          planId={plan.id}
+          session={session}
+          onConcluded={onConcluded}
+          onReset={onReset}
+        />
+      </div>
     </li>
   )
 }
