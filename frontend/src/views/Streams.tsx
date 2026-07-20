@@ -503,15 +503,10 @@ function PastStreamCard({
       ? formatDurationMs(Date.now() - startedMs)
       : ''
     : stream.broadcasts.find((b) => b.duration)?.duration
-  const meta = [
-    formatDate(stream.startedAt),
-    duration,
-    stream.totalViews > 0
-      ? `${formatCompact(stream.totalViews)} ${live ? 'watching now' : 'views'}`
-      : '',
-  ]
+  const meta = [formatDate(stream.startedAt), duration]
     .filter(Boolean)
     .join(' · ')
+  const sources = stream.broadcasts.length
 
   return (
     <article
@@ -585,6 +580,17 @@ function PastStreamCard({
           {stream.title || 'Untitled stream'}
         </button>
         {meta && <p className="mt-1 text-xs text-fg-muted">{meta}</p>}
+        {/* The stream's views totalled across every platform it aired on —
+            the per-source counts stay on the chips below. */}
+        <p
+          className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-fg"
+          title={`${stream.totalViews > 0 ? formatCompact(stream.totalViews) : 'No'} ${live ? 'viewers watching' : 'views'} across ${sources} source${sources === 1 ? '' : 's'}`}
+        >
+          <Eye size={12} aria-hidden />
+          {stream.totalViews > 0
+            ? `${formatCompact(stream.totalViews)} ${live ? 'watching now' : 'views'}`
+            : `— ${live ? 'watching' : 'views'}`}
+        </p>
         <div className="mt-3 flex flex-wrap gap-2">
           {stream.broadcasts.map((b) => (
             <BroadcastChip
