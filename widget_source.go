@@ -550,10 +550,14 @@ var widgetSourcePage = template.Must(template.New("widget").Parse(`<!DOCTYPE htm
     fetch(dataURL, {cache: 'no-store'})
       .then(function (res) { return res.text() })
       .then(function (text) {
+        // Any successful poll clears a lingering error — clearing must come
+        // before the unchanged-data short-circuit, or a transient failure
+        // (the app restarting) would stay on screen forever once polling
+        // recovers with the same JSON as before.
+        errBox.textContent = ''
         if (text === lastJSON) return
         lastJSON = text
         apply(JSON.parse(text))
-        errBox.textContent = ''
       })
       .catch(function (err) { errBox.textContent = String(err) })
   }
