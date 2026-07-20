@@ -617,6 +617,7 @@ export function PlanVideo({
                   <div className="mt-2">
                     <ObsRecordPanel
                       recordDir={sourcesDir}
+                      planId={draft?.id}
                       onRecorded={(path) => void importRecording(path)}
                     />
                   </div>

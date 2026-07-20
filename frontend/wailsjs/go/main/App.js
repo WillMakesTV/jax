@@ -638,6 +638,10 @@ export function NextEpisodeNumber(arg1) {
   return window['go']['main']['App']['NextEpisodeNumber'](arg1);
 }
 
+export function OpenScriptWindow(arg1) {
+  return window['go']['main']['App']['OpenScriptWindow'](arg1);
+}
+
 export function OutlineInProgress(arg1) {
   return window['go']['main']['App']['OutlineInProgress'](arg1);
 }

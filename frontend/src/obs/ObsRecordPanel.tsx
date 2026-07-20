@@ -1,5 +1,15 @@
-import {Circle, MonitorPlay, Plug, Square} from 'lucide-react'
+import {
+  Circle,
+  Eye,
+  EyeOff,
+  MonitorPlay,
+  Plug,
+  ScrollText,
+  Square,
+} from 'lucide-react'
 import {useEffect, useRef, useState} from 'react'
+import {OpenScriptWindow} from '../../wailsjs/go/main/App'
+import {useCaptureHidden} from '../lib/captureHidden'
 import {formatDurationMs} from '../lib/format'
 import {useLiveData} from '../live/LiveDataProvider'
 import {useServices} from '../services/ServicesProvider'
@@ -29,12 +39,16 @@ interface StopRecordResponse {
 export function ObsRecordPanel({
   onRecorded,
   recordDir,
+  planId,
 }: {
   /** Receives the recorded file's absolute path after Stop recording. */
   onRecorded: (path: string) => void
   /** When set, OBS records into this directory instead of its own default
    *  (restored once the recording stops). */
   recordDir?: string
+  /** When set, the panel offers the plan's script in its own side window —
+   *  the teleprompter while recording. */
+  planId?: string
 }) {
   const {obsRequest} = useServices()
   const {obsConnected} = useLiveData()
@@ -44,6 +58,39 @@ export function ObsRecordPanel({
   const [duration, setDuration] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+
+  // The same hide-from-capture preference as the status bar's eye, right
+  // where a screen-sharing recording is being set up. The script window
+  // follows the same flag.
+  const [captureHidden, setCaptureHidden] = useCaptureHidden()
+  const toggleCaptureHidden = async () => {
+    setError('')
+    try {
+      await setCaptureHidden(!captureHidden)
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'The capture preference could not be changed.',
+      )
+    }
+  }
+
+  const showScript = async () => {
+    if (!planId) return
+    setError('')
+    try {
+      await OpenScriptWindow(planId)
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : typeof err === 'string' && err
+            ? err
+            : 'The script window could not be opened.',
+      )
+    }
+  }
   // OBS's own record directory while we've pointed it at recordDir; restored
   // after the recording stops.
   const prevDir = useRef('')
@@ -208,6 +255,34 @@ export function ObsRecordPanel({
             {busy ? 'Starting…' : 'Start recording'}
           </button>
         )}
+        {planId && (
+          <button
+            type="button"
+            onClick={() => void showScript()}
+            title="Open the plan's script in its own window beside the app — it follows the hide-from-capture setting"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+          >
+            <ScrollText size={13} aria-hidden />
+            Show script
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => void toggleCaptureHidden()}
+          title={
+            captureHidden
+              ? 'The app (and the script window) is hidden from screen captures — click to show it again'
+              : 'Hide the app (and the script window) from screen captures, shares, and screenshots'
+          }
+          className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+        >
+          {captureHidden ? (
+            <EyeOff size={13} aria-hidden />
+          ) : (
+            <Eye size={13} aria-hidden />
+          )}
+          {captureHidden ? 'Hidden from capture' : 'Hide from capture'}
+        </button>
         <p className="text-xs text-fg-muted">
           {recordDir
             ? "Records OBS's program output straight into the plan's sources folder; the file is added to the plan when the recording stops."

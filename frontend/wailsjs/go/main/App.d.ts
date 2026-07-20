@@ -320,6 +320,8 @@ export function MoveEditWorkspaceFolder(arg1:string):Promise<number>;
 
 export function NextEpisodeNumber(arg1:string):Promise<number>;
 
+export function OpenScriptWindow(arg1:string):Promise<void>;
+
 export function OutlineInProgress(arg1:string):Promise<boolean>;
 
 export function PickFootageFiles():Promise<Array<string>>;

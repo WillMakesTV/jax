@@ -337,6 +337,7 @@ export function AddContentModal({
             {obsOpen && (
               <ObsRecordPanel
                 recordDir={sourcesDir}
+                planId={plan.id}
                 onRecorded={(path) => void importPaths([path])}
               />
             )}
