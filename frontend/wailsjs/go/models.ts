@@ -1719,6 +1719,27 @@ export class StreamWidget {
 	}
 }
 
+export class SystemWidget {
+    id: string;
+    name: string;
+    description: string;
+    enabled: boolean;
+    sourceUrl: string;
+
+    static createFrom(source: any = {}) {
+        return new SystemWidget(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.id = source["id"];
+        this.name = source["name"];
+        this.description = source["description"];
+        this.enabled = source["enabled"];
+        this.sourceUrl = source["sourceUrl"];
+    }
+}
+
 export class RoutineStep {
 	    kind: string;
 	    scene?: string;

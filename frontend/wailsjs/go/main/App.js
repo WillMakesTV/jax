@@ -534,6 +534,10 @@ export function GetStreams() {
   return window['go']['main']['App']['GetStreams']();
 }
 
+export function GetSystemWidgets() {
+  return window['go']['main']['App']['GetSystemWidgets']();
+}
+
 export function GetTikTokPublish(arg1) {
   return window['go']['main']['App']['GetTikTokPublish'](arg1);
 }
@@ -892,6 +896,10 @@ export function SetStreamEpisode(arg1, arg2, arg3) {
 
 export function SetStreamThumbnail(arg1, arg2) {
   return window['go']['main']['App']['SetStreamThumbnail'](arg1, arg2);
+}
+
+export function SetSystemWidgetEnabled(arg1, arg2) {
+  return window['go']['main']['App']['SetSystemWidgetEnabled'](arg1, arg2);
 }
 
 export function SetStreamTitle(arg1, arg2) {

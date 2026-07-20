@@ -268,6 +268,8 @@ export function GetStreamdeckMultiActions():Promise<Array<main.StreamdeckMultiAc
 
 export function GetStreams():Promise<Array<main.Stream>>;
 
+export function GetSystemWidgets():Promise<Array<main.SystemWidget>>;
+
 export function GetTikTokPublish(arg1:string):Promise<main.TikTokPublishRecord>;
 
 export function GetTrackedVideos():Promise<Array<main.TrackedVideo>>;
@@ -447,6 +449,8 @@ export function SetStreamDescription(arg1:string,arg2:string):Promise<void>;
 export function SetStreamEpisode(arg1:Array<string>,arg2:number,arg3:string):Promise<void>;
 
 export function SetStreamThumbnail(arg1:string,arg2:string):Promise<main.StreamThumbInfo>;
+
+export function SetSystemWidgetEnabled(arg1:string,arg2:boolean):Promise<Array<main.SystemWidget>>;
 
 export function SetStreamTitle(arg1:string,arg2:string):Promise<void>;
 

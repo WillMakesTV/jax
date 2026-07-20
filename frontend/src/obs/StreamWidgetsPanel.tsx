@@ -4,7 +4,9 @@ import {
   FlaskConical,
   Image,
   LayoutGrid,
+  MessageSquare,
   Plus,
+  Power,
   RefreshCw,
   SlidersHorizontal,
   Trash2,
@@ -16,9 +18,11 @@ import {
   DeleteWidgetFieldType,
   GenerateWidgetTestItem,
   GetStreamWidgets,
+  GetSystemWidgets,
   GetWidgetFieldTypes,
   SaveStreamWidget,
   SaveWidgetFieldType,
+  SetSystemWidgetEnabled,
   TestStreamWidget,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
@@ -41,6 +45,8 @@ export function StreamWidgetsPanel({
   onOpenWidget: (widget: main.StreamWidget) => void
 }) {
   const [widgets, setWidgets] = useState<main.StreamWidget[]>([])
+  // The built-in widgets the app ships, each with an on/off switch.
+  const [sysWidgets, setSysWidgets] = useState<main.SystemWidget[]>([])
   const [types, setTypes] = useState<main.WidgetFieldType[]>([])
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
@@ -50,6 +56,9 @@ export function StreamWidgetsPanel({
     GetStreamWidgets()
       .then((w) => setWidgets(w ?? []))
       .catch(() => {})
+    GetSystemWidgets()
+      .then((s) => setSysWidgets(s ?? []))
+      .catch(() => {})
     GetWidgetFieldTypes()
       .then((t) => setTypes(t ?? []))
       .catch(() => {})
@@ -57,7 +66,10 @@ export function StreamWidgetsPanel({
 
   useEffect(load, [load])
   // Widgets saved elsewhere (e.g. an MCP client) appear without a re-visit.
-  useDataChanged(['stream_widgets', 'widget_field_types'], load)
+  useDataChanged(
+    ['stream_widgets', 'widget_field_types', 'system_widgets_disabled'],
+    load,
+  )
 
   // A widget's card thumbnail: its first image field carrying a file.
   const kindById = new Map(types.map((t) => [t.id, t.kind]))
@@ -170,8 +182,9 @@ export function StreamWidgetsPanel({
   }
 
   // Which widget's Browser Source address was just copied, for feedback.
+  // Shared by the custom and system lists (their ids never collide).
   const [copiedId, setCopiedId] = useState('')
-  const copySource = async (w: main.StreamWidget) => {
+  const copySource = async (w: {id: string; sourceUrl: string}) => {
     if (!w.sourceUrl) return
     try {
       await navigator.clipboard.writeText(w.sourceUrl)
@@ -182,6 +195,23 @@ export function StreamWidgetsPanel({
       )
     } catch {
       // Clipboard unavailable; the details page still shows the address.
+    }
+  }
+
+  // Switch a built-in widget on or off; off 404s its Browser Source page.
+  const toggleSystem = async (sw: main.SystemWidget) => {
+    setError('')
+    try {
+      const updated = await SetSystemWidgetEnabled(sw.id, !sw.enabled)
+      setSysWidgets(updated ?? [])
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : typeof err === 'string' && err
+            ? err
+            : 'The system widget could not be switched.',
+      )
     }
   }
 
@@ -330,6 +360,72 @@ export function StreamWidgetsPanel({
             </li>
           ))}
         </ul>
+      )}
+
+      {/* Built-in widgets: fully implemented overlays the app ships, enabled
+          by default. Switching one off 404s its page, so an OBS source left
+          pointing at it goes dark rather than half-working. */}
+      {sysWidgets.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h2 className="mt-2 text-sm font-semibold uppercase tracking-wide text-fg-muted">
+            System widgets
+          </h2>
+          <ul className="flex flex-col gap-2">
+            {sysWidgets.map((sw) => (
+              <li
+                key={sw.id}
+                className="flex items-center gap-3 rounded-xl border border-edge bg-surface p-3"
+              >
+                <span
+                  aria-hidden
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent"
+                >
+                  <MessageSquare size={15} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-fg">
+                    {sw.name}
+                  </span>
+                  <span className="block text-xs text-fg-muted">
+                    {sw.description}
+                  </span>
+                </span>
+                {sw.enabled && sw.sourceUrl && (
+                  <button
+                    type="button"
+                    onClick={() => void copySource(sw)}
+                    title="Copy the OBS Browser Source address"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                  >
+                    {copiedId === sw.id ? (
+                      <Check size={12} aria-hidden />
+                    ) : (
+                      <Copy size={12} aria-hidden />
+                    )}
+                    {copiedId === sw.id ? 'Copied' : 'Copy Browser Source'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void toggleSystem(sw)}
+                  title={
+                    sw.enabled
+                      ? 'Disable this widget — its Browser Source page goes dark'
+                      : 'Enable this widget'
+                  }
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                    sw.enabled
+                      ? 'bg-accent text-accent-fg hover:opacity-90'
+                      : 'border border-edge bg-bg text-fg-muted hover:bg-surface-hover hover:text-fg'
+                  }`}
+                >
+                  <Power size={12} aria-hidden />
+                  {sw.enabled ? 'Enabled' : 'Disabled'}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       <FieldTypesModal
