@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   Bell,
   Calendar,
   Captions,
@@ -480,15 +479,6 @@ export function StreamDetails({
 
   return (
     <div className="flex h-full flex-col">
-      <button
-        type="button"
-        onClick={onBack}
-        className="mb-4 inline-flex w-fit items-center gap-1.5 text-sm text-fg-muted transition-colors hover:text-fg"
-      >
-        <ArrowLeft size={16} aria-hidden />
-        Back to Broadcasting
-      </button>
-
       <PageHeader
         description={`${clusters.length} broadcast${
           clusters.length === 1 ? '' : 's'
