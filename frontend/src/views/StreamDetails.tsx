@@ -846,11 +846,14 @@ export function StreamDetails({
             ? ' Generating needs the stream’s outline — build it on the Outline tab first.'
             : ''}
         </p>
+        {/* Without a custom image, the platform's thumbnail previews as the
+            existing picture — "request changes" then revises it (the backend
+            fetches it as the base), rather than generating blind. */}
         <PlanThumbnailEditor
           planTitle={streamName}
           planDescription=""
           file={customThumb?.file ?? ''}
-          url={customThumb?.file ? customThumb.url : ''}
+          url={(customThumb?.file ? customThumb.url : '') || platformThumbUrl}
           history={zipThumbHistory(
             customThumb?.historyFiles,
             customThumb?.historyUrls,

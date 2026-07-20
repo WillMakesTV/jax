@@ -2,8 +2,13 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -150,6 +155,52 @@ func (a *App) applyStreamThumbs(out []PastStream) {
 	}
 }
 
+// fetchPlatformThumb downloads the stream's platform thumbnail into the
+// plan-thumbs folder as a temporary revision base, returning its file name
+// ("" when the stream has no platform image or the fetch fails — the
+// revision then degrades to a guided fresh generation).
+func (a *App) fetchPlatformThumb(startedAt string) string {
+	var thumbURL string
+	for _, s := range a.GetPastStreams(false) {
+		if s.StartedAt != startedAt {
+			continue
+		}
+		for _, b := range s.Broadcasts {
+			if b.ThumbnailURL != "" {
+				thumbURL = b.ThumbnailURL
+				break
+			}
+		}
+		break
+	}
+	if thumbURL == "" {
+		return ""
+	}
+	resp, err := httpClient.Get(thumbURL)
+	if err != nil {
+		log.Printf("jax: fetch platform thumbnail: %v", err)
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 20<<20))
+	if err != nil || len(data) == 0 {
+		return ""
+	}
+	dir, err := planThumbsDir()
+	if err != nil {
+		return ""
+	}
+	name := fmt.Sprintf("platform_%d.png", time.Now().UnixNano())
+	if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+		log.Printf("jax: save platform thumbnail: %v", err)
+		return ""
+	}
+	return name
+}
+
 // pastStreamThumbContext steers generation away from live-broadcast styling:
 // these thumbnails represent a finished VOD, so "LIVE" tags and on-air
 // framing would be wrong.
@@ -157,8 +208,11 @@ const pastStreamThumbContext = "This thumbnail is for a PAST broadcast — a fin
 
 // GenerateStreamThumbnail creates (or revises) a thumbnail for a past stream.
 // The creative input is the stream's title plus its AI outline, so an outline
-// must exist first. Persisting the result on the stream is the frontend's
-// call (SetStreamThumbnail), matching how plan thumbnails apply.
+// must exist first. A revision without a custom image to build on borrows
+// the platform's own thumbnail as its base, so "request changes" edits the
+// picture the producer is actually looking at instead of generating blind.
+// Persisting the result on the stream is the frontend's call
+// (SetStreamThumbnail), matching how plan thumbnails apply.
 func (a *App) GenerateStreamThumbnail(startedAt, title, feedback, currentFile string) (PlanThumbnail, error) {
 	outline, err := a.GetStreamOutline(startedAt)
 	if err != nil {
@@ -166,6 +220,18 @@ func (a *App) GenerateStreamThumbnail(startedAt, title, feedback, currentFile st
 	}
 	if outline.GeneratedAt == "" {
 		return PlanThumbnail{}, fmt.Errorf("this stream has no outline yet — generate one on the Outline tab first, it's what the thumbnail is briefed from")
+	}
+
+	if strings.TrimSpace(currentFile) == "" && strings.TrimSpace(feedback) != "" {
+		if temp := a.fetchPlatformThumb(startedAt); temp != "" {
+			currentFile = temp
+			// The base is disposable: the revision writes its own thumb file.
+			defer func() {
+				if dir, dirErr := planThumbsDir(); dirErr == nil {
+					_ = os.Remove(filepath.Join(dir, temp))
+				}
+			}()
+		}
 	}
 
 	var b strings.Builder
