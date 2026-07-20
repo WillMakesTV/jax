@@ -62,6 +62,20 @@ func TestUnifiedChatEndpoints(t *testing.T) {
 		t.Fatalf("data: code %d body %q", rec.Code, rec.Body.String())
 	}
 
+	// The data feed reports whether a stream session is on the air.
+	if !strings.Contains(rec.Body.String(), "sessionActive") {
+		t.Fatalf("data should carry sessionActive: %q", rec.Body.String())
+	}
+
+	// The user card endpoint answers even for unknown chatters (empty
+	// history, an info error for the unconnected platform).
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET",
+		"/syswidget/unified-chat/user?platform=twitch&login=someone", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "messages") {
+		t.Fatalf("user: code %d body %q", rec.Code, rec.Body.String())
+	}
+
 	// Sending is POST-only.
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/unified-chat/send", nil))

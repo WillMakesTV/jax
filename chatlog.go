@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"strings"
 	"time"
 )
 
@@ -60,6 +61,33 @@ func (a *App) GetChatHistory(limit int) []StoredChatMessage {
 		return []StoredChatMessage{}
 	}
 	return messages
+}
+
+// chatMessagesByAuthor returns the newest stored messages from one chatter —
+// matched by platform plus any of the author's id, login, or display name —
+// in chronological order (the Unified Chat widget's user card). Never nil.
+func (a *App) chatMessagesByAuthor(platform, id, login, author string, limit int) []StoredChatMessage {
+	if limit <= 0 {
+		limit = 50
+	}
+	login = strings.TrimSpace(login)
+	author = strings.TrimSpace(author)
+	out := []StoredChatMessage{}
+	for _, m := range a.GetChatHistory(2000) {
+		if m.Platform != platform {
+			continue
+		}
+		if (id == "" || m.AuthorID != id) &&
+			(login == "" || !strings.EqualFold(m.AuthorLogin, login)) &&
+			(author == "" || !strings.EqualFold(m.Author, author)) {
+			continue
+		}
+		out = append(out, m)
+	}
+	if len(out) > limit {
+		out = out[len(out)-limit:]
+	}
+	return out
 }
 
 // GetSessionChatHistory returns the active stream session's stored chat — the
