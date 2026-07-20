@@ -31,6 +31,8 @@ import {
   GenerateStreamThumbnail,
   GetContentSeries,
   GetPastStreams,
+  GetPlanSessions,
+  GetPlannedStreams,
   GetSeriesTypes,
   GetStreamOutline,
   SetPastStreamSeries,
@@ -302,10 +304,39 @@ export function StreamDetails({
   const [editingThumb, setEditingThumb] = useState(false)
   const platformThumbUrl =
     stream.broadcasts.find((b) => b.thumbnailUrl)?.thumbnailUrl ?? ''
-  // The plan's own thumbnail (when the stream came from a concluded plan)
-  // outranks the platform image everywhere: it is the producer's work.
-  const planThumbFile = stream.plan?.thumbnailFile ?? ''
-  const planThumbUrl = (planThumbFile && stream.plan?.thumbnailUrl) || ''
+
+  // A stream whose plan has NOT been concluded yet carries no plan snapshot;
+  // the plan (and its thumbnail) still exists on the Broadcasting page.
+  // Match it by its go-live session so the thumbnail chain can borrow it.
+  const [livePlanThumb, setLivePlanThumb] = useState<PlanThumb | null>(null)
+  useEffect(() => {
+    setLivePlanThumb(null)
+    if (stream.plan?.thumbnailFile || stream.customThumb?.file) return
+    Promise.all([GetPlannedStreams(), GetPlanSessions()])
+      .then(([plans, sessions]) => {
+        const t = Date.parse(stream.startedAt)
+        const margin = 30 * 60 * 1000
+        const session = (sessions ?? []).find(
+          (s) => Math.abs(Date.parse(s.startedAt) - t) <= margin,
+        )
+        const plan = session
+          ? (plans ?? []).find((p) => p.id === session.planId)
+          : undefined
+        if (plan?.thumbnailFile && plan.thumbnailUrl) {
+          setLivePlanThumb({file: plan.thumbnailFile, url: plan.thumbnailUrl})
+        }
+      })
+      .catch(() => {})
+  }, [stream])
+
+  // The plan's own thumbnail — from the concluded snapshot, or the live
+  // plan matched above — outranks the platform image everywhere: it is the
+  // producer's work.
+  const planThumbFile = stream.plan?.thumbnailFile || livePlanThumb?.file || ''
+  const planThumbUrl =
+    (stream.plan?.thumbnailFile && stream.plan?.thumbnailUrl) ||
+    livePlanThumb?.url ||
+    ''
   const thumbUrl =
     (customThumb?.file && customThumb.url) || planThumbUrl || platformThumbUrl
 
