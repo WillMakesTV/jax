@@ -54,18 +54,55 @@ const broadcastKeyOf = (b: main.PastBroadcast) => `${b.platform}|${b.url}`
 const streamKeyOf = (s: main.PastStream) =>
   s.broadcasts.map(broadcastKeyOf).join(',')
 
+/**
+ * The dashboard's aggregate stat tiles — recent stream count, views totalled
+ * across every stream and source, and the last stream's date — rendered at
+ * the top of the Broadcasting page. Reads the same 1-hour past-streams cache
+ * the grid below uses, so the extra load is a lookup.
+ */
+export function StreamStatsSummary() {
+  const [past, setPast] = useState<main.PastStream[]>([])
+
+  useEffect(() => {
+    GetPastStreams(false)
+      .then((result) => setPast(result ?? []))
+      .catch(() => {})
+  }, [])
+
+  if (past.length === 0) return null
+  const totalViews = past.reduce((sum, s) => sum + s.totalViews, 0)
+  const lastStream = past[0]
+
+  return (
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+      <StatTile
+        icon={Video}
+        label="Recent streams"
+        value={String(past.length)}
+      />
+      <StatTile
+        icon={Eye}
+        label="Total stream views"
+        value={totalViews > 0 ? formatCompact(totalViews) : '—'}
+      />
+      <StatTile
+        icon={Calendar}
+        label="Last stream"
+        value={lastStream ? formatDate(lastStream.startedAt) || '—' : '—'}
+      />
+    </div>
+  )
+}
+
 export function PastStreamsSection({
   onOpenStream,
   onOpenLive,
   onPlanVideo,
-  showSummary,
 }: {
   onOpenStream: (stream: main.PastStream) => void
   onOpenLive: () => void
   /** Open the "Plan a video" form (a short- or long-form video plan). */
   onPlanVideo?: () => void
-  /** Render aggregate stat cards (count, total views, last stream) on top. */
-  showSummary?: boolean
 }) {
   const {platforms} = useLiveData()
   // Maps each stream to its downloaded copy (if any) so a card with a
@@ -183,32 +220,8 @@ export function PastStreamsSection({
     return plans.find((p) => p.id === open.planId)?.thumbnailUrl ?? ''
   })()
 
-  const totalViews = past.reduce((sum, s) => sum + s.totalViews, 0)
-  const lastStream = past[0]
-
   return (
     <section aria-label="Broadcasting">
-      {/* Aggregate stat cards. */}
-      {showSummary && past.length > 0 && (
-        <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-3">
-          <StatTile
-            icon={Video}
-            label="Recent streams"
-            value={String(past.length)}
-          />
-          <StatTile
-            icon={Eye}
-            label="Total stream views"
-            value={totalViews > 0 ? formatCompact(totalViews) : '—'}
-          />
-          <StatTile
-            icon={Calendar}
-            label="Last stream"
-            value={lastStream ? formatDate(lastStream.startedAt) || '—' : '—'}
-          />
-        </div>
-      )}
-
       <div className="mb-3 flex min-h-8 items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">

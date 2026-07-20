@@ -8,7 +8,11 @@ import {GoLiveButton} from '../components/GoLiveButton'
 import {TranscriptPanel} from '../transcript/TranscriptPanel'
 import {BroadcastNotifications} from './BroadcastNotifications'
 import {ContentSeriesPanel} from './ContentSeries'
-import {PastStreamsSection, PlanningSection} from './Streams'
+import {
+  PastStreamsSection,
+  PlanningSection,
+  StreamStatsSummary,
+} from './Streams'
 
 /** The Broadcasting section's tabs. App owns the state so the status bar can
  *  deep-link (chat/events chips) and history restores the tab. */
@@ -116,6 +120,7 @@ export function Planning({
 
       {tab === 'dashboard' && (
         <div className="flex flex-col gap-8">
+          <StreamStatsSummary />
           <PlanningSection
             onPlanStream={onPlanStream}
             onOpenPlan={onOpenBroadcast}
@@ -124,7 +129,6 @@ export function Planning({
             onOpenStream={onOpenStream}
             onOpenLive={onOpenLive}
             onPlanVideo={onPlanVideo}
-            showSummary
           />
         </div>
       )}
