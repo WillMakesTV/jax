@@ -7,6 +7,7 @@ import {
   History,
   Loader2,
   MessageSquarePlus,
+  Pencil,
   Play,
   RotateCcw,
   Send,
@@ -36,6 +37,7 @@ import {main} from '../../wailsjs/go/models'
 import {EventsOn} from '../../wailsjs/runtime/runtime'
 import {Markdown} from '../components/markdown/Markdown'
 import {MarkdownField} from '../components/markdown/MarkdownField'
+import {Modal} from '../components/Modal'
 import {useEditSession} from '../editor/EditSessionProvider'
 import {formatBytes, formatDate, formatDurationMs} from '../lib/format'
 import {useServices} from '../services/ServicesProvider'
@@ -103,6 +105,11 @@ export function VideoPlanEditor({
   const [requesting, setRequesting] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [starting, setStarting] = useState(false)
+
+  // The script's own Request Edits modal: a markdown brief of what should
+  // change, folded into a revision pass over the saved script.
+  const [scriptEditsOpen, setScriptEditsOpen] = useState(false)
+  const [scriptEditsRequest, setScriptEditsRequest] = useState('')
 
   // Both long-running AI jobs — writing the script and cutting the video —
   // live in the app-wide provider (which also drives their status-bar chips),
@@ -282,15 +289,25 @@ export function VideoPlanEditor({
       .finally(() => setInstalling(false))
   }
 
-  // Write (or rewrite) the script from the sources' transcripts and outlines.
-  // The provider owns the job — it keeps running (and saves itself) if the
-  // producer navigates away, and the status bar follows it.
-  const generate = () => {
+  // Write (or rewrite) the script from the plan's idea and the sources'
+  // transcripts and outlines. Notes carry the producer's requested edits for
+  // a revision pass. The provider owns the job — it keeps running (and saves
+  // itself) if the producer navigates away, and the status bar follows it.
+  const generate = (notes = '') => {
     setError('')
     setNote('')
-    generateScript(plan.id, plan.title, script).catch((err) =>
+    generateScript(plan.id, plan.title, script, notes).catch((err) =>
       setError(messageOf(err, 'The script could not be generated.')),
     )
+  }
+
+  // The Request Edits modal's submit: the request becomes the revision notes.
+  const requestScriptEdits = () => {
+    const request = scriptEditsRequest.trim()
+    if (!request) return
+    setScriptEditsOpen(false)
+    setScriptEditsRequest('')
+    generate(request)
   }
 
   // Run the edit session in the background. Instruction is empty for the first
@@ -463,9 +480,11 @@ export function VideoPlanEditor({
           >
             Script
           </h2>
+          {/* With a script in place, generation reads as requesting edits to
+              it — the revision folds the current script and the request in. */}
           <button
             type="button"
-            onClick={generate}
+            onClick={() => (hasScript ? setScriptEditsOpen(true) : generate())}
             disabled={
               generating ||
               running ||
@@ -480,21 +499,27 @@ export function VideoPlanEditor({
                   ? 'No source stream has a downloaded video yet'
                   : scriptBusyElsewhere
                     ? `A script is already being written — ${scriptJob?.title || 'another plan'}`
-                    : `Review every source's transcript and outline and write the ${
-                        plan.format === 'short' ? '30–60 second' : '8–15 minute'
-                      } script for this video. It keeps running — and saves itself — if you navigate away. The style guide is Settings → Skills → Video edit script.`
+                    : hasScript
+                      ? 'Describe what should change and the AI revises the script with your edits, keeping the rest.'
+                      : `Write the ${
+                          plan.format === 'short'
+                            ? '30–60 second'
+                            : '8–15 minute'
+                        } script for this video from the plan's idea and every source's transcript and outline. It keeps running — and saves itself — if you navigate away. The style guide is Settings → Skills → Video edit script.`
             }
             className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {generating ? (
               <Loader2 size={14} aria-hidden className="animate-spin" />
+            ) : hasScript ? (
+              <Pencil size={14} aria-hidden />
             ) : (
               <Sparkles size={14} aria-hidden />
             )}
             {generating
               ? 'Generating…'
               : hasScript
-                ? 'Regenerate with AI'
+                ? 'Request Edits'
                 : 'Generate with AI'}
           </button>
         </div>
@@ -1052,6 +1077,46 @@ export function VideoPlanEditor({
           works with whatever is ready.
         </p>
       )}
+
+      <Modal
+        open={scriptEditsOpen}
+        onClose={() => setScriptEditsOpen(false)}
+        title="Request edits to the script"
+        icon={<Pencil size={18} aria-hidden />}
+        maxWidthClass="max-w-lg"
+      >
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-fg-muted">
+            Describe what should change — extra context welcome. The AI revises
+            the current script with your edits, keeping everything you leave
+            unmentioned.
+          </p>
+          <MarkdownField
+            id="editor-script-edits"
+            value={scriptEditsRequest}
+            onChange={setScriptEditsRequest}
+            placeholder="e.g. Open on the boss-fight moment instead of the intro, name the mod we used in the second beat, and end with a question for the comments…"
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setScriptEditsOpen(false)}
+              className="rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={requestScriptEdits}
+              disabled={!scriptEditsRequest.trim()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              <Pencil size={14} aria-hidden />
+              Revise script
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

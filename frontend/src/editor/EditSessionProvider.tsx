@@ -96,12 +96,14 @@ interface EditSessionContextValue {
   /**
    * Write the plan's script with AI and save it. Current is the script as the
    * form has it — flushed first, so hand edits the autosave hasn't written yet
-   * are folded into the rewrite instead of being ignored.
+   * are folded into the rewrite instead of being ignored. Notes carry the
+   * producer's requested edits for a revision pass ('' for a first draft).
    */
   generateScript: (
     planId: string,
     title: string,
     current: string,
+    notes?: string,
   ) => Promise<void>
 }
 
@@ -229,7 +231,7 @@ export function EditSessionProvider({children}: {children: ReactNode}) {
   // producer who navigates away — or closes the page — still gets the script;
   // the Editor tab reads it back from the result (or from storage on mount).
   const generateScript = useCallback(
-    async (planId: string, title: string, current: string) => {
+    async (planId: string, title: string, current: string, notes = '') => {
       setScriptJob({planId, title, running: true})
       window.clearTimeout(scriptNoticeTimer.current)
       setScriptNotice(null)
@@ -245,7 +247,7 @@ export function EditSessionProvider({children}: {children: ReactNode}) {
         // The rewrite folds in the script as it stands, which the backend reads
         // from storage — so flush the form's copy first.
         await SaveEditScript(planId, current).catch(() => {})
-        const text = await GenerateEditScript(planId, '')
+        const text = await GenerateEditScript(planId, notes)
         scriptRound.current += 1
         setScriptResult({planId, script: text, round: scriptRound.current})
         setScriptJob({planId, title, running: false})

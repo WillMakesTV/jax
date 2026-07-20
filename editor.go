@@ -916,7 +916,10 @@ func (a *App) GenerateEditDirections(planID, notes, current string) (string, err
 		fmt.Fprintf(&b, "Tags: %s\n", strings.Join(plan.Tags, ", "))
 	}
 	if strings.TrimSpace(plan.Description) != "" {
-		fmt.Fprintf(&b, "Description:\n%s\n", strings.TrimSpace(plan.Description))
+		// The description is the plan's idea — the reason this video exists.
+		// The script is built to deliver on it, not merely to summarize the
+		// source footage.
+		fmt.Fprintf(&b, "Idea (what this video is about — the script must deliver on it):\n%s\n", strings.TrimSpace(plan.Description))
 	}
 	b.WriteString("\n")
 	b.WriteString(a.editSourceNotes(plan))
