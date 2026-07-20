@@ -840,16 +840,13 @@ function PlanCard({
           {truncateText(plan.description, 150)}
         </button>
       )}
-      {/* Channels sit on their own row below the plan's text. */}
+      {/* Channels sit on their own row below the plan's text: logos only,
+          with the platform's name as each tile's tooltip. */}
       {plan.channels.length > 0 && (
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
           {plan.channels.map((c) => (
-            <span
-              key={c}
-              className="inline-flex items-center gap-1.5 rounded-full border border-edge bg-bg px-2 py-0.5 text-xs font-medium text-fg-muted"
-            >
-              <BrandTile platform={c} size={14} />
-              {platformName(c)}
+            <span key={c} title={platformName(c)}>
+              <BrandTile platform={c} size={18} />
             </span>
           ))}
         </div>
