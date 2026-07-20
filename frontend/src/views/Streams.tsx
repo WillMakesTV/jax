@@ -28,7 +28,6 @@ import {PlanStreamedActions} from '../components/PlanStreamedActions'
 import {DownloadThumb} from '../components/DownloadThumb'
 import {Modal} from '../components/Modal'
 import {useDownloads} from '../downloads/useDownloads'
-import {openExternal} from '../lib/browser'
 import {useDataChanged} from '../lib/dataChanged'
 import {
   formatCompact,
@@ -37,7 +36,7 @@ import {
   truncateText,
 } from '../lib/format'
 import {useLiveData} from '../live/LiveDataProvider'
-import {SERVICES, platformName} from '../services/services'
+import {platformName} from '../services/services'
 
 // ---------------------------------------------------------------------------
 // Stream sections rendered as tabs inside the Go Live! section (see
@@ -400,39 +399,6 @@ function CardThumbnail({
   )
 }
 
-/** Small platform chip linking out to one channel's copy of the stream. */
-function BroadcastChip({
-  platform,
-  label,
-  url,
-}: {
-  platform: string
-  label: string
-  url: string
-}) {
-  const def = SERVICES.find((s) => s.id === platform)
-  const Icon = def?.Icon
-  return (
-    <button
-      type="button"
-      onClick={() => url && openExternal(url)}
-      title={`Open on ${def?.name ?? platform}`}
-      className="inline-flex items-center gap-1.5 rounded-full border border-edge bg-bg px-2.5 py-1 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
-    >
-      {Icon && (
-        <span
-          aria-hidden
-          className="flex h-4 w-4 items-center justify-center rounded-full text-white"
-          style={{backgroundColor: def?.brand}}
-        >
-          <Icon size={10} />
-        </span>
-      )}
-      {label}
-    </button>
-  )
-}
-
 /**
  * The current broadcast, leading the grid. It is shaped into a PastStream and
  * rendered through the same card as every finished stream — same fields, same
@@ -591,22 +557,6 @@ function PastStreamCard({
             ? `${formatCompact(stream.totalViews)} ${live ? 'watching now' : 'views'}`
             : `— ${live ? 'watching' : 'views'}`}
         </p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {stream.broadcasts.map((b) => (
-            <BroadcastChip
-              key={`${b.platform}-${b.url}`}
-              platform={b.platform}
-              label={
-                live
-                  ? `${formatCompact(b.viewCount)} watching`
-                  : b.viewCount > 0
-                    ? `${formatCompact(b.viewCount)} views`
-                    : 'Watch'
-              }
-              url={b.url}
-            />
-          ))}
-        </div>
       </div>
     </article>
   )
