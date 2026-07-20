@@ -199,6 +199,11 @@ func (a *App) GetPastStreams(forceRefresh bool) []PastStream {
 	// the user's edit on the stream's page (see episodes.go).
 	a.applyStreamEpisodes(out)
 
+	// The plan snapshot's thumbnail resolves to its served address, so the
+	// stream's page can show and revise the plan's own image (see
+	// stream_thumbs.go).
+	a.fillPlanThumbURLs(out)
+
 	// A concluded plan's thumbnail becomes the stream's custom thumbnail
 	// when it has none of its own (see stream_thumbs.go).
 	a.adoptPlanThumbs(out)

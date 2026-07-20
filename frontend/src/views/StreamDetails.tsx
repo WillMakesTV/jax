@@ -302,7 +302,12 @@ export function StreamDetails({
   const [editingThumb, setEditingThumb] = useState(false)
   const platformThumbUrl =
     stream.broadcasts.find((b) => b.thumbnailUrl)?.thumbnailUrl ?? ''
-  const thumbUrl = (customThumb?.file && customThumb.url) || platformThumbUrl
+  // The plan's own thumbnail (when the stream came from a concluded plan)
+  // outranks the platform image everywhere: it is the producer's work.
+  const planThumbFile = stream.plan?.thumbnailFile ?? ''
+  const planThumbUrl = (planThumbFile && stream.plan?.thumbnailUrl) || ''
+  const thumbUrl =
+    (customThumb?.file && customThumb.url) || planThumbUrl || platformThumbUrl
 
   // Whether an outline exists — it is the creative brief for generated
   // thumbnails, so the CTA only appears once there is one. Re-checked on tab
@@ -846,14 +851,20 @@ export function StreamDetails({
             ? ' Generating needs the stream’s outline — build it on the Outline tab first.'
             : ''}
         </p>
-        {/* Without a custom image, the platform's thumbnail previews as the
-            existing picture — "request changes" then revises it (the backend
-            fetches it as the base), rather than generating blind. */}
+        {/* Without a custom image, the plan's own thumbnail previews as the
+            existing picture — and rides along as the revision base, so
+            "request changes" edits the image made for this stream's plan.
+            Only a stream with no plan thumbnail falls back to the platform
+            image (which the backend fetches as the base). */}
         <PlanThumbnailEditor
           planTitle={streamName}
           planDescription=""
-          file={customThumb?.file ?? ''}
-          url={(customThumb?.file ? customThumb.url : '') || platformThumbUrl}
+          file={customThumb?.file || planThumbFile}
+          url={
+            (customThumb?.file ? customThumb.url : '') ||
+            planThumbUrl ||
+            platformThumbUrl
+          }
           history={zipThumbHistory(
             customThumb?.historyFiles,
             customThumb?.historyUrls,

@@ -34,7 +34,10 @@ type StreamPlanInfo struct {
 	// ThumbnailFile is the plan's thumbnail (a file in the shared
 	// plan-thumbs folder); the finished stream adopts it as its custom
 	// thumbnail when it has none of its own (see adoptPlanThumbs).
+	// ThumbnailURL is its served address, derived on read (see
+	// fillPlanThumbURLs) and never persisted.
 	ThumbnailFile string `json:"thumbnailFile"`
+	ThumbnailURL  string `json:"thumbnailUrl"`
 	ConcludedAt   string `json:"concludedAt"` // RFC3339
 }
 

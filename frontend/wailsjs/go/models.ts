@@ -1054,6 +1054,8 @@ export namespace main {
 	    seriesId: string;
 	    episodeNumber: number;
 	    tags: string[];
+	    thumbnailFile: string;
+	    thumbnailUrl: string;
 	    concludedAt: string;
 	
 	    static createFrom(source: any = {}) {
@@ -1069,6 +1071,8 @@ export namespace main {
 	        this.seriesId = source["seriesId"];
 	        this.episodeNumber = source["episodeNumber"];
 	        this.tags = source["tags"];
+	        this.thumbnailFile = source["thumbnailFile"];
+	        this.thumbnailUrl = source["thumbnailUrl"];
 	        this.concludedAt = source["concludedAt"];
 	    }
 	}

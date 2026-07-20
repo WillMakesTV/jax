@@ -133,6 +133,17 @@ func (a *App) adoptPlanThumbs(out []PastStream) {
 	}
 }
 
+// fillPlanThumbURLs resolves each attached plan snapshot's thumbnail to its
+// served address, so the stream's page can preview (and revise) the plan's
+// own image. Derived per read, never persisted.
+func (a *App) fillPlanThumbURLs(out []PastStream) {
+	for i := range out {
+		if p := out[i].Plan; p != nil {
+			p.ThumbnailURL = a.planThumbURL(sanitizeThumbFile(p.ThumbnailFile))
+		}
+	}
+}
+
 // applyStreamThumbs attaches custom thumbnails to the aggregated past
 // streams. A set custom file also becomes the stream's ThumbnailURL, taking
 // precedence over the platform image — the user chose it deliberately.
