@@ -41,6 +41,7 @@ var (
 	procLoadCursorW         = user32.NewProc("LoadCursorW")
 	procInvalidateRect      = user32.NewProc("InvalidateRect")
 	procFillRect            = user32.NewProc("FillRect")
+	procSetWindowPos        = user32.NewProc("SetWindowPos")
 	procGetModuleHandleW    = kernel32.NewProc("GetModuleHandleW")
 	procCreateFontW         = gdi32.NewProc("CreateFontW")
 	procCreateSolidBrush    = gdi32.NewProc("CreateSolidBrush")
@@ -74,6 +75,18 @@ const (
 
 	// DWMWA_USE_IMMERSIVE_DARK_MODE — flips the title bar dark (Win10 2004+).
 	dwmaUseImmersiveDarkMode = 20
+
+	// SetWindowPos: the topmost/normal z-order bands and the flags that
+	// change only the band, leaving position, size and focus alone.
+	swpNoSize     = 0x0001
+	swpNoMove     = 0x0002
+	swpNoActivate = 0x0010
+)
+
+// SetWindowPos insert-after handles: HWND_TOPMOST (-1) / HWND_NOTOPMOST (-2).
+var (
+	hwndTopmost   = ^uintptr(0)     // -1
+	hwndNoTopmost = ^uintptr(0) - 1 // -2
 )
 
 // The script window mirrors the app palette (frontend/src/style.css):
@@ -222,6 +235,29 @@ func scriptBrushFor(dark bool) uintptr {
 	return scriptBrushes[i]
 }
 
+// applyScriptTopmost moves the window into or out of the topmost band
+// without touching its position, size or focus.
+func applyScriptTopmost(hwnd uintptr, onTop bool) {
+	band := hwndNoTopmost
+	if onTop {
+		band = hwndTopmost
+	}
+	_, _, _ = procSetWindowPos.Call(hwnd, band, 0, 0, 0, 0,
+		swpNoMove|swpNoSize|swpNoActivate)
+}
+
+// setScriptWindowTopmost applies keep-on-top to the open script window; with
+// no window open there is nothing to move and the preference just persists.
+func setScriptWindowTopmost(onTop bool) error {
+	scriptMu.Lock()
+	hwnd := scriptHwnd
+	scriptMu.Unlock()
+	if hwnd != 0 {
+		applyScriptTopmost(hwnd, onTop)
+	}
+	return nil
+}
+
 // applyScriptTheme records the resolved theme and flips the title bar to
 // match; the client colors follow via WM_CTLCOLOR* on the next paint.
 func applyScriptTheme(hwnd uintptr, dark bool) {
@@ -260,9 +296,10 @@ func registerScriptClass() error {
 
 // openScriptWindow shows the plan's script in the process-owned side window,
 // creating it (on a dedicated message-loop thread) or updating the one
-// already open. The window follows the app's resolved theme via dark. The
-// caller re-applies the capture affinity afterwards.
-func openScriptWindow(title, text string, dark bool) error {
+// already open. The window follows the app's resolved theme via dark and the
+// keep-on-top preference via topmost. The caller re-applies the capture
+// affinity afterwards.
+func openScriptWindow(title, text string, dark, topmost bool) error {
 	// The EDIT control needs CRLF line endings.
 	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\n", "\r\n")
 
@@ -271,6 +308,7 @@ func openScriptWindow(title, text string, dark bool) error {
 	scriptMu.Unlock()
 	if hwnd != 0 {
 		applyScriptTheme(hwnd, dark)
+		applyScriptTopmost(hwnd, topmost)
 		_, _, _ = procSetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(utf16Ptr(title))))
 		_, _, _ = procSetWindowTextW.Call(edit, uintptr(unsafe.Pointer(utf16Ptr(text))))
 		_, _, _ = procInvalidateRect.Call(edit, 0, 1)
@@ -337,6 +375,9 @@ func openScriptWindow(title, text string, dark bool) error {
 		if r, _, _ := procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc))); r != 0 {
 			_, _, _ = procMoveWindow.Call(edit, 0, 0,
 				uintptr(rc.right-rc.left), uintptr(rc.bottom-rc.top), 1)
+		}
+		if topmost {
+			applyScriptTopmost(hwnd, true)
 		}
 		_, _, _ = procShowWindow.Call(hwnd, swShow)
 		_, _, _ = procUpdateWindow.Call(hwnd)

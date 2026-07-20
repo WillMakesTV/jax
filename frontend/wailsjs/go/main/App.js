@@ -882,6 +882,10 @@ export function SetProjectThumbnail(arg1, arg2) {
   return window['go']['main']['App']['SetProjectThumbnail'](arg1, arg2);
 }
 
+export function SetScriptWindowTopmost(arg1) {
+  return window['go']['main']['App']['SetScriptWindowTopmost'](arg1);
+}
+
 export function SetSetting(arg1, arg2) {
   return window['go']['main']['App']['SetSetting'](arg1, arg2);
 }

@@ -3,8 +3,14 @@ package main
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 )
+
+// settingScriptTopmost mirrors SETTING_KEYS.scriptWindowTopmost in
+// frontend/src/lib/settings.ts: keep the script window above every other
+// window, so the teleprompter stays readable over OBS or a game.
+const settingScriptTopmost = "script_window_topmost"
 
 // scriptWindowDark resolves the app's theme preference (Settings →
 // Appearance; the frontend stores it under the shared "theme" key) for the
@@ -26,6 +32,28 @@ func (a *App) scriptWindowDark() bool {
 	return systemPrefersDark()
 }
 
+// scriptWindowTopmost reads the persisted keep-on-top preference.
+func (a *App) scriptWindowTopmost() bool {
+	if a.store == nil {
+		return false
+	}
+	v, err := a.store.getSetting(settingScriptTopmost)
+	return err == nil && v == "true"
+}
+
+// SetScriptWindowTopmost applies and persists the script window's keep-on-top
+// preference. An already-open window flips immediately; otherwise the choice
+// takes effect the next time the window opens.
+func (a *App) SetScriptWindowTopmost(onTop bool) error {
+	if err := setScriptWindowTopmost(onTop); err != nil {
+		return err
+	}
+	if a.store == nil {
+		return nil
+	}
+	return a.store.setSetting(settingScriptTopmost, strconv.FormatBool(onTop))
+}
+
 // OpenScriptWindow shows a video plan's saved script in its own small window
 // beside the app — the teleprompter for recording straight from OBS. The
 // window is owned by this process, so when the hide-from-capture preference
@@ -44,7 +72,7 @@ func (a *App) OpenScriptWindow(planID string) error {
 	if strings.TrimSpace(plan.Title) != "" {
 		title = "Script — " + strings.TrimSpace(plan.Title)
 	}
-	if err := openScriptWindow(title, script, a.scriptWindowDark()); err != nil {
+	if err := openScriptWindow(title, script, a.scriptWindowDark(), a.scriptWindowTopmost()); err != nil {
 		return err
 	}
 	if a.store != nil {

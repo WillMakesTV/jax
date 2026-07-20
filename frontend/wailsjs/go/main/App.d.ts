@@ -442,6 +442,8 @@ export function SetGitHubRepo(arg1:string):Promise<void>;
 
 export function SetProjectThumbnail(arg1:string,arg2:string):Promise<main.Project>;
 
+export function SetScriptWindowTopmost(arg1:boolean):Promise<void>;
+
 export function SetSetting(arg1:string,arg2:string):Promise<void>;
 
 export function SetSponsorLogo(arg1:string,arg2:string):Promise<main.Sponsor>;

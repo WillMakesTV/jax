@@ -51,6 +51,12 @@ export const SETTING_KEYS = {
    * apply it as it persists.
    */
   hideFromCapture: 'hide_from_capture',
+  /**
+   * "true"/"false": keep the native script window above every other window.
+   * Written by the SetScriptWindowTopmost binding, not saveSetting, so the Go
+   * side can move an already-open window as it persists.
+   */
+  scriptWindowTopmost: 'script_window_topmost',
   /** Optional Google API key for reading public YouTube comments. */
   youtubeApiKey: 'youtube_api_key',
   /**

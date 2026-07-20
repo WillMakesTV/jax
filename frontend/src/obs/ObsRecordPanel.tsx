@@ -3,14 +3,20 @@ import {
   Eye,
   EyeOff,
   MonitorPlay,
+  Pin,
+  PinOff,
   Plug,
   ScrollText,
   Square,
 } from 'lucide-react'
 import {useEffect, useRef, useState} from 'react'
-import {OpenScriptWindow} from '../../wailsjs/go/main/App'
+import {
+  OpenScriptWindow,
+  SetScriptWindowTopmost,
+} from '../../wailsjs/go/main/App'
 import {useCaptureHidden} from '../lib/captureHidden'
 import {formatDurationMs} from '../lib/format'
+import {SETTING_KEYS, loadSetting} from '../lib/settings'
 import {useLiveData} from '../live/LiveDataProvider'
 import {useServices} from '../services/ServicesProvider'
 import {useObsPreview} from './useObsPreview'
@@ -88,6 +94,35 @@ export function ObsRecordPanel({
           : typeof err === 'string' && err
             ? err
             : 'The script window could not be opened.',
+      )
+    }
+  }
+
+  // The script window's keep-on-top preference: persisted in the backend and
+  // applied immediately to an already-open window.
+  const [scriptOnTop, setScriptOnTop] = useState(false)
+  useEffect(() => {
+    if (!planId) return
+    let cancelled = false
+    loadSetting(SETTING_KEYS.scriptWindowTopmost)
+      .then((v) => {
+        if (!cancelled) setScriptOnTop(v === 'true')
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [planId])
+  const toggleScriptOnTop = async () => {
+    setError('')
+    try {
+      await SetScriptWindowTopmost(!scriptOnTop)
+      setScriptOnTop((v) => !v)
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'The keep-on-top preference could not be changed.',
       )
     }
   }
@@ -256,15 +291,35 @@ export function ObsRecordPanel({
           </button>
         )}
         {planId && (
-          <button
-            type="button"
-            onClick={() => void showScript()}
-            title="Open the plan's script in its own window beside the app — it follows the hide-from-capture setting"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
-          >
-            <ScrollText size={13} aria-hidden />
-            Show script
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => void showScript()}
+              title="Open the plan's script in its own window beside the app — it follows the hide-from-capture setting"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+            >
+              <ScrollText size={13} aria-hidden />
+              Show script
+            </button>
+            <button
+              type="button"
+              onClick={() => void toggleScriptOnTop()}
+              aria-pressed={scriptOnTop}
+              title={
+                scriptOnTop
+                  ? 'The script window stays above every other window — click to let it fall behind again'
+                  : 'Keep the script window above every other window, so the teleprompter stays readable over OBS or a game'
+              }
+              className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+            >
+              {scriptOnTop ? (
+                <Pin size={13} aria-hidden />
+              ) : (
+                <PinOff size={13} aria-hidden />
+              )}
+              {scriptOnTop ? 'Kept on top' : 'Keep on top'}
+            </button>
+          </>
         )}
         <button
           type="button"
