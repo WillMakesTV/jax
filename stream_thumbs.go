@@ -155,6 +155,29 @@ func (a *App) applyStreamThumbs(out []PastStream) {
 	}
 }
 
+// planThumbFileForStream returns the thumbnail file the stream's concluded
+// plan brought ("" when the stream had no plan, the plan had no thumbnail,
+// or the file is gone from the plan-thumbs folder).
+func (a *App) planThumbFileForStream(startedAt string) string {
+	for _, s := range a.GetPastStreams(false) {
+		if s.StartedAt != startedAt {
+			continue
+		}
+		if s.Plan == nil {
+			return ""
+		}
+		file := sanitizeThumbFile(s.Plan.ThumbnailFile)
+		if file == "" {
+			return ""
+		}
+		if dir, err := planThumbsDir(); err != nil || !fileExists(filepath.Join(dir, file)) {
+			return ""
+		}
+		return file
+	}
+	return ""
+}
+
 // fetchPlatformThumb downloads the stream's platform thumbnail into the
 // plan-thumbs folder as a temporary revision base, returning its file name
 // ("" when the stream has no platform image or the fetch fails — the
@@ -208,11 +231,12 @@ const pastStreamThumbContext = "This thumbnail is for a PAST broadcast — a fin
 
 // GenerateStreamThumbnail creates (or revises) a thumbnail for a past stream.
 // The creative input is the stream's title plus its AI outline, so an outline
-// must exist first. A revision without a custom image to build on borrows
-// the platform's own thumbnail as its base, so "request changes" edits the
-// picture the producer is actually looking at instead of generating blind.
-// Persisting the result on the stream is the frontend's call
-// (SetStreamThumbnail), matching how plan thumbnails apply.
+// must exist first. A revision without a custom image to build on prefers
+// the thumbnail the stream's plan brought (it is the producer's own work,
+// already in the plan-thumbs folder) and only then borrows the platform's
+// remote image — either way "request changes" edits an existing picture
+// instead of generating blind. Persisting the result on the stream is the
+// frontend's call (SetStreamThumbnail), matching how plan thumbnails apply.
 func (a *App) GenerateStreamThumbnail(startedAt, title, feedback, currentFile string) (PlanThumbnail, error) {
 	outline, err := a.GetStreamOutline(startedAt)
 	if err != nil {
@@ -223,7 +247,9 @@ func (a *App) GenerateStreamThumbnail(startedAt, title, feedback, currentFile st
 	}
 
 	if strings.TrimSpace(currentFile) == "" && strings.TrimSpace(feedback) != "" {
-		if temp := a.fetchPlatformThumb(startedAt); temp != "" {
+		if planFile := a.planThumbFileForStream(startedAt); planFile != "" {
+			currentFile = planFile
+		} else if temp := a.fetchPlatformThumb(startedAt); temp != "" {
 			currentFile = temp
 			// The base is disposable: the revision writes its own thumb file.
 			defer func() {
