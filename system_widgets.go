@@ -216,12 +216,17 @@ const unifiedChatPage = `<!DOCTYPE html>
 <meta charset="utf-8">
 <title>Unified Chat</title>
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; background: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    /* The page itself is dark gray, edge to edge — a transparent page shows
+       white corners in a browser, and the user-card overlay lives outside
+       #wrap, so the font rides on body where everything inherits it. */
+    background: #1f2937;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
   #wrap {
     display: flex; flex-direction: column; height: 100vh;
     box-sizing: border-box; padding: 12px;
-    background: #1f2937; border-radius: 12px;
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   }
   #list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
   #list > :first-child { margin-top: auto; }
