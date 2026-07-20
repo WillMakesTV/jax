@@ -20,6 +20,8 @@ import (
 var (
 	gdi32    = syscall.NewLazyDLL("gdi32.dll")
 	kernel32 = syscall.NewLazyDLL("kernel32.dll")
+	dwmapi   = syscall.NewLazyDLL("dwmapi.dll")
+	advapi32 = syscall.NewLazyDLL("advapi32.dll")
 
 	procRegisterClassExW    = user32.NewProc("RegisterClassExW")
 	procCreateWindowExW     = user32.NewProc("CreateWindowExW")
@@ -37,8 +39,16 @@ var (
 	procShowWindow          = user32.NewProc("ShowWindow")
 	procUpdateWindow        = user32.NewProc("UpdateWindow")
 	procLoadCursorW         = user32.NewProc("LoadCursorW")
+	procInvalidateRect      = user32.NewProc("InvalidateRect")
+	procFillRect            = user32.NewProc("FillRect")
 	procGetModuleHandleW    = kernel32.NewProc("GetModuleHandleW")
 	procCreateFontW         = gdi32.NewProc("CreateFontW")
+	procCreateSolidBrush    = gdi32.NewProc("CreateSolidBrush")
+	procDeleteObject        = gdi32.NewProc("DeleteObject")
+	procSetTextColor        = gdi32.NewProc("SetTextColor")
+	procSetBkColor          = gdi32.NewProc("SetBkColor")
+	procDwmSetWindowAttr    = dwmapi.NewProc("DwmSetWindowAttribute")
+	procRegGetValueW        = advapi32.NewProc("RegGetValueW")
 )
 
 const (
@@ -52,12 +62,28 @@ const (
 	wmDestroy          = 0x0002
 	wmSize             = 0x0005
 	wmClose            = 0x0010
+	wmEraseBkgnd       = 0x0014
 	wmSetfont          = 0x0030
+	wmCtlColorEdit     = 0x0133
+	wmCtlColorStatic   = 0x0138
 	swShow             = 5
 	swRestore          = 9
 	cwUseDefault       = 0x80000000
 	colorWindow        = 5
 	idcArrow           = 32512
+
+	// DWMWA_USE_IMMERSIVE_DARK_MODE — flips the title bar dark (Win10 2004+).
+	dwmaUseImmersiveDarkMode = 20
+)
+
+// The script window mirrors the app palette (frontend/src/style.css):
+// dark --bp-bg #0d0d0d / --bp-fg #f5f5f5, light #ffffff / #1a1a1a.
+// COLORREF is 0x00BBGGRR; these values are grey so the order is moot.
+const (
+	scriptDarkBg  = 0x000d0d0d
+	scriptDarkFg  = 0x00f5f5f5
+	scriptLightBg = 0x00ffffff
+	scriptLightFg = 0x001a1a1a
 )
 
 type wndclassexw struct {
@@ -94,14 +120,43 @@ var (
 	scriptMu   sync.Mutex
 	scriptHwnd uintptr
 	scriptEdit uintptr
+	scriptDark bool
 
 	scriptClassOnce sync.Once
 	scriptClassErr  error
 	scriptFont      uintptr
 
+	// Lazily created background brushes, one per theme; GDI brushes are
+	// process-lifetime here so repainting never races a DeleteObject.
+	scriptBrushes [2]uintptr
+
 	// One permanent callback: syscall.NewCallback allocations never free.
 	scriptWndProc = syscall.NewCallback(func(hwnd, msg, wparam, lparam uintptr) uintptr {
 		switch msg {
+		case wmCtlColorEdit, wmCtlColorStatic:
+			// The read-only EDIT asks its parent for colors (readonly sends
+			// CTLCOLORSTATIC); answer with the app palette for the theme.
+			scriptMu.Lock()
+			dark := scriptDark
+			scriptMu.Unlock()
+			fg, bg := uintptr(scriptLightFg), uintptr(scriptLightBg)
+			if dark {
+				fg, bg = scriptDarkFg, scriptDarkBg
+			}
+			_, _, _ = procSetTextColor.Call(wparam, fg)
+			_, _, _ = procSetBkColor.Call(wparam, bg)
+			return scriptBrushFor(dark)
+		case wmEraseBkgnd:
+			// Erase the frame in the theme background so no white flashes
+			// behind the EDIT while it catches up to the client size.
+			scriptMu.Lock()
+			dark := scriptDark
+			scriptMu.Unlock()
+			var rc winRect
+			if r, _, _ := procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc))); r != 0 {
+				_, _, _ = procFillRect.Call(wparam, uintptr(unsafe.Pointer(&rc)), scriptBrushFor(dark))
+			}
+			return 1
 		case wmSize:
 			scriptMu.Lock()
 			edit := scriptEdit
@@ -132,6 +187,57 @@ func utf16Ptr(s string) *uint16 {
 	return p
 }
 
+// systemPrefersDark reads Windows' per-user app theme — the same OS setting
+// the frontend's prefers-color-scheme resolves against. AppsUseLightTheme=0
+// means dark; a missing value (older Windows) counts as light.
+func systemPrefersDark() bool {
+	const hkcu = 0x80000001
+	const rrfRtRegDword = 0x00000010
+	var val, size uint32 = 0, 4
+	r, _, _ := procRegGetValueW.Call(
+		hkcu,
+		uintptr(unsafe.Pointer(utf16Ptr(`Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`))),
+		uintptr(unsafe.Pointer(utf16Ptr("AppsUseLightTheme"))),
+		rrfRtRegDword,
+		0,
+		uintptr(unsafe.Pointer(&val)),
+		uintptr(unsafe.Pointer(&size)),
+	)
+	return r == 0 && val == 0
+}
+
+// scriptBrushFor returns the background brush for the theme, creating it on
+// first use. Brushes live for the process so a repaint never races a delete.
+func scriptBrushFor(dark bool) uintptr {
+	i, bg := 0, uintptr(scriptLightBg)
+	if dark {
+		i, bg = 1, scriptDarkBg
+	}
+	scriptMu.Lock()
+	defer scriptMu.Unlock()
+	if scriptBrushes[i] == 0 {
+		b, _, _ := procCreateSolidBrush.Call(bg)
+		scriptBrushes[i] = b
+	}
+	return scriptBrushes[i]
+}
+
+// applyScriptTheme records the resolved theme and flips the title bar to
+// match; the client colors follow via WM_CTLCOLOR* on the next paint.
+func applyScriptTheme(hwnd uintptr, dark bool) {
+	scriptMu.Lock()
+	scriptDark = dark
+	scriptMu.Unlock()
+	if hwnd != 0 {
+		val := int32(0)
+		if dark {
+			val = 1
+		}
+		_, _, _ = procDwmSetWindowAttr.Call(hwnd, dwmaUseImmersiveDarkMode,
+			uintptr(unsafe.Pointer(&val)), unsafe.Sizeof(val))
+	}
+}
+
 // registerScriptClass registers the window class once per process.
 func registerScriptClass() error {
 	scriptClassOnce.Do(func() {
@@ -154,8 +260,9 @@ func registerScriptClass() error {
 
 // openScriptWindow shows the plan's script in the process-owned side window,
 // creating it (on a dedicated message-loop thread) or updating the one
-// already open. The caller re-applies the capture affinity afterwards.
-func openScriptWindow(title, text string) error {
+// already open. The window follows the app's resolved theme via dark. The
+// caller re-applies the capture affinity afterwards.
+func openScriptWindow(title, text string, dark bool) error {
 	// The EDIT control needs CRLF line endings.
 	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\n", "\r\n")
 
@@ -163,8 +270,10 @@ func openScriptWindow(title, text string) error {
 	hwnd, edit := scriptHwnd, scriptEdit
 	scriptMu.Unlock()
 	if hwnd != 0 {
+		applyScriptTheme(hwnd, dark)
 		_, _, _ = procSetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(utf16Ptr(title))))
 		_, _, _ = procSetWindowTextW.Call(edit, uintptr(unsafe.Pointer(utf16Ptr(text))))
+		_, _, _ = procInvalidateRect.Call(edit, 0, 1)
 		_, _, _ = procShowWindow.Call(hwnd, swRestore)
 		_, _, _ = procSetForegroundWindow.Call(hwnd)
 		return nil
@@ -193,6 +302,9 @@ func openScriptWindow(title, text string) error {
 			created <- fmt.Errorf("create script window: %v", callErr)
 			return
 		}
+		// Theme before first paint: dark title bar plus the palette the
+		// WM_CTLCOLOR*/WM_ERASEBKGND handlers answer with.
+		applyScriptTheme(hwnd, dark)
 		edit, _, callErr := procCreateWindowExW.Call(
 			0,
 			uintptr(unsafe.Pointer(utf16Ptr("EDIT"))),
