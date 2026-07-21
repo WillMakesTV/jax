@@ -323,6 +323,16 @@ const unifiedChatPage = `<!DOCTYPE html>
     display: inline-flex; align-items: center; gap: 4px;
     font-variant-numeric: tabular-nums;
   }
+  /* Everyone watching, across every channel — pushed to the strip's end. */
+  .chan.total {
+    margin-left: auto;
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.28);
+  }
+  .chan.total .label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.65);
+  }
   .chan .dot {
     width: 6px; height: 6px; border-radius: 50%; background: #ff4b4b;
     animation: livepulse 2s ease-in-out infinite;
@@ -535,7 +545,9 @@ const unifiedChatPage = `<!DOCTYPE html>
   // and how many are watching there right now.
   function renderLive(live) {
     liveBar.textContent = ''
+    var total = 0
     ;(live || []).forEach(function (ch) {
+      total += ch.viewers || 0
       var chip = document.createElement('span')
       chip.className = 'chan'
       chip.title = (ch.channel || ch.platform) + ' — live'
@@ -552,6 +564,27 @@ const unifiedChatPage = `<!DOCTYPE html>
       chip.appendChild(viewers)
       liveBar.appendChild(chip)
     })
+
+    if ((live || []).length === 0) return
+    // Everyone watching, whatever channel they came in on.
+    var sum = document.createElement('span')
+    sum.className = 'chan total'
+    sum.title = total + ' watching across every live channel'
+    var eye = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    eye.setAttribute('viewBox', '0 0 24 24')
+    var eyePath = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    eyePath.setAttribute('d', 'M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z')
+    eye.appendChild(eyePath)
+    sum.appendChild(eye)
+    var sumCount = document.createElement('span')
+    sumCount.className = 'viewers'
+    sumCount.textContent = fmtCount(total)
+    sum.appendChild(sumCount)
+    var label = document.createElement('span')
+    label.className = 'label'
+    label.textContent = 'total'
+    sum.appendChild(label)
+    liveBar.appendChild(sum)
   }
 
   // The source badge every row carries: the platform's mark alone — the
