@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"sort"
 	"strings"
 )
@@ -27,8 +26,6 @@ type ServiceCategory struct {
 	Name string `json:"name"`
 }
 
-const twitchSearchCategoriesURL = "https://api.twitch.tv/helix/search/categories"
-
 // SearchTwitchCategories searches Twitch's game/category catalogue for the
 // picker in the series form. An empty query returns no results. Never nil on
 // success.
@@ -42,14 +39,7 @@ func (a *App) SearchTwitchCategories(query string) ([]ServiceCategory, error) {
 		return nil, fmt.Errorf("connect Twitch in Settings → Services first")
 	}
 
-	var r struct {
-		Data []struct {
-			ID   string `json:"id"`
-			Name string `json:"name"`
-		} `json:"data"`
-	}
-	endpoint := twitchSearchCategoriesURL + "?first=25&query=" + url.QueryEscape(query)
-	status, err := httpx.GetJSON(endpoint, twitchHeaders(conn), &r)
+	found, status, err := twitchClient(conn).SearchCategories(query)
 	if err != nil {
 		if status == http.StatusUnauthorized {
 			return nil, errors.New(errReauth)
@@ -57,9 +47,9 @@ func (a *App) SearchTwitchCategories(query string) ([]ServiceCategory, error) {
 		return nil, fmt.Errorf("Twitch category search failed: %v", err)
 	}
 
-	out := make([]ServiceCategory, 0, len(r.Data))
-	for _, d := range r.Data {
-		out = append(out, ServiceCategory{ID: d.ID, Name: d.Name})
+	out := make([]ServiceCategory, 0, len(found))
+	for _, c := range found {
+		out = append(out, ServiceCategory{ID: c.ID, Name: c.Name})
 	}
 	return out, nil
 }

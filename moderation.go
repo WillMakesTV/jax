@@ -21,11 +21,7 @@ import (
 // pretending the action landed.
 // ---------------------------------------------------------------------------
 
-const (
-	twitchBansURL          = "https://api.twitch.tv/helix/moderation/bans"
-	twitchModChatURL       = "https://api.twitch.tv/helix/moderation/chat"
-	youtubeLiveChatBansURL = "https://www.googleapis.com/youtube/v3/liveChat/bans"
-)
+const youtubeLiveChatBansURL = "https://www.googleapis.com/youtube/v3/liveChat/bans"
 
 // modErrorMessage maps an API failure to something the producer can act on.
 func modErrorMessage(platform string, status int, err error) error {
@@ -57,18 +53,7 @@ func (a *App) TimeoutChatUser(platform, userID string, seconds int, reason strin
 		if !ok || conn.userID == "" {
 			return fmt.Errorf("connect Twitch in Settings → Services first")
 		}
-		data := map[string]any{"user_id": userID}
-		if seconds > 0 {
-			data["duration"] = seconds
-		}
-		if reason != "" {
-			data["reason"] = reason
-		}
-		endpoint := twitchBansURL +
-			"?broadcaster_id=" + url.QueryEscape(conn.userID) +
-			"&moderator_id=" + url.QueryEscape(conn.userID)
-		status, err := httpx.PostJSON(endpoint, twitchHeaders(conn),
-			map[string]any{"data": data}, nil)
+		status, err := twitchClient(conn).Ban(userID, seconds, reason)
 		if err != nil {
 			return modErrorMessage("twitch", status, err)
 		}
@@ -121,11 +106,7 @@ func (a *App) DeleteChatMessage(platform, messageID string) error {
 		if !ok || conn.userID == "" {
 			return fmt.Errorf("connect Twitch in Settings → Services first")
 		}
-		endpoint := twitchModChatURL +
-			"?broadcaster_id=" + url.QueryEscape(conn.userID) +
-			"&moderator_id=" + url.QueryEscape(conn.userID) +
-			"&message_id=" + url.QueryEscape(messageID)
-		status, err := httpx.DeleteResource(endpoint, twitchHeaders(conn))
+		status, err := twitchClient(conn).DeleteMessage(messageID)
 		if err != nil {
 			return modErrorMessage("twitch", status, err)
 		}

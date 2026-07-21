@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/platforms/twitch"
 	"bp-temp/internal/httpx"
 	"fmt"
 	"log"
@@ -159,9 +160,16 @@ const (
 )
 
 func twitchHeaders(conn serviceConn) map[string]string {
-	return map[string]string{
-		"Authorization": "Bearer " + conn.token,
-		"Client-Id":     conn.clientID,
+	return twitchClient(conn).Headers()
+}
+
+// twitchClient adapts a stored connection into the Helix caller (see
+// internal/platforms/twitch), which owns the endpoints and request shapes.
+func twitchClient(conn serviceConn) twitch.Client {
+	return twitch.Client{
+		Token:    conn.token,
+		ClientID: conn.clientID,
+		UserID:   conn.userID,
 	}
 }
 
