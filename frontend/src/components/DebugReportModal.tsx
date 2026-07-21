@@ -1,7 +1,8 @@
-import {Bug} from 'lucide-react'
-import {useState} from 'react'
-import {SaveDebugReport} from '../../wailsjs/go/main/App'
+import {Bug, ExternalLink} from 'lucide-react'
+import {useEffect, useState} from 'react'
+import {GetGitHubConnection, SaveDebugReport} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
+import {openExternal} from '../lib/browser'
 import {DictationButton} from './DictationButton'
 import {MarkdownField} from './markdown/MarkdownField'
 import {Modal} from './Modal'
@@ -38,6 +39,17 @@ export function DebugReportModal({
   const [global, setGlobal] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // The repository the AI-debugging workflow files against (Settings →
+  // Development). Filed reports become issues there, so the modal offers a
+  // way to see what is already open before adding another.
+  const [repo, setRepo] = useState('')
+
+  useEffect(() => {
+    if (!open) return
+    GetGitHubConnection()
+      .then((conn) => setRepo(conn.repo ?? ''))
+      .catch(() => {})
+  }, [open])
 
   // Reload the fields each time the dialog opens (fresh file or edit target).
   // Synchronously during render — not in an effect — so the description field
@@ -133,22 +145,37 @@ export function DebugReportModal({
           <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
         )}
 
-        <div className="mt-1 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => void save()}
-            disabled={busy || !description.trim()}
-            className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {busy ? 'Saving…' : report ? 'Save changes' : 'File report'}
-          </button>
+        <div className="mt-1 flex items-center justify-between gap-2">
+          {repo ? (
+            <button
+              type="button"
+              onClick={() => openExternal(`https://github.com/${repo}/issues`)}
+              title={`Open ${repo}'s issues`}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-fg-muted transition-colors hover:text-accent"
+            >
+              <ExternalLink size={14} aria-hidden />
+              View active issues
+            </button>
+          ) : (
+            <span />
+          )}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={busy || !description.trim()}
+              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {busy ? 'Saving…' : report ? 'Save changes' : 'File report'}
+            </button>
+          </div>
         </div>
       </div>
     </Modal>
