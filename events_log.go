@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"log"
 	"time"
 )
@@ -193,7 +194,7 @@ func (a *App) fetchTwitchFollowers() []StoredLiveEvent {
 		} `json:"data"`
 	}
 	endpoint := twitchFollowersURL + "?first=100&broadcaster_id=" + conn.userID
-	if _, err := getJSON(endpoint, twitchHeaders(conn), &resp); err != nil {
+	if _, err := httpx.GetJSON(endpoint, twitchHeaders(conn), &resp); err != nil {
 		log.Printf("jax: twitch followers sync: %v", err)
 		return events
 	}
@@ -244,7 +245,7 @@ func (a *App) fetchYouTubeSubscribers() []StoredLiveEvent {
 			} `json:"subscriberSnippet"`
 		} `json:"items"`
 	}
-	if _, err := getJSON(youtubeSubscriptionsURL, headers, &resp); err != nil {
+	if _, err := httpx.GetJSON(youtubeSubscriptionsURL, headers, &resp); err != nil {
 		log.Printf("jax: youtube subscribers sync: %v", err)
 		return events
 	}

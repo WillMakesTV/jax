@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"fmt"
 	"log"
 	"net/http"
@@ -173,7 +174,7 @@ func (a *App) fetchFacebookReels(conn serviceConn) ([]Video, error) {
 	}
 	endpoint := fbGraphURL + "/" + url.PathEscape(conn.userID) +
 		"/video_reels?limit=50&fields=id,title,description,permalink_url,created_time,length,picture,post_views"
-	if _, err := getJSON(endpoint, metaHeaders(conn.token), &r); err != nil {
+	if _, err := httpx.GetJSON(endpoint, metaHeaders(conn.token), &r); err != nil {
 		return nil, err
 	}
 
@@ -219,7 +220,7 @@ func fetchInstagramReelViews(conn serviceConn, mediaID string) (int64, error) {
 		}
 		endpoint := fbGraphURL + "/" + url.PathEscape(mediaID) +
 			"/insights?metric=" + metric
-		if _, err := getJSON(endpoint, metaHeaders(conn.token), &r); err != nil {
+		if _, err := httpx.GetJSON(endpoint, metaHeaders(conn.token), &r); err != nil {
 			return 0, err
 		}
 		for _, m := range r.Data {
@@ -261,7 +262,7 @@ func (a *App) fetchInstagramReels(conn serviceConn) ([]Video, error) {
 	}
 	endpoint := fbGraphURL + "/" + url.PathEscape(conn.userID) +
 		"/media?limit=50&fields=id,caption,media_type,media_product_type,permalink,thumbnail_url,media_url,timestamp,like_count"
-	if _, err := getJSON(endpoint, metaHeaders(conn.token), &r); err != nil {
+	if _, err := httpx.GetJSON(endpoint, metaHeaders(conn.token), &r); err != nil {
 		return nil, err
 	}
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"fmt"
 	"io"
 	"log"
@@ -210,7 +211,7 @@ func (a *App) fetchPlatformThumb(startedAt string) string {
 	if thumbURL == "" {
 		return ""
 	}
-	resp, err := httpClient.Get(thumbURL)
+	resp, err := httpx.Client.Get(thumbURL)
 	if err != nil {
 		log.Printf("jax: fetch platform thumbnail: %v", err)
 		return ""

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"fmt"
 	"log"
 	"net/http"
@@ -112,7 +113,7 @@ func (a *App) UpdateYouTubeStreamInfo(startedAt string, videoURLs []string) (You
 				Snippet map[string]any `json:"snippet"`
 			} `json:"items"`
 		}
-		if _, err := getJSON(
+		if _, err := httpx.GetJSON(
 			"https://www.googleapis.com/youtube/v3/videos?part=snippet&id="+id,
 			headers, &videos,
 		); err != nil {
@@ -127,7 +128,7 @@ func (a *App) UpdateYouTubeStreamInfo(startedAt string, videoURLs []string) (You
 			snippet["description"] = description
 		}
 
-		status, err := sendJSON(http.MethodPut,
+		status, err := httpx.SendJSON(http.MethodPut,
 			"https://www.googleapis.com/youtube/v3/videos?part=snippet",
 			headers, map[string]any{"id": id, "snippet": snippet}, nil)
 		if err != nil {

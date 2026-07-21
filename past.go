@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"fmt"
 	"log"
 	"regexp"
@@ -678,7 +679,7 @@ func fetchTwitchArchives(conn serviceConn) ([]PastBroadcast, error) {
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	if _, err := getJSON(twitchStreamsURL+"?user_id="+conn.userID, headers, &liveResp); err == nil && len(liveResp.Data) > 0 {
+	if _, err := httpx.GetJSON(twitchStreamsURL+"?user_id="+conn.userID, headers, &liveResp); err == nil && len(liveResp.Data) > 0 {
 		liveStreamID = liveResp.Data[0].ID
 	}
 
@@ -694,7 +695,7 @@ func fetchTwitchArchives(conn serviceConn) ([]PastBroadcast, error) {
 		} `json:"data"`
 	}
 	endpoint := twitchVideosURL + "?user_id=" + conn.userID + "&type=archive&first=20"
-	if _, err := getJSON(endpoint, headers, &resp); err != nil {
+	if _, err := httpx.GetJSON(endpoint, headers, &resp); err != nil {
 		return nil, err
 	}
 
@@ -756,7 +757,7 @@ func fetchYouTubeCompleted(conn serviceConn) ([]PastBroadcast, error) {
 			} `json:"snippet"`
 		} `json:"items"`
 	}
-	if _, err := getJSON(youtubeCompletedURL, headers, &broadcasts); err != nil {
+	if _, err := httpx.GetJSON(youtubeCompletedURL, headers, &broadcasts); err != nil {
 		return nil, err
 	}
 	if len(broadcasts.Items) == 0 {
@@ -785,7 +786,7 @@ func fetchYouTubeCompleted(conn serviceConn) ([]PastBroadcast, error) {
 			} `json:"contentDetails"`
 		} `json:"items"`
 	}
-	if _, err := getJSON(youtubeVideoMetaURL+strings.Join(ids, ","), headers, &videos); err == nil {
+	if _, err := httpx.GetJSON(youtubeVideoMetaURL+strings.Join(ids, ","), headers, &videos); err == nil {
 		for _, v := range videos.Items {
 			compact := formatISODuration(v.ContentDetails.Duration)
 			meta[v.ID] = videoMeta{

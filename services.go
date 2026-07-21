@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -41,8 +42,6 @@ type ServiceStatus struct {
 	Connected bool   `json:"connected"`
 	Account   string `json:"account"`
 }
-
-var httpClient = &http.Client{Timeout: 20 * time.Second}
 
 // ---------------------------------------------------------------------------
 // Status store
@@ -258,7 +257,7 @@ func (a *App) fetchTwitchUser(clientID, token string) twitchUser {
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Client-Id", clientID)
-	resp, err := httpClient.Do(req)
+	resp, err := httpx.Client.Do(req)
 	if err != nil {
 		return fallback
 	}
@@ -393,7 +392,7 @@ func (a *App) fetchYouTubeChannel(token string) (channelID, title string) {
 		return "", fallbackTitle
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := httpClient.Do(req)
+	resp, err := httpx.Client.Do(req)
 	if err != nil {
 		return "", fallbackTitle
 	}
@@ -418,7 +417,7 @@ func (a *App) fetchYouTubeChannel(token string) (channelID, title string) {
 // ---------------------------------------------------------------------------
 
 func postForm(endpoint string, form url.Values) ([]byte, int, error) {
-	resp, err := httpClient.PostForm(endpoint, form)
+	resp, err := httpx.Client.PostForm(endpoint, form)
 	if err != nil {
 		return nil, 0, err
 	}

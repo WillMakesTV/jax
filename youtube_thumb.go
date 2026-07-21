@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"bytes"
 	"fmt"
 	"image"
@@ -144,7 +145,7 @@ func (a *App) UpdateYouTubeThumbnail(startedAt string, videoURLs []string) (Stre
 		}
 		req.Header.Set("Authorization", "Bearer "+conn.token)
 		req.Header.Set("Content-Type", contentType)
-		resp, err := httpClient.Do(req)
+		resp, err := httpx.Client.Do(req)
 		if err != nil {
 			return StreamThumbInfo{}, err
 		}

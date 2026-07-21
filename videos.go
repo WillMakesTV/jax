@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"fmt"
 	"log"
 	"net/http"
@@ -379,7 +380,7 @@ func fetchTwitchVideos(conn serviceConn) ([]Video, error) {
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	if _, err := getJSON(twitchStreamsURL+"?user_id="+conn.userID, headers, &liveResp); err == nil && len(liveResp.Data) > 0 {
+	if _, err := httpx.GetJSON(twitchStreamsURL+"?user_id="+conn.userID, headers, &liveResp); err == nil && len(liveResp.Data) > 0 {
 		liveStreamID = liveResp.Data[0].ID
 	}
 
@@ -396,7 +397,7 @@ func fetchTwitchVideos(conn serviceConn) ([]Video, error) {
 				Cursor string `json:"cursor"`
 			} `json:"pagination"`
 		}
-		if _, err := getJSON(endpoint, headers, &resp); err != nil {
+		if _, err := httpx.GetJSON(endpoint, headers, &resp); err != nil {
 			// Keep earlier pages rather than failing the whole platform.
 			if len(out) > 0 {
 				break
@@ -477,7 +478,7 @@ func fetchTwitchClips(conn serviceConn) ([]Video, error) {
 				Cursor string `json:"cursor"`
 			} `json:"pagination"`
 		}
-		if _, err := getJSON(endpoint, headers, &resp); err != nil {
+		if _, err := httpx.GetJSON(endpoint, headers, &resp); err != nil {
 			if len(out) > 0 {
 				break
 			}
@@ -518,7 +519,7 @@ func fetchTwitchVideoDetails(conn serviceConn, id string) (VideoDetails, error) 
 	var resp struct {
 		Data []twitchVideoItem `json:"data"`
 	}
-	if _, err := getJSON(twitchVideosURL+"?id="+url.QueryEscape(id), twitchHeaders(conn), &resp); err != nil {
+	if _, err := httpx.GetJSON(twitchVideosURL+"?id="+url.QueryEscape(id), twitchHeaders(conn), &resp); err != nil {
 		return VideoDetails{}, err
 	}
 	if len(resp.Data) == 0 {
@@ -647,7 +648,7 @@ func fetchYouTubeVideos(conn serviceConn) ([]Video, error) {
 			} `json:"contentDetails"`
 		} `json:"items"`
 	}
-	if _, err := getJSON(youtubeUploadsPlaylistURL, headers, &channels); err != nil {
+	if _, err := httpx.GetJSON(youtubeUploadsPlaylistURL, headers, &channels); err != nil {
 		return nil, err
 	}
 	if len(channels.Items) == 0 || channels.Items[0].ContentDetails.RelatedPlaylists.Uploads == "" {
@@ -670,7 +671,7 @@ func fetchYouTubeVideos(conn serviceConn) ([]Video, error) {
 			} `json:"items"`
 			NextPageToken string `json:"nextPageToken"`
 		}
-		if _, err := getJSON(endpoint, headers, &page); err != nil {
+		if _, err := httpx.GetJSON(endpoint, headers, &page); err != nil {
 			if len(ids) > 0 {
 				break
 			}
@@ -700,7 +701,7 @@ func fetchYouTubeVideos(conn serviceConn) ([]Video, error) {
 		var videos struct {
 			Items []youtubeVideoItem `json:"items"`
 		}
-		if _, err := getJSON(youtubeVideoListURL+strings.Join(ids[start:end], ","), headers, &videos); err != nil {
+		if _, err := httpx.GetJSON(youtubeVideoListURL+strings.Join(ids[start:end], ","), headers, &videos); err != nil {
 			if len(out) > 0 {
 				break
 			}
@@ -726,7 +727,7 @@ func fetchYouTubeVideoDetails(conn serviceConn, id, apiKey string) (VideoDetails
 	var videos struct {
 		Items []youtubeVideoItem `json:"items"`
 	}
-	if _, err := getJSON(youtubeVideoDetailURL+url.QueryEscape(id), headers, &videos); err != nil {
+	if _, err := httpx.GetJSON(youtubeVideoDetailURL+url.QueryEscape(id), headers, &videos); err != nil {
 		return VideoDetails{}, err
 	}
 	if len(videos.Items) == 0 {
@@ -780,7 +781,7 @@ func fetchYouTubeVideoDetails(conn serviceConn, id, apiKey string) (VideoDetails
 		commentsURL += "&key=" + url.QueryEscape(apiKey)
 		commentHeaders = nil
 	}
-	if status, err := getJSON(commentsURL, commentHeaders, &threads); err != nil {
+	if status, err := httpx.GetJSON(commentsURL, commentHeaders, &threads); err != nil {
 		if apiKey == "" && status == http.StatusForbidden {
 			// commentThreads.list needs the youtube.force-ssl scope, which the
 			// device-authorization flow this app uses cannot request, so a 403

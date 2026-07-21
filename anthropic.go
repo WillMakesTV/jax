@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"bp-temp/internal/platform"
 	"context"
 	"encoding/json"
@@ -217,7 +218,7 @@ func verifyAnthropicAuth(auth map[string]string) error {
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	status, err := getJSON(anthropicModelsURL, headers, &r)
+	status, err := httpx.GetJSON(anthropicModelsURL, headers, &r)
 	if err != nil {
 		if status == http.StatusUnauthorized || status == http.StatusForbidden {
 			return fmt.Errorf("Anthropic rejected the credential — check it and try again")

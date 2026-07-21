@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -81,7 +82,7 @@ func xTokenForm(form url.Values, clientID, clientSecret string) ([]byte, int, er
 	if clientSecret != "" {
 		req.SetBasicAuth(clientID, clientSecret)
 	}
-	resp, err := httpClient.Do(req)
+	resp, err := httpx.Client.Do(req)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -335,7 +336,7 @@ func fetchXUser(token string) xUser {
 			Name     string `json:"name"`
 		} `json:"data"`
 	}
-	if _, err := getJSON(xUsersMeURL, map[string]string{"Authorization": "Bearer " + token}, &r); err != nil {
+	if _, err := httpx.GetJSON(xUsersMeURL, map[string]string{"Authorization": "Bearer " + token}, &r); err != nil {
 		return fallback
 	}
 	return xUser{id: r.Data.ID, username: r.Data.Username, name: r.Data.Name}
@@ -391,7 +392,7 @@ func (a *App) fetchXLive(conn serviceConn) LiveStream {
 			} `json:"data"`
 		}
 		endpoint := xUsersMeURL + "?user.fields=public_metrics,profile_image_url,description"
-		if _, err := getJSON(endpoint, map[string]string{"Authorization": "Bearer " + conn.token}, &r); err != nil {
+		if _, err := httpx.GetJSON(endpoint, map[string]string{"Authorization": "Bearer " + conn.token}, &r); err != nil {
 			return out, err
 		}
 		out.Followers = fmtCount(r.Data.PublicMetrics.Followers)
@@ -457,7 +458,7 @@ func (a *App) applyPlanToX(plan PlannedStream, _ *ContentSeries) string {
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	status, err := postJSON(xTweetsURL, map[string]string{"Authorization": "Bearer " + conn.token},
+	status, err := httpx.PostJSON(xTweetsURL, map[string]string{"Authorization": "Bearer " + conn.token},
 		map[string]string{"text": text}, &resp)
 	if err != nil {
 		log.Printf("jax: x announce: %v", err)

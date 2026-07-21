@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"fmt"
 	"net/url"
 	"strings"
@@ -66,7 +67,7 @@ func (a *App) TimeoutChatUser(platform, userID string, seconds int, reason strin
 		endpoint := twitchBansURL +
 			"?broadcaster_id=" + url.QueryEscape(conn.userID) +
 			"&moderator_id=" + url.QueryEscape(conn.userID)
-		status, err := postJSON(endpoint, twitchHeaders(conn),
+		status, err := httpx.PostJSON(endpoint, twitchHeaders(conn),
 			map[string]any{"data": data}, nil)
 		if err != nil {
 			return modErrorMessage("twitch", status, err)
@@ -92,7 +93,7 @@ func (a *App) TimeoutChatUser(platform, userID string, seconds int, reason strin
 			snippet["type"] = "temporary"
 			snippet["banDurationSeconds"] = seconds
 		}
-		status, err := postJSON(youtubeLiveChatBansURL+"?part=snippet", headers,
+		status, err := httpx.PostJSON(youtubeLiveChatBansURL+"?part=snippet", headers,
 			map[string]any{"snippet": snippet}, nil)
 		if err != nil {
 			return modErrorMessage("youtube", status, err)
@@ -124,7 +125,7 @@ func (a *App) DeleteChatMessage(platform, messageID string) error {
 			"?broadcaster_id=" + url.QueryEscape(conn.userID) +
 			"&moderator_id=" + url.QueryEscape(conn.userID) +
 			"&message_id=" + url.QueryEscape(messageID)
-		status, err := deleteResource(endpoint, twitchHeaders(conn))
+		status, err := httpx.DeleteResource(endpoint, twitchHeaders(conn))
 		if err != nil {
 			return modErrorMessage("twitch", status, err)
 		}
@@ -135,7 +136,7 @@ func (a *App) DeleteChatMessage(platform, messageID string) error {
 			return fmt.Errorf("connect YouTube in Settings → Services first")
 		}
 		headers := map[string]string{"Authorization": "Bearer " + conn.token}
-		status, err := deleteResource(
+		status, err := httpx.DeleteResource(
 			youtubeChatMessagesURL+"?id="+url.QueryEscape(messageID), headers)
 		if err != nil {
 			return modErrorMessage("youtube", status, err)

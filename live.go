@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
+	"bp-temp/internal/httpx"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -125,110 +123,6 @@ func (a *App) liveSnapshot() []LiveStream {
 // errReauth signals an expired/revoked token in a user-actionable way.
 const errReauth = "Authentication expired. Reconnect in Settings → Services."
 
-// getJSON performs an authenticated GET and decodes the JSON response into out.
-func getJSON(endpoint string, headers map[string]string, out any) (int, error) {
-	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
-	if err != nil {
-		return 0, err
-	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return resp.StatusCode, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		msg := string(body)
-		if len(msg) > 200 {
-			msg = msg[:200]
-		}
-		return resp.StatusCode, fmt.Errorf("request failed (%d): %s", resp.StatusCode, msg)
-	}
-	return resp.StatusCode, json.Unmarshal(body, out)
-}
-
-// postJSON performs an authenticated POST with a JSON body and decodes the
-// JSON response into out (which may be nil). Any 2xx status counts as success.
-func postJSON(endpoint string, headers map[string]string, payload any, out any) (int, error) {
-	return sendJSON(http.MethodPost, endpoint, headers, payload, out)
-}
-
-// patchJSON performs an authenticated PATCH with a JSON body. Any 2xx status
-// counts as success (Twitch's channel update returns 204 No Content).
-func patchJSON(endpoint string, headers map[string]string, payload any) (int, error) {
-	return sendJSON(http.MethodPatch, endpoint, headers, payload, nil)
-}
-
-// deleteResource performs an authenticated DELETE with no body. Any 2xx
-// counts as success (Twitch and YouTube both answer 204 No Content when a
-// chat message or ban is removed).
-func deleteResource(endpoint string, headers map[string]string) (int, error) {
-	req, err := http.NewRequest(http.MethodDelete, endpoint, nil)
-	if err != nil {
-		return 0, err
-	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		msg := string(body)
-		if len(msg) > 200 {
-			msg = msg[:200]
-		}
-		return resp.StatusCode, fmt.Errorf("request failed (%d): %s", resp.StatusCode, msg)
-	}
-	return resp.StatusCode, nil
-}
-
-// sendJSON performs an authenticated request with a JSON body and decodes the
-// JSON response into out (which may be nil). Any 2xx status counts as success.
-func sendJSON(method, endpoint string, headers map[string]string, payload any, out any) (int, error) {
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return 0, err
-	}
-	req, err := http.NewRequest(method, endpoint, bytes.NewReader(raw))
-	if err != nil {
-		return 0, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return resp.StatusCode, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		msg := string(body)
-		if len(msg) > 200 {
-			msg = msg[:200]
-		}
-		return resp.StatusCode, fmt.Errorf("request failed (%d): %s", resp.StatusCode, msg)
-	}
-	if out == nil {
-		return resp.StatusCode, nil
-	}
-	return resp.StatusCode, json.Unmarshal(body, out)
-}
-
 // fmtCount renders integers with thousands separators for the details list.
 func fmtCount(n int64) string {
 	s := strconv.FormatInt(n, 10)
@@ -344,7 +238,7 @@ func (a *App) fetchTwitchLive(conn serviceConn) LiveStream {
 			Tags         []string `json:"tags"`
 		} `json:"data"`
 	}
-	status, err := getJSON(twitchStreamsURL+"?user_id="+conn.userID, headers, &streams)
+	status, err := httpx.GetJSON(twitchStreamsURL+"?user_id="+conn.userID, headers, &streams)
 	if err != nil {
 		log.Printf("jax: twitch streams: %v", err)
 		if status == http.StatusUnauthorized {
@@ -395,7 +289,7 @@ func (a *App) fetchTwitchLive(conn serviceConn) LiveStream {
 				IsBrandedContent            bool     `json:"is_branded_content"`
 			} `json:"data"`
 		}
-		if _, err := getJSON(twitchChannelsURL+"?broadcaster_id="+conn.userID, headers, &channels); err != nil {
+		if _, err := httpx.GetJSON(twitchChannelsURL+"?broadcaster_id="+conn.userID, headers, &channels); err != nil {
 			return out, err
 		}
 		if len(channels.Data) > 0 {
@@ -413,7 +307,7 @@ func (a *App) fetchTwitchLive(conn serviceConn) LiveStream {
 		var followers struct {
 			Total int64 `json:"total"`
 		}
-		if _, err := getJSON(twitchFollowersURL+"?broadcaster_id="+conn.userID+"&first=1", headers, &followers); err == nil {
+		if _, err := httpx.GetJSON(twitchFollowersURL+"?broadcaster_id="+conn.userID+"&first=1", headers, &followers); err == nil {
 			out.Followers = fmtCount(followers.Total)
 			out.FollowersN = followers.Total
 		}
@@ -422,7 +316,7 @@ func (a *App) fetchTwitchLive(conn serviceConn) LiveStream {
 			Total  int64 `json:"total"`
 			Points int64 `json:"points"`
 		}
-		if _, err := getJSON(twitchSubCheckURL+"?broadcaster_id="+conn.userID+"&first=1", headers, &subs); err == nil {
+		if _, err := httpx.GetJSON(twitchSubCheckURL+"?broadcaster_id="+conn.userID+"&first=1", headers, &subs); err == nil {
 			out.Subscribers = fmtCount(subs.Total)
 			out.SubPoints = fmtCount(subs.Points)
 			out.SubscribersN = subs.Total
@@ -434,7 +328,7 @@ func (a *App) fetchTwitchLive(conn serviceConn) LiveStream {
 				OfflineImageURL string `json:"offline_image_url"`
 			} `json:"data"`
 		}
-		if _, err := getJSON(twitchUsersURL+"?id="+conn.userID, headers, &users); err == nil && len(users.Data) > 0 {
+		if _, err := httpx.GetJSON(twitchUsersURL+"?id="+conn.userID, headers, &users); err == nil && len(users.Data) > 0 {
 			out.Avatar = users.Data[0].ProfileImageURL
 			out.Banner = users.Data[0].OfflineImageURL
 		}
@@ -595,7 +489,7 @@ func (a *App) fetchYouTubeLive(conn serviceConn) LiveStream {
 				} `json:"brandingSettings"`
 			} `json:"items"`
 		}
-		status, err := getJSON(youtubeChannelsURL, headers, &channels)
+		status, err := httpx.GetJSON(youtubeChannelsURL, headers, &channels)
 		channelStatus = status
 		if err != nil {
 			return ytChannelInfo{}, err
@@ -650,7 +544,7 @@ func (a *App) fetchYouTubeLive(conn serviceConn) LiveStream {
 				ID string `json:"id"`
 			} `json:"items"`
 		}
-		if _, err := getJSON(youtubeBroadcastsURL, headers, &broadcasts); err != nil {
+		if _, err := httpx.GetJSON(youtubeBroadcastsURL, headers, &broadcasts); err != nil {
 			log.Printf("jax: youtube liveBroadcasts: %v", err)
 			ls.Error = "Could not check for an active YouTube broadcast."
 			return ls
@@ -690,7 +584,7 @@ func (a *App) fetchYouTubeLive(conn serviceConn) LiveStream {
 			} `json:"liveStreamingDetails"`
 		} `json:"items"`
 	}
-	if _, err := getJSON(youtubeVideosURL+videoID, headers, &videos); err != nil {
+	if _, err := httpx.GetJSON(youtubeVideosURL+videoID, headers, &videos); err != nil {
 		log.Printf("jax: youtube live video: %v", err)
 		a.setYTVideoID("") // re-probe on the next refresh
 		return ls

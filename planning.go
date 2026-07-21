@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"bytes"
 	"fmt"
 	"image"
@@ -288,7 +289,7 @@ func (a *App) applyPlanToTwitch(plan PlannedStream, series *ContentSeries) strin
 		payload["content_classification_labels"] = labels
 	}
 
-	status, err := patchJSON(
+	status, err := httpx.PatchJSON(
 		twitchChannelsURL+"?broadcaster_id="+conn.userID,
 		twitchHeaders(conn), payload,
 	)
@@ -444,7 +445,7 @@ func (a *App) upcomingYTBroadcastID(headers map[string]string) string {
 			} `json:"contentDetails"`
 		} `json:"items"`
 	}
-	if _, err := getJSON(youtubeUpcomingBroadcastsURL, headers, &broadcasts); err != nil {
+	if _, err := httpx.GetJSON(youtubeUpcomingBroadcastsURL, headers, &broadcasts); err != nil {
 		log.Printf("jax: youtube upcoming broadcasts: %v", err)
 		return ""
 	}
@@ -488,7 +489,7 @@ func (a *App) currentYTBroadcastID(headers map[string]string) string {
 			ID string `json:"id"`
 		} `json:"items"`
 	}
-	if _, err := getJSON(youtubeBroadcastsURL, headers, &broadcasts); err != nil {
+	if _, err := httpx.GetJSON(youtubeBroadcastsURL, headers, &broadcasts); err != nil {
 		log.Printf("jax: youtube active broadcasts: %v", err)
 	} else if len(broadcasts.Items) > 0 {
 		videoID := broadcasts.Items[0].ID
@@ -524,7 +525,7 @@ func (a *App) applyPlanToYouTube(plan PlannedStream, series *ContentSeries) stri
 			Status  map[string]any `json:"status"`
 		} `json:"items"`
 	}
-	if _, err := getJSON(
+	if _, err := httpx.GetJSON(
 		"https://www.googleapis.com/youtube/v3/videos?part=snippet,status&id="+videoID,
 		headers, &videos,
 	); err != nil || len(videos.Items) == 0 {
@@ -571,7 +572,7 @@ func (a *App) applyPlanToYouTube(plan PlannedStream, series *ContentSeries) stri
 		payload["status"] = vidStatus
 	}
 
-	status, err := sendJSON(http.MethodPut, youtubeVideosUpdateURL, headers,
+	status, err := httpx.SendJSON(http.MethodPut, youtubeVideosUpdateURL, headers,
 		payload, nil)
 	if err != nil {
 		log.Printf("jax: apply plan to youtube: update: %v", err)
@@ -783,7 +784,7 @@ func (a *App) twitchInfoStatus(plan PlannedStream) PlanChannelInfo {
 			Title string `json:"title"`
 		} `json:"data"`
 	}
-	if _, err := getJSON(
+	if _, err := httpx.GetJSON(
 		twitchChannelsURL+"?broadcaster_id="+conn.userID, twitchHeaders(conn), &resp,
 	); err != nil || len(resp.Data) == 0 {
 		log.Printf("jax: twitch info status: %v", err)
@@ -819,7 +820,7 @@ func (a *App) youtubeInfoStatus(plan PlannedStream) PlanChannelInfo {
 			} `json:"snippet"`
 		} `json:"items"`
 	}
-	if _, err := getJSON(
+	if _, err := httpx.GetJSON(
 		"https://www.googleapis.com/youtube/v3/videos?part=snippet&id="+videoID,
 		headers, &videos,
 	); err != nil || len(videos.Items) == 0 {

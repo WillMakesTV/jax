@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -300,7 +301,7 @@ func fetchKickUser(token string) kickUser {
 			ProfilePicture string      `json:"profile_picture"`
 		} `json:"data"`
 	}
-	if _, err := getJSON(kickUsersURL, map[string]string{"Authorization": "Bearer " + token}, &r); err != nil || len(r.Data) == 0 {
+	if _, err := httpx.GetJSON(kickUsersURL, map[string]string{"Authorization": "Bearer " + token}, &r); err != nil || len(r.Data) == 0 {
 		return fallback
 	}
 	u := r.Data[0]
@@ -342,7 +343,7 @@ func fetchKickChannel(conn serviceConn) (kickChannel, int, error) {
 	var r struct {
 		Data []kickChannel `json:"data"`
 	}
-	status, err := getJSON(kickChannelsURL, kickHeaders(conn), &r)
+	status, err := httpx.GetJSON(kickChannelsURL, kickHeaders(conn), &r)
 	if err != nil {
 		return kickChannel{}, status, err
 	}
@@ -360,7 +361,7 @@ func fetchKickSlug(token string) string {
 			Slug string `json:"slug"`
 		} `json:"data"`
 	}
-	if _, err := getJSON(kickChannelsURL, map[string]string{"Authorization": "Bearer " + token}, &r); err != nil || len(r.Data) == 0 {
+	if _, err := httpx.GetJSON(kickChannelsURL, map[string]string{"Authorization": "Bearer " + token}, &r); err != nil || len(r.Data) == 0 {
 		return ""
 	}
 	return r.Data[0].Slug
@@ -498,7 +499,7 @@ func sendKickChat(conn serviceConn, message string) (int, error) {
 			IsSent bool `json:"is_sent"`
 		} `json:"data"`
 	}
-	status, err := postJSON(kickChatSendURL, kickHeaders(conn), map[string]any{
+	status, err := httpx.PostJSON(kickChatSendURL, kickHeaders(conn), map[string]any{
 		"broadcaster_user_id": id,
 		"content":             message,
 		"type":                "user",
@@ -601,7 +602,7 @@ func kickUnofficialGet(path string, out any) error {
 	req.Header.Set("User-Agent",
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 	req.Header.Set("Accept", "application/json")
-	resp, err := httpClient.Do(req)
+	resp, err := httpx.Client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -769,7 +770,7 @@ func (a *App) SearchKickCategories(query string) ([]ServiceCategory, error) {
 			Name string      `json:"name"`
 		} `json:"data"`
 	}
-	status, err := getJSON(kickCategoriesURL+"?q="+url.QueryEscape(query), kickHeaders(conn), &r)
+	status, err := httpx.GetJSON(kickCategoriesURL+"?q="+url.QueryEscape(query), kickHeaders(conn), &r)
 	if err != nil {
 		if status == http.StatusUnauthorized {
 			return nil, errors.New(errReauth)
@@ -822,7 +823,7 @@ func applyKickInfo(conn serviceConn, title, categoryID string) error {
 			payload["category_id"] = id
 		}
 	}
-	status, err := patchJSON(kickChannelsURL, kickHeaders(conn), payload)
+	status, err := httpx.PatchJSON(kickChannelsURL, kickHeaders(conn), payload)
 	if err != nil {
 		if status == http.StatusUnauthorized || status == http.StatusForbidden {
 			return fmt.Errorf("kick rejected the update (%d) — reconnect Kick in Settings → Services so the channel:write permission is granted, and check the scope is enabled on your Kick app", status)

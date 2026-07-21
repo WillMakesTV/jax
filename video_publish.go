@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -257,7 +258,7 @@ func (a *App) PublishPlanVideo(planID, output, title, description string, tags [
 	initReq.Header.Set("Content-Type", "application/json")
 	initReq.Header.Set("X-Upload-Content-Type", "video/mp4")
 	initReq.Header.Set("X-Upload-Content-Length", fmt.Sprint(fi.Size()))
-	initResp, err := httpClient.Do(initReq)
+	initResp, err := httpx.Client.Do(initReq)
 	if err != nil {
 		return rec, fmt.Errorf("the upload could not be started: %v", err)
 	}

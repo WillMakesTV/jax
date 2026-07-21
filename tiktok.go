@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"bp-temp/internal/mediakit"
 	"bp-temp/internal/platform"
 	"bytes"
@@ -339,7 +340,7 @@ func fetchTikTokDisplayName(token string) string {
 		} `json:"data"`
 	}
 	endpoint := tiktokUserInfoURL + "?fields=display_name"
-	if _, err := getJSON(endpoint, map[string]string{"Authorization": "Bearer " + token}, &r); err != nil {
+	if _, err := httpx.GetJSON(endpoint, map[string]string{"Authorization": "Bearer " + token}, &r); err != nil {
 		return "TikTok account"
 	}
 	return firstNonEmpty(r.Data.User.DisplayName, "TikTok account")
@@ -402,7 +403,7 @@ func tiktokFailure(err error) string {
 
 // tiktokUserFields queries user/info for the named fields.
 func tiktokUserFields(conn serviceConn, fields string, out any) error {
-	_, err := getJSON(tiktokUserInfoURL+"?fields="+fields,
+	_, err := httpx.GetJSON(tiktokUserInfoURL+"?fields="+fields,
 		map[string]string{"Authorization": "Bearer " + conn.token}, out)
 	return err
 }
@@ -521,7 +522,7 @@ func fetchTikTokViews(conn serviceConn) (views int64, videos int64, err error) {
 		if cursor > 0 {
 			body["cursor"] = cursor
 		}
-		if _, err := postJSON(endpoint,
+		if _, err := httpx.PostJSON(endpoint,
 			map[string]string{"Authorization": "Bearer " + conn.token},
 			body, &r); err != nil {
 			return 0, 0, err
@@ -717,7 +718,7 @@ func tiktokPrivacyLevel(conn serviceConn) (string, error) {
 		} `json:"data"`
 		Error tiktokError `json:"error"`
 	}
-	if _, err := postJSON(tiktokCreatorInfoURL, map[string]string{"Authorization": "Bearer " + conn.token},
+	if _, err := httpx.PostJSON(tiktokCreatorInfoURL, map[string]string{"Authorization": "Bearer " + conn.token},
 		map[string]any{}, &r); err != nil {
 		return "", err
 	}
@@ -762,7 +763,7 @@ func (a *App) fetchTikTokVideos(conn serviceConn) ([]Video, error) {
 	}
 	endpoint := tiktokVideoListURL +
 		"?fields=id,title,video_description,duration,cover_image_url,share_url,create_time,view_count"
-	if _, err := postJSON(endpoint,
+	if _, err := httpx.PostJSON(endpoint,
 		map[string]string{"Authorization": "Bearer " + conn.token},
 		map[string]any{"max_count": 20}, &r); err != nil {
 		return nil, fmt.Errorf("%s", tiktokFailure(err))
@@ -839,7 +840,7 @@ func (a *App) applyPlanToTikTok(plan PlannedStream, _ *ContentSeries) string {
 		} `json:"data"`
 		Error tiktokError `json:"error"`
 	}
-	_, err = postJSON(tiktokVideoInitURL, map[string]string{"Authorization": "Bearer " + conn.token},
+	_, err = httpx.PostJSON(tiktokVideoInitURL, map[string]string{"Authorization": "Bearer " + conn.token},
 		map[string]any{
 			"post_info": map[string]any{
 				"title":           caption,
@@ -875,7 +876,7 @@ func (a *App) applyPlanToTikTok(plan PlannedStream, _ *ContentSeries) string {
 	}
 	req.Header.Set("Content-Type", "video/mp4")
 	req.Header.Set("Content-Range", fmt.Sprintf("bytes 0-%d/%d", len(raw)-1, len(raw)))
-	resp, err := httpClient.Do(req)
+	resp, err := httpx.Client.Do(req)
 	if err != nil {
 		log.Printf("jax: tiktok upload: %v", err)
 		return "TikTok: the announcement upload failed."

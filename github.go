@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -47,7 +48,7 @@ func githubPostForm(endpoint string, form url.Values) ([]byte, int, error) {
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
-	resp, err := httpClient.Do(req)
+	resp, err := httpx.Client.Do(req)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -153,7 +154,7 @@ func (a *App) fetchGitHubUser(token string) string {
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/vnd.github+json")
-	resp, err := httpClient.Do(req)
+	resp, err := httpx.Client.Do(req)
 	if err != nil {
 		return fallback
 	}

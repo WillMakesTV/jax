@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"bp-temp/internal/platform"
 	"bytes"
 	"context"
@@ -314,7 +315,7 @@ func verifyOpenAIAuth(key string) error {
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	status, err := getJSON(openaiModelsURL, map[string]string{
+	status, err := httpx.GetJSON(openaiModelsURL, map[string]string{
 		"Authorization": "Bearer " + key,
 	}, &r)
 	if err != nil {

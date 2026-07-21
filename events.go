@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"fmt"
 	"log"
 )
@@ -76,7 +77,7 @@ func (a *App) SubscribeTwitchEvents(sessionID string) ([]string, error) {
 				"session_id": sessionID,
 			},
 		}
-		if status, err := postJSON(twitchEventSubURL, headers, payload, nil); err != nil {
+		if status, err := httpx.PostJSON(twitchEventSubURL, headers, payload, nil); err != nil {
 			log.Printf("jax: eventsub %s: %v", sub.Type, err)
 			msg := sub.Type + " unavailable."
 			if status == 401 || status == 403 {

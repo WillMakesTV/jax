@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"errors"
 	"fmt"
 	"net/http"
@@ -48,7 +49,7 @@ func (a *App) SearchTwitchCategories(query string) ([]ServiceCategory, error) {
 		} `json:"data"`
 	}
 	endpoint := twitchSearchCategoriesURL + "?first=25&query=" + url.QueryEscape(query)
-	status, err := getJSON(endpoint, twitchHeaders(conn), &r)
+	status, err := httpx.GetJSON(endpoint, twitchHeaders(conn), &r)
 	if err != nil {
 		if status == http.StatusUnauthorized {
 			return nil, errors.New(errReauth)
@@ -85,7 +86,7 @@ func (a *App) GetYouTubeCategories() ([]ServiceCategory, error) {
 			} `json:"snippet"`
 		} `json:"items"`
 	}
-	status, err := getJSON(youtubeCategoriesURL, map[string]string{
+	status, err := httpx.GetJSON(youtubeCategoriesURL, map[string]string{
 		"Authorization": "Bearer " + conn.token,
 	}, &r)
 	if err != nil {

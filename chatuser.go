@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"fmt"
 	"net/url"
 	"strings"
@@ -102,7 +103,7 @@ func fetchTwitchChatUser(conn serviceConn, id, login string) (ChatUserInfo, erro
 			CreatedAt       string `json:"created_at"`
 		} `json:"data"`
 	}
-	if _, err := getJSON(twitchUsersURL+query, headers, &users); err != nil {
+	if _, err := httpx.GetJSON(twitchUsersURL+query, headers, &users); err != nil {
 		return ChatUserInfo{}, err
 	}
 	if len(users.Data) == 0 {
@@ -131,7 +132,7 @@ func fetchTwitchChatUser(conn serviceConn, id, login string) (ChatUserInfo, erro
 			FollowedAt string `json:"followed_at"`
 		} `json:"data"`
 	}
-	if _, err := getJSON(
+	if _, err := httpx.GetJSON(
 		twitchFollowCheckURL+"?broadcaster_id="+conn.userID+"&user_id="+u.ID,
 		headers, &follows,
 	); err == nil {
@@ -149,7 +150,7 @@ func fetchTwitchChatUser(conn serviceConn, id, login string) (ChatUserInfo, erro
 			Tier string `json:"tier"`
 		} `json:"data"`
 	}
-	if status, err := getJSON(
+	if status, err := httpx.GetJSON(
 		twitchSubCheckURL+"?broadcaster_id="+conn.userID+"&user_id="+u.ID,
 		headers, &subs,
 	); err == nil {
@@ -203,7 +204,7 @@ func fetchYouTubeChatUser(conn serviceConn, id string) (ChatUserInfo, error) {
 			} `json:"statistics"`
 		} `json:"items"`
 	}
-	if _, err := getJSON(youtubeChannelByIDURL+url.QueryEscape(id), headers, &channels); err != nil {
+	if _, err := httpx.GetJSON(youtubeChannelByIDURL+url.QueryEscape(id), headers, &channels); err != nil {
 		return ChatUserInfo{}, err
 	}
 	if len(channels.Items) == 0 {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
@@ -44,7 +45,7 @@ func (a *App) refreshAppIcon() {
 		"https://www.gravatar.com/avatar/%s?s=512&d=identicon",
 		hex.EncodeToString(sum[:]),
 	)
-	resp, err := httpClient.Get(url)
+	resp, err := httpx.Client.Get(url)
 	if err != nil {
 		log.Printf("jax: fetch gravatar icon: %v", err)
 		return

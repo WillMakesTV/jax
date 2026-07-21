@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/httpx"
 	"fmt"
 	"log"
 	"net/url"
@@ -74,7 +75,7 @@ func (a *App) resolveYouTubeChatID(headers map[string]string) string {
 			} `json:"snippet"`
 		} `json:"items"`
 	}
-	if _, err := getJSON(youtubeBroadcastsURL, headers, &broadcasts); err != nil {
+	if _, err := httpx.GetJSON(youtubeBroadcastsURL, headers, &broadcasts); err != nil {
 		log.Printf("jax: youtube chat broadcast lookup: %v", err)
 		return ""
 	}
@@ -146,7 +147,7 @@ func (a *App) GetYouTubeLiveChat(pageToken string) LiveChatPage {
 			} `json:"authorDetails"`
 		} `json:"items"`
 	}
-	if _, err := getJSON(endpoint, headers, &resp); err != nil {
+	if _, err := httpx.GetJSON(endpoint, headers, &resp); err != nil {
 		// Chat gone (stream ended, id stale): drop the cache so the next poll
 		// re-resolves against the current broadcast.
 		log.Printf("jax: youtube chat messages: %v", err)
@@ -297,7 +298,7 @@ func (a *App) SendBroadcastChat(message string) []BroadcastSendResult {
 					} `json:"drop_reason"`
 				} `json:"data"`
 			}
-			status, err := postJSON(twitchChatMessagesURL, twitchHeaders(conn), map[string]string{
+			status, err := httpx.PostJSON(twitchChatMessagesURL, twitchHeaders(conn), map[string]string{
 				"broadcaster_id": conn.userID,
 				"sender_id":      conn.userID,
 				"message":        message,
@@ -327,7 +328,7 @@ func (a *App) SendBroadcastChat(message string) []BroadcastSendResult {
 					},
 				},
 			}
-			return postJSON(youtubeChatMessagesURL+"?part=snippet", headers, payload, nil)
+			return httpx.PostJSON(youtubeChatMessagesURL+"?part=snippet", headers, payload, nil)
 		}
 
 		chatID := a.resolveYouTubeChatID(headers)
