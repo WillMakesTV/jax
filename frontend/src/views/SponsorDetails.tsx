@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   CalendarRange,
   ExternalLink,
   File,
@@ -71,15 +70,7 @@ export function SponsorDetails({
 
   return (
     <div className="flex flex-col">
-      <button
-        type="button"
-        onClick={onBack}
-        className="mb-4 inline-flex w-fit items-center gap-1.5 text-sm text-fg-muted transition-colors hover:text-fg"
-      >
-        <ArrowLeft size={16} aria-hidden />
-        Back to Sponsors
-      </button>
-
+      {/* No local back link: the top bar's global back covers it. */}
       {!sp ? (
         <CreateSponsorForm onCreated={setSp} onCancel={onBack} />
       ) : (
