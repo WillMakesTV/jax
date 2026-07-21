@@ -39,11 +39,11 @@ const TAKEAWAY_KINDS: Record<string, string> = {
 }
 
 /**
- * One inspiration video in full. Overview carries the video with its
- * description and topics; the other sections keep the same player-and-summary
- * hero and render their own content beneath it — takeaways, the AI-built
- * outline, the manifest (links, products, services), and the transcript it
- * was all read from.
+ * One inspiration video in full. The video and its summary sit side by side
+ * at the top of every section; Overview follows them with the full-width
+ * description and topics, and the other sections render their own content
+ * there instead — takeaways, the AI-built outline, the manifest (links,
+ * products, services), and the transcript it was all read from.
  */
 export function InspirationVideoDetails({
   video: initial,
@@ -218,8 +218,8 @@ export function InspirationVideoDetails({
           ))}
         </div>
 
-        {/* Hero: the video on the left and its summary on the right, kept
-            on every section so the footage is always one click away. */}
+        {/* Hero: the video and its summary side by side, kept on every
+            section so the footage is always one click away. */}
         <section className="flex flex-col gap-4 lg:flex-row lg:items-start">
           <div
             ref={frame}
@@ -274,25 +274,6 @@ export function InspirationVideoDetails({
                 </span>
               )}
             </div>
-
-            {/* The video's own words, right under it — Overview only, so
-                the other sections keep the hero to the player and summary. */}
-            {tab === 'overview' && (
-              <div className="border-t border-edge p-4">
-                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg-muted">
-                  Description
-                </p>
-                {video.description ? (
-                  <p className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words text-sm text-fg">
-                    {video.description}
-                  </p>
-                ) : (
-                  <p className="text-sm text-fg-muted">
-                    This video has no description.
-                  </p>
-                )}
-              </div>
-            )}
           </div>
 
           <div className="flex min-w-0 flex-1 flex-col gap-3">
@@ -315,6 +296,25 @@ export function InspirationVideoDetails({
             )}
           </div>
         </section>
+
+        {/* The description reads as prose, so it spans the page — Overview
+            only, so the other sections keep the hero to video and summary. */}
+        {tab === 'overview' && (
+          <section className="rounded-xl border border-edge bg-surface p-4">
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+              Description
+            </p>
+            {video.description ? (
+              <p className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words text-sm text-fg">
+                {video.description}
+              </p>
+            ) : (
+              <p className="text-sm text-fg-muted">
+                This video has no description.
+              </p>
+            )}
+          </section>
+        )}
 
         {/* Topics span the page rather than crowding the hero's column. */}
         {tab === 'overview' && video.tags.length > 0 && (
