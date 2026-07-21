@@ -841,6 +841,7 @@ const INSPIRATION_LABELS: Record<string, string> = {
   downloading: 'Downloading',
   transcribing: 'Transcribing',
   analyzing: 'Studying',
+  extracting: 'Extracting takeaways',
   ready: 'Studied',
   error: 'Failed',
 }

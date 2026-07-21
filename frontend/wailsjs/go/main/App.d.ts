@@ -134,6 +134,8 @@ export function EnsureVideoPlanWorkspace(arg1:string):Promise<main.PlanWorkspace
 
 export function ExportPlanTimeline(arg1:string,arg2:main.PlanTimeline):Promise<main.EditWorkspaceInfo>;
 
+export function ExtractInspirationTakeaways(arg1:string):Promise<void>;
+
 export function GenerateClipIdeas(arg1:string,arg2:string,arg3:string):Promise<main.ClipIdeaSet>;
 
 export function GenerateDownloadThumbnail(arg1:string):Promise<string>;

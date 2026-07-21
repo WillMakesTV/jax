@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -91,12 +92,24 @@ type InspirationMention struct {
 	AtSecs int    `json:"atSecs"`
 }
 
+// InspirationTakeaway is one lesson lifted out of a studied video: a tip, a
+// technique, or a concept worth reusing, with where in the video it comes up
+// (-1 when it is not tied to a moment).
+type InspirationTakeaway struct {
+	Kind   string `json:"kind"` // tip | technique | concept | hook | format | other
+	Title  string `json:"title"`
+	Detail string `json:"detail"`
+	Apply  string `json:"apply"` // how it could be used on our own channel
+	AtSecs int    `json:"atSecs"`
+}
+
 // Inspiration video statuses, in pipeline order.
 const (
 	inspirationTracked      = "tracked"
 	inspirationDownloading  = "downloading"
 	inspirationTranscribing = "transcribing"
 	inspirationAnalyzing    = "analyzing"
+	inspirationExtracting   = "extracting"
 	inspirationReady        = "ready"
 	inspirationError        = "error"
 )
@@ -143,6 +156,12 @@ type InspirationVideo struct {
 	Beats    []InspirationBeat    `json:"beats"`
 	Links    []InspirationLink    `json:"links"`
 	Mentions []InspirationMention `json:"mentions"`
+
+	// Takeaways is the second AI pass: what can be learned from the video,
+	// extracted from the outline once it exists. TakeawaysAt records when
+	// that pass last ran, so the backfill knows what is still outstanding.
+	Takeaways   []InspirationTakeaway `json:"takeaways"`
+	TakeawaysAt string                `json:"takeawaysAt"`
 
 	AddedAt    string `json:"addedAt"`
 	AnalyzedAt string `json:"analyzedAt"`
@@ -213,6 +232,9 @@ func (a *App) fillInspirationURLs(v *InspirationVideo) {
 	}
 	if v.Mentions == nil {
 		v.Mentions = []InspirationMention{}
+	}
+	if v.Takeaways == nil {
+		v.Takeaways = []InspirationTakeaway{}
 	}
 	if base == "" || v.Folder == "" {
 		return
@@ -668,6 +690,15 @@ func (a *App) processInspirationVideo(id, videoURL string) {
 		a.inspirationStatus(id, inspirationError, err.Error(), 0)
 		return
 	}
+
+	// --- Takeaways ----------------------------------------------------
+	// A failed extraction leaves the manifest in place: the video is still
+	// studied, it just has nothing lifted out of it yet, and the backfill
+	// picks it up on the next launch.
+	a.inspirationStatus(id, inspirationExtracting, "", 0)
+	if err := a.extractInspirationTakeaways(id); err != nil {
+		log.Printf("jax: inspiration takeaways: %v", err)
+	}
 	a.inspirationStatus(id, inspirationReady, "", 0)
 }
 
@@ -839,6 +870,145 @@ func (a *App) analyzeInspirationVideo(id string) error {
 		v.AnalyzedAt = time.Now().UTC().Format(time.RFC3339)
 	})
 	return nil
+}
+
+// inspirationTakeawayInstructions briefs the second pass: what a producer can
+// actually use, lifted out of the video's own outline.
+const inspirationTakeawayInstructions = `You are reading the study notes a creator's reference library holds for one YouTube video: its summary, its outline, its beats, and what it names. Pull out what another creator could take away and use.
+
+Respond with a single JSON object and nothing else:
+{
+  "takeaways": [{"kind": "tip|technique|concept|hook|format|other", "title": "<short label>", "detail": "<what the video does or says, in one or two sentences>", "apply": "<how another creator could use this on their own channel>", "atSecs": 0}]
+}
+
+Rules:
+- 5-15 takeaways, ordered by how useful they are, not by when they appear.
+- Only what the notes actually support — never invent advice the video does not give.
+- kind: "tip" for concrete advice, "technique" for how something is executed, "concept" for an idea or framing, "hook" for an attention device, "format" for structure or packaging, "other" for anything else.
+- atSecs is seconds from the start of the video, taken from the beats; use -1 when a takeaway is about the video as a whole.
+- Do not wrap the JSON in code fences.`
+
+// ExtractInspirationTakeaways re-runs the takeaway pass over a studied video
+// (the pipeline runs it once; the video page offers it again).
+func (a *App) ExtractInspirationTakeaways(id string) error {
+	a.inspirationStatus(id, inspirationExtracting, "", 0)
+	if err := a.extractInspirationTakeaways(id); err != nil {
+		a.inspirationStatus(id, inspirationError, err.Error(), 0)
+		return err
+	}
+	a.inspirationStatus(id, inspirationReady, "", 0)
+	return nil
+}
+
+// extractInspirationTakeaways asks the connected AI what can be learned from a
+// studied video and stores the answer. It reads the manifest rather than the
+// transcript: the outline is the digest the first pass already produced.
+func (a *App) extractInspirationTakeaways(id string) error {
+	video, err := a.GetInspirationVideo(id)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(video.Outline) == "" && len(video.Beats) == 0 {
+		return fmt.Errorf("that video has not been studied yet")
+	}
+
+	var in strings.Builder
+	fmt.Fprintf(&in, "# Video\nTitle: %s\n", video.Title)
+	if video.DurationSecs > 0 {
+		fmt.Fprintf(&in, "Duration: %s\n", formatClock(video.DurationSecs))
+	}
+	if video.Summary != "" {
+		fmt.Fprintf(&in, "\n## Summary\n%s\n", video.Summary)
+	}
+	if video.Outline != "" {
+		fmt.Fprintf(&in, "\n## Outline\n%s\n", video.Outline)
+	}
+	if len(video.Beats) > 0 {
+		in.WriteString("\n## Beats\n")
+		for _, b := range video.Beats {
+			fmt.Fprintf(&in, "- [%s] %s — %s\n", formatClock(b.AtSecs), b.Title, b.Summary)
+		}
+	}
+	if len(video.Mentions) > 0 {
+		in.WriteString("\n## Named products, services & tools\n")
+		for _, m := range video.Mentions {
+			fmt.Fprintf(&in, "- %s (%s) %s\n", m.Name, m.Kind, m.Detail)
+		}
+	}
+
+	text, err := a.askAIText(inspirationTakeawayInstructions, in.String())
+	if err != nil {
+		return err
+	}
+	var parsed struct {
+		Takeaways []InspirationTakeaway `json:"takeaways"`
+	}
+	if err := json.Unmarshal([]byte(extractJSONObject(text)), &parsed); err != nil {
+		return fmt.Errorf("the model's takeaways could not be read: %w", err)
+	}
+	if len(parsed.Takeaways) == 0 {
+		return fmt.Errorf("the model returned no takeaways")
+	}
+
+	a.mutateInspirationVideo(id, func(v *InspirationVideo) {
+		v.Takeaways = parsed.Takeaways
+		v.TakeawaysAt = time.Now().UTC().Format(time.RFC3339)
+	})
+	return nil
+}
+
+// inspirationBackfill keeps the takeaway backfill to one run at a time: it is
+// started at launch and again whenever the library changes shape.
+var inspirationBackfill struct {
+	sync.Mutex
+	running bool
+}
+
+// backfillInspirationTakeaways works through the studied videos that have no
+// takeaways yet, one at a time so the AI runner is never asked for two
+// answers at once. It runs in the background at launch, so a video studied
+// before this pass existed fills itself in without anyone opening its page.
+func (a *App) backfillInspirationTakeaways() {
+	inspirationBackfill.Lock()
+	if inspirationBackfill.running {
+		inspirationBackfill.Unlock()
+		return
+	}
+	inspirationBackfill.running = true
+	inspirationBackfill.Unlock()
+	defer func() {
+		inspirationBackfill.Lock()
+		inspirationBackfill.running = false
+		inspirationBackfill.Unlock()
+	}()
+
+	pending := []string{}
+	for _, v := range a.getInspiration().Videos {
+		if len(v.Takeaways) > 0 || strings.TrimSpace(v.Outline) == "" {
+			continue
+		}
+		if v.Status != inspirationReady {
+			continue
+		}
+		pending = append(pending, v.ID)
+	}
+	if len(pending) == 0 {
+		return
+	}
+	log.Printf("jax: inspiration takeaways: %d video(s) to catch up on", len(pending))
+	for _, id := range pending {
+		if a.ctx == nil {
+			return
+		}
+		a.inspirationStatus(id, inspirationExtracting, "", 0)
+		if err := a.extractInspirationTakeaways(id); err != nil {
+			log.Printf("jax: inspiration takeaways %s: %v", id, err)
+			// Leave the video studied; the next launch tries again.
+			a.inspirationStatus(id, inspirationReady, "", 0)
+			continue
+		}
+		a.inspirationStatus(id, inspirationReady, "", 0)
+	}
 }
 
 // DeleteInspirationVideo removes a video from the library and its downloaded

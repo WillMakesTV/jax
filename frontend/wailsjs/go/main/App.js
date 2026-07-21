@@ -266,6 +266,10 @@ export function ExportPlanTimeline(arg1, arg2) {
   return window['go']['main']['App']['ExportPlanTimeline'](arg1, arg2);
 }
 
+export function ExtractInspirationTakeaways(arg1) {
+  return window['go']['main']['App']['ExtractInspirationTakeaways'](arg1);
+}
+
 export function GenerateClipIdeas(arg1, arg2, arg3) {
   return window['go']['main']['App']['GenerateClipIdeas'](arg1, arg2, arg3);
 }

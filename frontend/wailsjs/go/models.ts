@@ -1669,6 +1669,26 @@ export class InspirationMention {
         this.atSecs = source["atSecs"];
     }
 }
+export class InspirationTakeaway {
+    kind: string;
+    title: string;
+    detail: string;
+    apply: string;
+    atSecs: number;
+
+    static createFrom(source: any = {}) {
+        return new InspirationTakeaway(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.kind = source["kind"];
+        this.title = source["title"];
+        this.detail = source["detail"];
+        this.apply = source["apply"];
+        this.atSecs = source["atSecs"];
+    }
+}
 export class InspirationVideo {
     id: string;
     channelId: string;
@@ -1698,6 +1718,8 @@ export class InspirationVideo {
     beats: InspirationBeat[];
     links: InspirationLink[];
     mentions: InspirationMention[];
+    takeaways: InspirationTakeaway[];
+    takeawaysAt: string;
     addedAt: string;
     analyzedAt: string;
 
@@ -1735,6 +1757,8 @@ export class InspirationVideo {
         this.beats = this.convertValues(source["beats"], InspirationBeat);
         this.links = this.convertValues(source["links"], InspirationLink);
         this.mentions = this.convertValues(source["mentions"], InspirationMention);
+        this.takeaways = this.convertValues(source["takeaways"], InspirationTakeaway);
+        this.takeawaysAt = source["takeawaysAt"];
         this.addedAt = source["addedAt"];
         this.analyzedAt = source["analyzedAt"];
     }

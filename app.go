@@ -206,6 +206,10 @@ func (a *App) startup(ctx context.Context) {
 	go a.snapshotMetricsDaily()
 	// Re-hide the window from screen capture if the preference is on.
 	go a.restoreCaptureExclusion()
+	// Lift takeaways out of any inspiration video studied before that pass
+	// existed, without waiting for someone to open its page (see
+	// inspiration.go).
+	go a.backfillInspirationTakeaways()
 }
 
 // shutdown is called when the app closes. It ends the sidecar processes and

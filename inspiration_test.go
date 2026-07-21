@@ -90,7 +90,8 @@ func TestInspirationLibrary(t *testing.T) {
 	}
 	// A tracked (not yet downloaded) video has no local address, and its
 	// slices are never nil for the frontend.
-	if got[1].MediaURL != "" || got[1].Tags == nil || got[1].Beats == nil {
+	if got[1].MediaURL != "" || got[1].Tags == nil || got[1].Beats == nil ||
+		got[1].Takeaways == nil {
 		t.Fatalf("tracked video: %+v", got[1])
 	}
 

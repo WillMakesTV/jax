@@ -34,6 +34,7 @@ const STATUS_LABELS: Record<string, string> = {
   downloading: 'Downloading',
   transcribing: 'Transcribing',
   analyzing: 'Studying',
+  extracting: 'Extracting takeaways',
   ready: 'Studied',
   error: 'Failed',
 }
@@ -43,7 +44,8 @@ export function isWorking(status: string): boolean {
   return (
     status === 'downloading' ||
     status === 'transcribing' ||
-    status === 'analyzing'
+    status === 'analyzing' ||
+    status === 'extracting'
   )
 }
 

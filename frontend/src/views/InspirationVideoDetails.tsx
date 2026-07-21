@@ -2,6 +2,7 @@ import {
   Download,
   ExternalLink,
   Eye,
+  Lightbulb,
   Link2,
   Loader2,
   MessageSquare,
@@ -13,6 +14,7 @@ import clsx from 'clsx'
 import {useCallback, useEffect, useState} from 'react'
 import {
   AnalyzeInspirationVideo,
+  ExtractInspirationTakeaways,
   GetInspirationVideo,
   ProcessInspirationVideo,
 } from '../../wailsjs/go/main/App'
@@ -25,12 +27,22 @@ import {formatCompact, formatDate} from '../lib/format'
 import {clock, inspirationError} from './Inspiration'
 import {isWorking, StatusPill} from './InspirationChannelDetails'
 
-type VideoTab = 'outline' | 'manifest' | 'transcript'
+type VideoTab = 'takeaways' | 'outline' | 'manifest' | 'transcript'
+
+/** How each takeaway's kind reads on its chip. */
+const TAKEAWAY_KINDS: Record<string, string> = {
+  tip: 'Tip',
+  technique: 'Technique',
+  concept: 'Concept',
+  hook: 'Hook',
+  format: 'Format',
+  other: 'Note',
+}
 
 /**
  * One inspiration video in full: the local copy, the platform metadata, the
- * AI-built outline and manifest (links, products, services), and the
- * transcript it was all read from.
+ * takeaways and AI-built outline and manifest (links, products, services),
+ * and the transcript it was all read from.
  */
 export function InspirationVideoDetails({
   video: initial,
@@ -38,7 +50,7 @@ export function InspirationVideoDetails({
   video: main.InspirationVideo
 }) {
   const [video, setVideo] = useState(initial)
-  const [tab, setTab] = useState<VideoTab>('outline')
+  const [tab, setTab] = useState<VideoTab>('takeaways')
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
 
@@ -52,11 +64,12 @@ export function InspirationVideoDetails({
   // The pipeline persists each step, so an open page follows the run.
   useDataChanged(['inspiration'], load)
 
-  const run = async (what: 'download' | 'analyze') => {
+  const run = async (what: 'download' | 'analyze' | 'takeaways') => {
     setBusy(what)
     setError('')
     try {
       if (what === 'download') await ProcessInspirationVideo(video.id)
+      else if (what === 'takeaways') await ExtractInspirationTakeaways(video.id)
       else await AnalyzeInspirationVideo(video.id)
     } catch (err) {
       setError(inspirationError(err, 'That did not work — try again.'))
@@ -66,7 +79,9 @@ export function InspirationVideoDetails({
   }
 
   const working = isWorking(video.status)
+  const studied = Boolean(video.outline) || video.beats.length > 0
   const tabs: {id: VideoTab; label: string; count?: number}[] = [
+    {id: 'takeaways', label: 'Takeaways', count: video.takeaways.length},
     {id: 'outline', label: 'Outline'},
     {
       id: 'manifest',
@@ -255,6 +270,73 @@ export function InspirationVideoDetails({
 
         {/* The selected section, across the full width of the page. */}
         <div className="flex min-w-0 flex-col gap-4">
+          {tab === 'takeaways' && (
+            <div className="flex flex-col gap-3">
+              {video.takeaways.length === 0 ? (
+                <Empty
+                  text={
+                    working
+                      ? 'Takeaways are lifted out of the outline once the video has been studied.'
+                      : studied
+                        ? 'No takeaways yet — they are extracted in the background, or run it now below.'
+                        : 'No takeaways yet — download and study this video first.'
+                  }
+                />
+              ) : (
+                <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {video.takeaways.map((t, i) => (
+                    <li
+                      key={`${t.title}-${i}`}
+                      className="flex flex-col gap-2 rounded-xl border border-edge bg-surface p-4"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-full border border-edge bg-bg px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">
+                          {TAKEAWAY_KINDS[t.kind] ?? t.kind}
+                        </span>
+                        {t.atSecs >= 0 && (
+                          <span className="font-mono text-xs text-accent">
+                            {clock(t.atSecs)}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm font-semibold text-fg">{t.title}</p>
+                      {t.detail && (
+                        <p className="text-sm text-fg-muted">{t.detail}</p>
+                      )}
+                      {t.apply && (
+                        <p className="flex gap-2 rounded-lg bg-surface-hover p-2 text-sm text-fg">
+                          <Lightbulb
+                            size={14}
+                            aria-hidden
+                            className="mt-0.5 shrink-0 text-accent"
+                          />
+                          {t.apply}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {studied && !working && (
+                <button
+                  type="button"
+                  onClick={() => void run('takeaways')}
+                  disabled={busy !== ''}
+                  className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+                >
+                  {busy === 'takeaways' ? (
+                    <Loader2 size={14} aria-hidden className="animate-spin" />
+                  ) : (
+                    <RefreshCw size={14} aria-hidden />
+                  )}
+                  {video.takeaways.length > 0
+                    ? 'Extract again'
+                    : 'Extract takeaways'}
+                </button>
+              )}
+            </div>
+          )}
+
           {tab === 'outline' && (
             <div className="flex flex-col gap-4">
               {video.beats.length > 0 && (
