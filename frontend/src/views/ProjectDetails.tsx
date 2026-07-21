@@ -427,6 +427,8 @@ function OverviewSection({
   // Generation runs in ProjectThumbsProvider so it survives navigating away
   // and reports through the status bar; only the upload is page-local.
   const [thumbBusy, setThumbBusy] = useState<'' | 'upload'>('')
+  // The cover reads at card size; clicking it opens the whole picture.
+  const [thumbOpen, setThumbOpen] = useState(false)
   const projectThumbs = useProjectThumbs()
   const generating = projectThumbs.jobs.some((j) => j.projectId === project.id)
 
@@ -634,11 +636,22 @@ function OverviewSection({
         <div className="overflow-hidden rounded-xl border border-edge bg-surface">
           <div className="flex aspect-video w-full items-center justify-center bg-surface-hover text-fg-muted">
             {project.thumbnailUrl ? (
-              <img
-                src={project.thumbnailUrl}
-                alt={`${project.title} thumbnail`}
-                className="h-full w-full object-cover"
-              />
+              // The card crops to 16:9; the dialog shows the whole image.
+              <button
+                type="button"
+                onClick={() => setThumbOpen(true)}
+                title="View full size"
+                className="group/img relative block h-full w-full"
+              >
+                <img
+                  src={project.thumbnailUrl}
+                  alt={`${project.title} thumbnail`}
+                  className="h-full w-full object-cover"
+                />
+                <span className="absolute inset-0 hidden items-center justify-center bg-black/40 text-[10px] font-semibold text-white group-hover/img:flex">
+                  View full size
+                </span>
+              </button>
             ) : (
               <ImageIcon size={24} aria-hidden />
             )}
@@ -749,6 +762,21 @@ function OverviewSection({
           </span>
         </button>
       </aside>
+
+      <Modal
+        open={thumbOpen}
+        onClose={() => setThumbOpen(false)}
+        title={project.title || 'Project image'}
+        maxWidthClass="max-w-5xl"
+      >
+        {project.thumbnailUrl && (
+          <img
+            src={project.thumbnailUrl}
+            alt={`${project.title} thumbnail, full size`}
+            className="w-full rounded-lg"
+          />
+        )}
+      </Modal>
 
       <Modal
         open={chatOpen}
