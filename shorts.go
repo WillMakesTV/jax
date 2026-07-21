@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bp-temp/internal/httpx"
 	"fmt"
 	"log"
 	"net/http"
@@ -172,9 +171,9 @@ func (a *App) fetchFacebookReels(conn serviceConn) ([]Video, error) {
 			Views        int64   `json:"post_views"`
 		} `json:"data"`
 	}
-	endpoint := fbGraphURL + "/" + url.PathEscape(conn.userID) +
+	endpoint := "/" + url.PathEscape(conn.userID) +
 		"/video_reels?limit=50&fields=id,title,description,permalink_url,created_time,length,picture,post_views"
-	if _, err := httpx.GetJSON(endpoint, metaHeaders(conn.token), &r); err != nil {
+	if _, err := metaClient(conn.token).Get(endpoint, &r); err != nil {
 		return nil, err
 	}
 
@@ -218,9 +217,9 @@ func fetchInstagramReelViews(conn serviceConn, mediaID string) (int64, error) {
 				} `json:"values"`
 			} `json:"data"`
 		}
-		endpoint := fbGraphURL + "/" + url.PathEscape(mediaID) +
+		endpoint := "/" + url.PathEscape(mediaID) +
 			"/insights?metric=" + metric
-		if _, err := httpx.GetJSON(endpoint, metaHeaders(conn.token), &r); err != nil {
+		if _, err := metaClient(conn.token).Get(endpoint, &r); err != nil {
 			return 0, err
 		}
 		for _, m := range r.Data {
@@ -260,9 +259,9 @@ func (a *App) fetchInstagramReels(conn serviceConn) ([]Video, error) {
 			LikeCount        int64  `json:"like_count"`
 		} `json:"data"`
 	}
-	endpoint := fbGraphURL + "/" + url.PathEscape(conn.userID) +
+	endpoint := "/" + url.PathEscape(conn.userID) +
 		"/media?limit=50&fields=id,caption,media_type,media_product_type,permalink,thumbnail_url,media_url,timestamp,like_count"
-	if _, err := httpx.GetJSON(endpoint, metaHeaders(conn.token), &r); err != nil {
+	if _, err := metaClient(conn.token).Get(endpoint, &r); err != nil {
 		return nil, err
 	}
 

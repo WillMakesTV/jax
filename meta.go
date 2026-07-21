@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bp-temp/internal/httpx"
+	"bp-temp/internal/platforms/meta"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -38,9 +38,8 @@ import (
 // ---------------------------------------------------------------------------
 
 const (
-	fbGraphURL        = "https://graph.facebook.com/v21.0"
-	fbDeviceLoginURL  = fbGraphURL + "/device/login"
-	fbDeviceStatusURL = fbGraphURL + "/device/login_status"
+	fbDeviceLoginURL  = meta.GraphBase + "/device/login"
+	fbDeviceStatusURL = meta.GraphBase + "/device/login_status"
 
 	// fbScopes: Pages (list/read/engage/post/publish) plus the Instagram
 	// permissions the linked business account needs. pages_manage_posts
@@ -58,7 +57,15 @@ const (
 
 // metaHeaders authenticates a Graph API call with the connection's token.
 func metaHeaders(token string) map[string]string {
-	return map[string]string{"Authorization": "Bearer " + token}
+	return metaClient(token).Headers()
+}
+
+// metaClient adapts a token into the Graph caller (see
+// internal/platforms/meta), which owns the base URL, the API version and the
+// auth header. The token is the user token for account discovery and the Page
+// token for everything the Page or its Instagram account owns.
+func metaClient(token string) meta.Client {
+	return meta.Client{Token: token}
 }
 
 // ---------------------------------------------------------------------------
@@ -187,7 +194,7 @@ func firstFacebookPage(userToken string) (fbPage, error) {
 	var r struct {
 		Data []fbPage `json:"data"`
 	}
-	if _, err := httpx.GetJSON(fbGraphURL+"/me/accounts?fields=id,name,access_token", metaHeaders(userToken), &r); err != nil {
+	if _, err := metaClient(userToken).Get("/me/accounts?fields=id,name,access_token", &r); err != nil {
 		return fbPage{}, fmt.Errorf("could not list your Facebook Pages: %v", err)
 	}
 	if len(r.Data) == 0 {
@@ -211,7 +218,7 @@ func fbUserName(userToken string) string {
 		Name string `json:"name"`
 		ID   string `json:"id"`
 	}
-	if _, err := httpx.GetJSON(fbGraphURL+"/me?fields=id,name", metaHeaders(userToken), &r); err != nil {
+	if _, err := metaClient(userToken).Get("/me?fields=id,name", &r); err != nil {
 		return "unknown account"
 	}
 	return firstNonEmpty(r.Name, r.ID, "unknown account")
@@ -225,7 +232,7 @@ func fbPermissionGranted(userToken, permission string) bool {
 			Status     string `json:"status"`
 		} `json:"data"`
 	}
-	if _, err := httpx.GetJSON(fbGraphURL+"/me/permissions", metaHeaders(userToken), &r); err != nil {
+	if _, err := metaClient(userToken).Get("/me/permissions", &r); err != nil {
 		return false
 	}
 	for _, p := range r.Data {
@@ -265,8 +272,8 @@ func (a *App) ListFacebookPages() ([]FBPageInfo, error) {
 			} `json:"instagram_business_account"`
 		} `json:"data"`
 	}
-	endpoint := fbGraphURL + "/me/accounts?fields=id,name,instagram_business_account{username}&limit=100"
-	if _, err := httpx.GetJSON(endpoint, metaHeaders(conn.refreshToken), &r); err != nil {
+	endpoint := "/me/accounts?fields=id,name,instagram_business_account{username}&limit=100"
+	if _, err := metaClient(conn.refreshToken).Get(endpoint, &r); err != nil {
 		return nil, fmt.Errorf("could not list your Facebook Pages: %v", err)
 	}
 	out := make([]FBPageInfo, 0, len(r.Data))
@@ -293,7 +300,7 @@ func (a *App) SelectFacebookPage(pageID string) (ServiceStatus, error) {
 	var r struct {
 		Data []fbPage `json:"data"`
 	}
-	if _, err := httpx.GetJSON(fbGraphURL+"/me/accounts?fields=id,name,access_token&limit=100", metaHeaders(conn.refreshToken), &r); err != nil {
+	if _, err := metaClient(conn.refreshToken).Get("/me/accounts?fields=id,name,access_token&limit=100", &r); err != nil {
 		return ServiceStatus{}, fmt.Errorf("could not list your Facebook Pages: %v", err)
 	}
 	for _, p := range r.Data {
@@ -342,9 +349,9 @@ func (a *App) ConnectInstagram() (ServiceStatus, error) {
 			ProfilePicture string `json:"profile_picture_url"`
 		} `json:"instagram_business_account"`
 	}
-	endpoint := fbGraphURL + "/" + url.PathEscape(conn.userID) +
+	endpoint := "/" + url.PathEscape(conn.userID) +
 		"?fields=instagram_business_account{id,username,profile_picture_url}"
-	if _, err := httpx.GetJSON(endpoint, metaHeaders(conn.token), &r); err != nil {
+	if _, err := metaClient(conn.token).Get(endpoint, &r); err != nil {
 		return ServiceStatus{}, fmt.Errorf("could not read the Page's Instagram account: %v", err)
 	}
 	ig := r.InstagramBusinessAccount
@@ -398,9 +405,9 @@ func (a *App) fbLiveNow(conn serviceConn) (*fbLiveVideo, error) {
 	var r struct {
 		Data []fbLiveVideo `json:"data"`
 	}
-	endpoint := fbGraphURL + "/" + url.PathEscape(conn.userID) +
+	endpoint := "/" + url.PathEscape(conn.userID) +
 		`/live_videos?broadcast_status=["LIVE"]&limit=1&fields=id,title,description,permalink_url,live_views,creation_time`
-	if _, err := httpx.GetJSON(endpoint, metaHeaders(conn.token), &r); err != nil {
+	if _, err := metaClient(conn.token).Get(endpoint, &r); err != nil {
 		return nil, err
 	}
 	a.mu.Lock()
@@ -466,9 +473,9 @@ func (a *App) fetchFacebookLive(conn serviceConn) LiveStream {
 				Source string `json:"source"`
 			} `json:"cover"`
 		}
-		endpoint := fbGraphURL + "/" + url.PathEscape(conn.userID) +
+		endpoint := "/" + url.PathEscape(conn.userID) +
 			"?fields=link,fan_count,followers_count,picture{url},cover{source}"
-		if _, err := httpx.GetJSON(endpoint, metaHeaders(conn.token), &page); err != nil {
+		if _, err := metaClient(conn.token).Get(endpoint, &page); err != nil {
 			return out, err
 		}
 		out.Link = page.Link
@@ -519,8 +526,8 @@ func (a *App) igLiveNow(conn serviceConn) (string, error) {
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	endpoint := fbGraphURL + "/" + url.PathEscape(conn.userID) + "/live_media?limit=1&fields=id"
-	if _, err := httpx.GetJSON(endpoint, metaHeaders(conn.token), &r); err != nil {
+	endpoint := "/" + url.PathEscape(conn.userID) + "/live_media?limit=1&fields=id"
+	if _, err := metaClient(conn.token).Get(endpoint, &r); err != nil {
 		return "", err
 	}
 	id := ""
@@ -572,9 +579,9 @@ func (a *App) fetchInstagramLive(conn serviceConn) LiveStream {
 			MediaCount        int64  `json:"media_count"`
 			ProfilePictureURL string `json:"profile_picture_url"`
 		}
-		endpoint := fbGraphURL + "/" + url.PathEscape(conn.userID) +
+		endpoint := "/" + url.PathEscape(conn.userID) +
 			"?fields=followers_count,media_count,profile_picture_url"
-		if _, err := httpx.GetJSON(endpoint, metaHeaders(conn.token), &user); err != nil {
+		if _, err := metaClient(conn.token).Get(endpoint, &user); err != nil {
 			return out, err
 		}
 		out.Followers = fmtCount(user.FollowersCount)
@@ -657,9 +664,9 @@ func (a *App) GetFacebookLiveChat() (LiveChatPage, error) {
 			CreatedTime string `json:"created_time"`
 		} `json:"data"`
 	}
-	endpoint := fbGraphURL + "/" + url.PathEscape(videoID) +
+	endpoint := "/" + url.PathEscape(videoID) +
 		"/comments?order=reverse_chronological&live_filter=no_filter&limit=25&fields=id,message,from{id,name,picture{url}},created_time"
-	if _, err := httpx.GetJSON(endpoint, metaHeaders(conn.token), &r); err != nil {
+	if _, err := metaClient(conn.token).Get(endpoint, &r); err != nil {
 		// The live video may have just ended; re-resolve on the next poll.
 		a.mu.Lock()
 		a.fbLiveVideoID = ""
@@ -721,9 +728,9 @@ func (a *App) GetInstagramLiveChat() (LiveChatPage, error) {
 			Timestamp string `json:"timestamp"`
 		} `json:"data"`
 	}
-	endpoint := fbGraphURL + "/" + url.PathEscape(mediaID) +
+	endpoint := "/" + url.PathEscape(mediaID) +
 		"/comments?fields=id,text,username,from{id,username},timestamp"
-	if _, err := httpx.GetJSON(endpoint, metaHeaders(conn.token), &r); err != nil {
+	if _, err := metaClient(conn.token).Get(endpoint, &r); err != nil {
 		a.mu.Lock()
 		a.igLiveMediaID = ""
 		a.mu.Unlock()
@@ -758,10 +765,7 @@ func (a *App) sendFacebookChat(conn serviceConn, message string) (int, error) {
 	if live == nil {
 		return 0, fmt.Errorf("no live Facebook broadcast to comment on")
 	}
-	return httpx.PostJSON(
-		fbGraphURL+"/"+url.PathEscape(live.ID)+"/comments",
-		metaHeaders(conn.token), map[string]string{"message": message}, nil,
-	)
+	return metaClient(conn.token).Post("/"+url.PathEscape(live.ID)+"/comments", map[string]string{"message": message}, nil)
 }
 
 // sendInstagramChat comments on the live media as the account.
@@ -773,10 +777,7 @@ func (a *App) sendInstagramChat(conn serviceConn, message string) (int, error) {
 	if mediaID == "" {
 		return 0, fmt.Errorf("no live Instagram broadcast to comment on")
 	}
-	return httpx.PostJSON(
-		fbGraphURL+"/"+url.PathEscape(mediaID)+"/comments",
-		metaHeaders(conn.token), map[string]string{"message": message}, nil,
-	)
+	return metaClient(conn.token).Post("/"+url.PathEscape(mediaID)+"/comments", map[string]string{"message": message}, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -797,9 +798,9 @@ func (a *App) fetchFacebookPastLives(conn serviceConn) ([]PastBroadcast, error) 
 			} `json:"video"`
 		} `json:"data"`
 	}
-	endpoint := fbGraphURL + "/" + url.PathEscape(conn.userID) +
+	endpoint := "/" + url.PathEscape(conn.userID) +
 		`/live_videos?broadcast_status=["VOD"]&limit=20&fields=title,permalink_url,creation_time,video{id,length}`
-	if _, err := httpx.GetJSON(endpoint, metaHeaders(conn.token), &r); err != nil {
+	if _, err := metaClient(conn.token).Get(endpoint, &r); err != nil {
 		return nil, err
 	}
 	out := make([]PastBroadcast, 0, len(r.Data))
@@ -834,9 +835,9 @@ func (a *App) fetchFacebookVideos(conn serviceConn) ([]Video, error) {
 			Picture      string  `json:"picture"`
 		} `json:"data"`
 	}
-	endpoint := fbGraphURL + "/" + url.PathEscape(conn.userID) +
+	endpoint := "/" + url.PathEscape(conn.userID) +
 		"/videos?limit=50&fields=id,title,description,permalink_url,created_time,length,live_status,picture"
-	if _, err := httpx.GetJSON(endpoint, metaHeaders(conn.token), &r); err != nil {
+	if _, err := metaClient(conn.token).Get(endpoint, &r); err != nil {
 		return nil, err
 	}
 	out := make([]Video, 0, len(r.Data))
@@ -885,9 +886,9 @@ func (a *App) fetchFacebookVideoDetails(conn serviceConn, id string) (VideoDetai
 			} `json:"summary"`
 		} `json:"likes"`
 	}
-	endpoint := fbGraphURL + "/" + url.PathEscape(id) +
+	endpoint := "/" + url.PathEscape(id) +
 		"?fields=id,title,description,permalink_url,created_time,length,picture,comments.limit(0).summary(true),likes.limit(0).summary(true)"
-	if _, err := httpx.GetJSON(endpoint, metaHeaders(conn.token), &v); err != nil {
+	if _, err := metaClient(conn.token).Get(endpoint, &v); err != nil {
 		return VideoDetails{}, err
 	}
 	secs := int(v.Length)
@@ -941,7 +942,7 @@ func (a *App) applyPlanToFacebook(plan PlannedStream, _ *ContentSeries) string {
 		if strings.TrimSpace(plan.Description) != "" {
 			payload["description"] = plan.Description
 		}
-		if _, err := httpx.PostJSON(fbGraphURL+"/"+url.PathEscape(live.ID), metaHeaders(conn.token), payload, nil); err != nil {
+		if _, err := metaClient(conn.token).Post("/"+url.PathEscape(live.ID), payload, nil); err != nil {
 			log.Printf("jax: apply plan to facebook: %v", err)
 			warnings = append(warnings, "Facebook: the stream info could not be updated.")
 		}
@@ -974,10 +975,7 @@ func (a *App) fbAnnouncePlan(conn serviceConn, plan PlannedStream) string {
 	var resp struct {
 		ID string `json:"id"`
 	}
-	status, err := httpx.PostJSON(
-		fbGraphURL+"/"+url.PathEscape(conn.userID)+"/feed",
-		metaHeaders(conn.token), payload, &resp,
-	)
+	status, err := metaClient(conn.token).Post("/"+url.PathEscape(conn.userID)+"/feed", payload, &resp)
 	if err != nil {
 		log.Printf("jax: facebook announce: %v", err)
 		if status == 401 || status == 403 {
@@ -1052,7 +1050,7 @@ func fetchFacebookChatUser(conn serviceConn, id string) (ChatUserInfo, error) {
 			} `json:"data"`
 		} `json:"picture"`
 	}
-	if _, err := httpx.GetJSON(fbGraphURL+"/"+url.PathEscape(id)+"?fields=name,picture{url}", metaHeaders(conn.token), &u); err == nil {
+	if _, err := metaClient(conn.token).Get("/"+url.PathEscape(id)+"?fields=name,picture{url}", &u); err == nil {
 		info.DisplayName = u.Name
 		info.AvatarURL = u.Picture.Data.URL
 	}
@@ -1085,10 +1083,10 @@ func fetchInstagramChatUser(conn serviceConn, username string) (ChatUserInfo, er
 			Biography         string `json:"biography"`
 		} `json:"business_discovery"`
 	}
-	endpoint := fbGraphURL + "/" + url.PathEscape(conn.userID) +
+	endpoint := "/" + url.PathEscape(conn.userID) +
 		"?fields=business_discovery.username(" + url.QueryEscape(username) +
 		"){followers_count,media_count,profile_picture_url,biography}"
-	if _, err := httpx.GetJSON(endpoint, metaHeaders(conn.token), &r); err == nil {
+	if _, err := metaClient(conn.token).Get(endpoint, &r); err == nil {
 		bd := r.BusinessDiscovery
 		info.AvatarURL = bd.ProfilePictureURL
 		info.Description = bd.Biography
