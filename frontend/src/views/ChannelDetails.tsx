@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   BarChart3,
   Check,
   Clapperboard,
@@ -23,7 +22,6 @@ import {platformName} from '../services/services'
 interface ChannelDetailsProps {
   /** The connected platform whose channel to show ('twitch' | 'youtube' | 'kick'). */
   platform: string
-  onBack: () => void
   /** Open one of the channel's videos in the video details view. */
   onOpenVideo: (video: main.Video) => void
 }
@@ -33,11 +31,7 @@ interface ChannelDetailsProps {
  * (followers/subscribers/views/…), links out, and the channel's recent
  * videos. Reads from the shared live-data poll so metrics stay current.
  */
-export function ChannelDetails({
-  platform,
-  onBack,
-  onOpenVideo,
-}: ChannelDetailsProps) {
+export function ChannelDetails({platform, onOpenVideo}: ChannelDetailsProps) {
   const {platforms} = useLiveData()
   const stream = platforms.find((p) => p.platform === platform)
 
@@ -53,7 +47,6 @@ export function ChannelDetails({
   if (!stream) {
     return (
       <div className="flex flex-col">
-        <BackButton onBack={onBack} />
         <p className="text-sm text-fg-muted">
           This channel is no longer connected.
         </p>
@@ -68,8 +61,7 @@ export function ChannelDetails({
 
   return (
     <div className="flex flex-col">
-      <BackButton onBack={onBack} />
-
+      {/* No local back link: the top bar's global back covers it. */}
       <ChannelHero
         stream={stream}
         name={name}
@@ -341,19 +333,6 @@ function GrowthNote({value}: {value: number}) {
       {value > 0 ? '+' : '−'}
       {formatCompact(Math.abs(value))} in 30d
     </p>
-  )
-}
-
-function BackButton({onBack}: {onBack: () => void}) {
-  return (
-    <button
-      type="button"
-      onClick={onBack}
-      className="mb-4 inline-flex w-fit items-center gap-1.5 text-sm text-fg-muted transition-colors hover:text-fg"
-    >
-      <ArrowLeft size={16} aria-hidden />
-      Back to Dashboard
-    </button>
   )
 }
 

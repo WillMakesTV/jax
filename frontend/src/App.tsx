@@ -712,7 +712,6 @@ function App() {
             {view === 'channel-details' && detailChannel && (
               <ChannelDetails
                 platform={detailChannel}
-                onBack={() => setView('dashboard')}
                 onOpenVideo={openVideoDetails}
               />
             )}
