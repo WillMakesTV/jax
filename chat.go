@@ -303,17 +303,9 @@ func (a *App) SendBroadcastChat(message string) []BroadcastSendResult {
 	if conn, ok := a.freshConn("youtube"); ok {
 		r := BroadcastSendResult{Platform: "youtube"}
 		headers := map[string]string{"Authorization": "Bearer " + conn.token}
+		client := youtubeClient(conn)
 		send := func(chatID string) (int, error) {
-			payload := map[string]any{
-				"snippet": map[string]any{
-					"liveChatId": chatID,
-					"type":       "textMessageEvent",
-					"textMessageDetails": map[string]string{
-						"messageText": message,
-					},
-				},
-			}
-			return httpx.PostJSON(youtubeChatMessagesURL+"?part=snippet", headers, payload, nil)
+			return client.SendChatMessage(chatID, message)
 		}
 
 		chatID := a.resolveYouTubeChatID(headers)

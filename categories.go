@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bp-temp/internal/httpx"
 	"errors"
 	"fmt"
 	"net/http"
@@ -54,11 +53,6 @@ func (a *App) SearchTwitchCategories(query string) ([]ServiceCategory, error) {
 	return out, nil
 }
 
-// YouTube's video categories are a fixed per-region list; the US list is used
-// as the canonical set (IDs are identical across regions for the assignable
-// categories).
-const youtubeCategoriesURL = "https://www.googleapis.com/youtube/v3/videoCategories?part=snippet&regionCode=US"
-
 // GetYouTubeCategories returns the video categories YouTube allows a video or
 // broadcast to be assigned to, sorted by name. Never nil on success.
 func (a *App) GetYouTubeCategories() ([]ServiceCategory, error) {
@@ -67,18 +61,7 @@ func (a *App) GetYouTubeCategories() ([]ServiceCategory, error) {
 		return nil, fmt.Errorf("connect YouTube in Settings → Services first")
 	}
 
-	var r struct {
-		Items []struct {
-			ID      string `json:"id"`
-			Snippet struct {
-				Title      string `json:"title"`
-				Assignable bool   `json:"assignable"`
-			} `json:"snippet"`
-		} `json:"items"`
-	}
-	status, err := httpx.GetJSON(youtubeCategoriesURL, map[string]string{
-		"Authorization": "Bearer " + conn.token,
-	}, &r)
+	found, status, err := youtubeClient(conn).Categories()
 	if err != nil {
 		if status == http.StatusUnauthorized {
 			return nil, errors.New(errReauth)
@@ -86,12 +69,12 @@ func (a *App) GetYouTubeCategories() ([]ServiceCategory, error) {
 		return nil, fmt.Errorf("YouTube categories request failed: %v", err)
 	}
 
-	out := make([]ServiceCategory, 0, len(r.Items))
-	for _, it := range r.Items {
-		if !it.Snippet.Assignable {
+	out := make([]ServiceCategory, 0, len(found))
+	for _, it := range found {
+		if !it.Assignable {
 			continue
 		}
-		out = append(out, ServiceCategory{ID: it.ID, Name: it.Snippet.Title})
+		out = append(out, ServiceCategory{ID: it.ID, Name: it.Title})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil

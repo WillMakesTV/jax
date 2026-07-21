@@ -3,6 +3,7 @@ package main
 import (
 	"bp-temp/internal/platforms/twitch"
 	"bp-temp/internal/httpx"
+	"bp-temp/internal/platforms/youtube"
 	"fmt"
 	"log"
 	"net/http"
@@ -158,6 +159,13 @@ const (
 
 func twitchHeaders(conn serviceConn) map[string]string {
 	return twitchClient(conn).Headers()
+}
+
+// youtubeClient adapts a stored connection into the Data API caller (see
+// internal/platforms/youtube). YouTube identifies the channel from the token,
+// so there is nothing else to carry.
+func youtubeClient(conn serviceConn) youtube.Client {
+	return youtube.Client{Token: conn.token}
 }
 
 // twitchClient adapts a stored connection into the Helix caller (see

@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bp-temp/internal/httpx"
 	"fmt"
-	"net/url"
 	"strings"
 )
 
@@ -20,8 +18,6 @@ import (
 // exposes no moderation the app can reach, so it says so plainly rather than
 // pretending the action landed.
 // ---------------------------------------------------------------------------
-
-const youtubeLiveChatBansURL = "https://www.googleapis.com/youtube/v3/liveChat/bans"
 
 // modErrorMessage maps an API failure to something the producer can act on.
 func modErrorMessage(platform string, status int, err error) error {
@@ -69,17 +65,7 @@ func (a *App) TimeoutChatUser(platform, userID string, seconds int, reason strin
 		if chatID == "" {
 			return fmt.Errorf("YouTube has no live chat open right now")
 		}
-		snippet := map[string]any{
-			"liveChatId":        chatID,
-			"type":              "permanent",
-			"bannedUserDetails": map[string]string{"channelId": userID},
-		}
-		if seconds > 0 {
-			snippet["type"] = "temporary"
-			snippet["banDurationSeconds"] = seconds
-		}
-		status, err := httpx.PostJSON(youtubeLiveChatBansURL+"?part=snippet", headers,
-			map[string]any{"snippet": snippet}, nil)
+		status, err := youtubeClient(conn).BanUser(chatID, userID, seconds)
 		if err != nil {
 			return modErrorMessage("youtube", status, err)
 		}
@@ -116,9 +102,7 @@ func (a *App) DeleteChatMessage(platform, messageID string) error {
 		if !ok {
 			return fmt.Errorf("connect YouTube in Settings → Services first")
 		}
-		headers := map[string]string{"Authorization": "Bearer " + conn.token}
-		status, err := httpx.DeleteResource(
-			youtubeChatMessagesURL+"?id="+url.QueryEscape(messageID), headers)
+		status, err := youtubeClient(conn).DeleteChatMessage(messageID)
 		if err != nil {
 			return modErrorMessage("youtube", status, err)
 		}

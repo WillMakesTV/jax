@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bp-temp/internal/httpx"
 	"fmt"
-	"net/url"
 	"strings"
 )
 
@@ -36,8 +34,6 @@ type ChatUserInfo struct {
 	SubTier     string       `json:"subTier"`
 	Details     []DetailItem `json:"details"`
 }
-
-const youtubeChannelByIDURL = "https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id="
 
 // GetChatUserInfo returns profile info for one chatter. id is the platform
 // user/channel id from the chat message; login is the Twitch login fallback
@@ -137,38 +133,10 @@ func fetchYouTubeChatUser(conn serviceConn, id string) (ChatUserInfo, error) {
 	if id == "" {
 		return ChatUserInfo{}, fmt.Errorf("no channel id to look up")
 	}
-	headers := map[string]string{"Authorization": "Bearer " + conn.token}
-
-	var channels struct {
-		Items []struct {
-			ID      string `json:"id"`
-			Snippet struct {
-				Title       string `json:"title"`
-				Description string `json:"description"`
-				CustomURL   string `json:"customUrl"`
-				PublishedAt string `json:"publishedAt"`
-				Thumbnails  struct {
-					Default struct {
-						URL string `json:"url"`
-					} `json:"default"`
-					Medium struct {
-						URL string `json:"url"`
-					} `json:"medium"`
-				} `json:"thumbnails"`
-			} `json:"snippet"`
-			Statistics struct {
-				SubscriberCount string `json:"subscriberCount"`
-				VideoCount      string `json:"videoCount"`
-			} `json:"statistics"`
-		} `json:"items"`
-	}
-	if _, err := httpx.GetJSON(youtubeChannelByIDURL+url.QueryEscape(id), headers, &channels); err != nil {
+	ch, err := youtubeClient(conn).ChannelByID(id)
+	if err != nil {
 		return ChatUserInfo{}, err
 	}
-	if len(channels.Items) == 0 {
-		return ChatUserInfo{}, fmt.Errorf("YouTube channel not found")
-	}
-	ch := channels.Items[0]
 
 	channelURL := "https://youtube.com/channel/" + ch.ID
 	if ch.Snippet.CustomURL != "" {
