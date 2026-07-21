@@ -154,13 +154,16 @@ func (a *App) serveUnifiedChat(w http.ResponseWriter, r *http.Request, action st
 		_, _ = w.Write([]byte(unifiedChatPage))
 	case "data":
 		// The overlay shows the broadcast on the air: the active session's
-		// chat only, matching the Broadcasting page's live feed. Between
-		// sessions the page explains itself instead of replaying history.
+		// chat and events only, matching the Broadcasting page's live feed.
+		// Between sessions the page explains itself instead of replaying
+		// history.
 		session := a.GetActiveStreamSession()
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"sessionActive": session.Active,
 			"messages":      a.GetSessionChatHistory(150),
+			// Follows, subs, gifts, and raids, run inline with the chat.
+			"events": a.GetSessionLiveEvents(50),
 		})
 	case "user":
 		// The user card behind clicking a message: profile info, the
@@ -204,7 +207,8 @@ func (a *App) serveUnifiedChat(w http.ResponseWriter, r *http.Request, action st
 }
 
 // unifiedChatPage is the overlay itself: a dark-gray chat column pinned
-// to the newest messages — the active session's chat only — with avatars,
+// to the newest messages — the active session's chat, with its follows,
+// subs, gifts, and raids inline on the same timeline — with avatars,
 // hover timestamps, a click-through user card (profile, their stored
 // messages, and Twitch's popout viewer card for ban/timeout/mod actions),
 // and a send box that broadcasts to every connected channel. Message
@@ -263,6 +267,20 @@ const unifiedChatPage = `<!DOCTYPE html>
   /* Kick emotes, drawn inline at line height (see appendBody). */
   .emote { height: 22px; width: auto; vertical-align: -5px; }
   .past .emote { height: 18px; vertical-align: -4px; }
+  /* Live events (follow, sub, gift, raid) sit in the chat's flow, tinted by
+     kind so they read as moments rather than messages. */
+  .evt { cursor: default; border-color: rgba(255, 255, 255, 0.2); }
+  .evt:hover { background: rgba(255, 255, 255, 0.06); }
+  .evt .author { margin-right: 4px; }
+  .evt-icon {
+    display: inline-block; margin-right: 6px; font-size: 14px;
+    vertical-align: 0; color: inherit;
+  }
+  .evt-follow { background: rgba(83, 252, 24, 0.14); border-color: rgba(83, 252, 24, 0.35); }
+  .evt-sub    { background: rgba(255, 196, 0, 0.14);  border-color: rgba(255, 196, 0, 0.38); }
+  .evt-gift   { background: rgba(255, 122, 0, 0.14);  border-color: rgba(255, 122, 0, 0.38); }
+  .evt-raid   { background: rgba(145, 70, 255, 0.18); border-color: rgba(145, 70, 255, 0.42); }
+  .evt-cheer  { background: rgba(0, 176, 255, 0.14);  border-color: rgba(0, 176, 255, 0.38); }
   .time {
     position: absolute; top: 7px; right: 10px;
     font-size: 11px; color: rgba(255, 255, 255, 0.5);
@@ -344,6 +362,11 @@ const unifiedChatPage = `<!DOCTYPE html>
     facebook: '#1877F2', instagram: '#E1306C', x: '#444444', tiktok: '#111111',
   }
 
+  // The event feed's vocabulary (see the events provider): one glyph each.
+  var EVENT_ICONS = {
+    follow: '♥', sub: '★', gift: '🎁', raid: '⚑', cheer: '◆',
+  }
+
   function fmtTime(at) {
     var d = new Date(at)
     var h = d.getHours(), m = d.getMinutes()
@@ -396,9 +419,60 @@ const unifiedChatPage = `<!DOCTYPE html>
     }
   }
 
+  function msgRow(m) {
+    var row = document.createElement('div')
+    row.className = 'msg'
+    row.title = 'View this chatter'
+    row.appendChild(avatarEl(m))
+    var plat = document.createElement('span')
+    plat.className = 'plat'
+    plat.textContent = m.platform
+    plat.style.background = PLATFORM_COLORS[m.platform] || '#555555'
+    row.appendChild(plat)
+    var author = document.createElement('span')
+    author.className = 'author'
+    author.textContent = m.author
+    if (m.color) author.style.color = m.color
+    row.appendChild(author)
+    appendBody(row, m)
+    var time = document.createElement('span')
+    time.className = 'time'
+    time.textContent = fmtTime(m.at)
+    row.appendChild(time)
+    row.addEventListener('click', function () { openUser(m) })
+    return row
+  }
+
+  // A follow/sub/gift/raid, in the chat's flow: same row shape, its own
+  // colour, and the event's icon in place of an avatar.
+  function evtRow(e) {
+    var row = document.createElement('div')
+    row.className = 'msg evt evt-' + (e.type || 'follow')
+    var icon = document.createElement('span')
+    icon.className = 'evt-icon'
+    icon.textContent = EVENT_ICONS[e.type] || '★'
+    row.appendChild(icon)
+    var plat = document.createElement('span')
+    plat.className = 'plat'
+    plat.textContent = e.platform
+    plat.style.background = PLATFORM_COLORS[e.platform] || '#555555'
+    row.appendChild(plat)
+    var author = document.createElement('span')
+    author.className = 'author'
+    author.textContent = e.author
+    row.appendChild(author)
+    row.appendChild(document.createTextNode(e.detail || ''))
+    var time = document.createElement('span')
+    time.className = 'time'
+    time.textContent = fmtTime(e.at)
+    row.appendChild(time)
+    return row
+  }
+
   function render(data) {
     var messages = data.messages || []
-    if (messages.length === 0) {
+    var events = data.events || []
+    if (messages.length === 0 && events.length === 0) {
       list.style.display = 'none'
       empty.style.display = 'flex'
       empty.textContent = data.sessionActive
@@ -412,29 +486,16 @@ const unifiedChatPage = `<!DOCTYPE html>
     // so scrolling back to read is not fought by the poll.
     var pinned = list.scrollTop + list.clientHeight >= list.scrollHeight - 40
     list.textContent = ''
+    // Chat and events share one timeline, oldest first.
+    var rows = []
     messages.forEach(function (m) {
-      var row = document.createElement('div')
-      row.className = 'msg'
-      row.title = 'View this chatter'
-      row.appendChild(avatarEl(m))
-      var plat = document.createElement('span')
-      plat.className = 'plat'
-      plat.textContent = m.platform
-      plat.style.background = PLATFORM_COLORS[m.platform] || '#555555'
-      row.appendChild(plat)
-      var author = document.createElement('span')
-      author.className = 'author'
-      author.textContent = m.author
-      if (m.color) author.style.color = m.color
-      row.appendChild(author)
-      appendBody(row, m)
-      var time = document.createElement('span')
-      time.className = 'time'
-      time.textContent = fmtTime(m.at)
-      row.appendChild(time)
-      row.addEventListener('click', function () { openUser(m) })
-      list.appendChild(row)
+      rows.push({at: m.at, build: function () { return msgRow(m) }})
     })
+    events.forEach(function (e) {
+      rows.push({at: e.at, build: function () { return evtRow(e) }})
+    })
+    rows.sort(function (a, b) { return a.at - b.at })
+    rows.forEach(function (r) { list.appendChild(r.build()) })
     if (pinned) list.scrollTop = list.scrollHeight
   }
 

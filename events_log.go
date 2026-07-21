@@ -101,6 +101,40 @@ func (a *App) GetLiveEventsForStream(startedAt string, durationSecs int) []Store
 	return out
 }
 
+// GetSessionLiveEvents returns the active stream session's stored events —
+// the newest limit in chronological order — the event side of
+// GetSessionChatHistory, for surfaces that show the broadcast on the air
+// (the Unified Chat overlay runs them inline with the chat). Empty when no
+// session is open. Never returns nil.
+func (a *App) GetSessionLiveEvents(limit int) []StoredLiveEvent {
+	if a.store == nil {
+		return []StoredLiveEvent{}
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	session := a.GetActiveStreamSession()
+	if !session.Active {
+		return []StoredLiveEvent{}
+	}
+	start, err := time.Parse(time.RFC3339, session.StartedAt)
+	if err != nil {
+		return []StoredLiveEvent{}
+	}
+	margin := a.pastMatchMargin()
+	lo := start.Add(-margin).UnixMilli()
+	hi := time.Now().Add(margin).UnixMilli()
+	out, err := a.store.getLiveEventsBetween(lo, hi)
+	if err != nil {
+		log.Printf("jax: GetSessionLiveEvents: %v", err)
+		return []StoredLiveEvent{}
+	}
+	if len(out) > limit {
+		out = out[len(out)-limit:]
+	}
+	return out
+}
+
 // MarkAllLiveEventsRead persists that every stored event has been seen.
 func (a *App) MarkAllLiveEventsRead() error {
 	if a.store == nil {
