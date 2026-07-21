@@ -13,6 +13,13 @@ export interface KickChatMessage {
   /** Normalised badge labels ("Broadcaster", "Moderator", "Subscriber", ...). */
   badges: string[]
   text: string
+  /**
+   * The message as Kick sent it, emote markup and all ("[emote:12345:catJAM]"),
+   * so the display can draw the emotes. Empty when the line has none; `text`
+   * stays the plain-language version everything else (the log, the AI, the
+   * overlays) reads.
+   */
+  richText: string
   /** The chatter's Kick name colour ("#RRGGBB"), possibly empty. */
   color: string
   /** Unix millis the message was sent. */
@@ -49,8 +56,10 @@ const BADGE_LABELS: Record<string, string> = {
   sub_gifter: 'Sub Gifter',
 }
 
-/** Kick inlines emotes as "[emote:12345:catJAM]"; show the name. */
+/** Kick inlines emotes as "[emote:12345:catJAM]"; the name is the fallback. */
 const emoteRe = /\[emote:\d+:([^\]]*)\]/g
+/** The same marker, unanchored and non-global, for a stateless test. */
+const hasEmoteRe = /\[emote:\d+:/
 
 interface kickSender {
   id?: number
@@ -156,6 +165,7 @@ function handleChatMessage(
   onMessage: (message: KickChatMessage) => void,
 ) {
   const sender = m.sender ?? {}
+  const content = String(m.content ?? '')
   const badges: string[] = []
   for (const b of sender.identity?.badges ?? []) {
     const label = BADGE_LABELS[b.type ?? '']
@@ -167,7 +177,8 @@ function handleChatMessage(
     authorId: sender.id ? String(sender.id) : '',
     authorLogin: sender.slug || '',
     badges,
-    text: String(m.content ?? '').replace(emoteRe, '$1'),
+    text: content.replace(emoteRe, '$1'),
+    richText: hasEmoteRe.test(content) ? content : '',
     color: sender.identity?.color || '',
     at:
       typeof m.created_at === 'string'

@@ -38,6 +38,13 @@ export interface ChatItem {
   /** Normalised author badges ("Subscriber", "Moderator", "Member", ...). */
   badges: string[]
   text: string
+  /**
+   * The message with its platform emote markup intact (Kick's
+   * "[emote:12345:catJAM]"), for displays that draw the emotes. Empty when
+   * the line carries none — `text` is always the plain version, and the only
+   * one persisted to the chat log.
+   */
+  richText?: string
   /** Author name colour (Twitch provides one); empty otherwise. */
   color: string
   /** Unix millis. */

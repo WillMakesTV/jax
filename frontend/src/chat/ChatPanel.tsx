@@ -5,6 +5,7 @@ import {Modal} from '../components/Modal'
 import {anyChannelConnected, platformName} from '../services/services'
 import {useServices} from '../services/ServicesProvider'
 import {useChat, type ChatItem} from './ChatProvider'
+import {ChatText} from './ChatText'
 import {ChatUserModal} from './ChatUserModal'
 
 const chatTimeFmt = new Intl.DateTimeFormat('en', {
@@ -207,7 +208,9 @@ export function ChatPanel() {
                     >
                       {m.author}
                     </button>{' '}
-                    <span className="text-fg">{m.text}</span>
+                    <span className="text-fg">
+                      <ChatText message={m} />
+                    </span>
                   </p>
                   <span className="shrink-0 pt-0.5 text-[10px] text-fg-muted">
                     {chatTimeFmt.format(m.at)}
