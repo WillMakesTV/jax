@@ -10,6 +10,7 @@ package youtube
 import (
 	"fmt"
 	"net/url"
+	"strings"
 
 	"bp-temp/internal/httpx"
 )
@@ -20,6 +21,11 @@ const (
 	ChannelsByIDURL = "https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id="
 	ChatMessagesURL = "https://www.googleapis.com/youtube/v3/liveChat/messages"
 	ChatBansURL     = "https://www.googleapis.com/youtube/v3/liveChat/bans"
+
+	UploadsPlaylistURL = "https://www.googleapis.com/youtube/v3/channels?part=contentDetails&mine=true"
+	PlaylistItemsURL   = "https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&maxResults=50"
+	VideosURL          = "https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails,status,liveStreamingDetails&id="
+	CommentThreadsURL  = "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&order=relevance&textFormat=plainText&maxResults=25&videoId="
 )
 
 // Client is an authenticated YouTube caller.
@@ -139,4 +145,193 @@ func (c Client) BanUser(chatID, channelID string, seconds int) (int, error) {
 func (c Client) DeleteChatMessage(messageID string) (int, error) {
 	return httpx.DeleteResource(ChatMessagesURL+"?id="+url.QueryEscape(messageID),
 		c.Headers())
+}
+
+// VideoItem is a video as videos.list describes it, with every part the app
+// asks for: snippet, statistics, contentDetails, status and, for broadcasts,
+// liveStreamingDetails.
+type VideoItem struct {
+	ID      string `json:"id"`
+	Snippet struct {
+		Title        string `json:"title"`
+		Description  string `json:"description"`
+		PublishedAt  string `json:"publishedAt"`
+		ChannelTitle string `json:"channelTitle"`
+		// "live" | "upcoming" | "none" — the definitive live-broadcast flag.
+		LiveBroadcastContent string `json:"liveBroadcastContent"`
+		Thumbnails           struct {
+			Medium struct {
+				URL string `json:"url"`
+			} `json:"medium"`
+			High struct {
+				URL string `json:"url"`
+			} `json:"high"`
+		} `json:"thumbnails"`
+	} `json:"snippet"`
+	Statistics struct {
+		ViewCount     string `json:"viewCount"`
+		LikeCount     string `json:"likeCount"`
+		CommentCount  string `json:"commentCount"`
+		FavoriteCount string `json:"favoriteCount"`
+	} `json:"statistics"`
+	ContentDetails struct {
+		Duration   string `json:"duration"`
+		Definition string `json:"definition"`
+		Caption    string `json:"caption"`
+	} `json:"contentDetails"`
+	Status struct {
+		PrivacyStatus string `json:"privacyStatus"`
+	} `json:"status"`
+	LiveStreamingDetails struct {
+		ScheduledStartTime string `json:"scheduledStartTime"`
+		ActualStartTime    string `json:"actualStartTime"`
+		ActualEndTime      string `json:"actualEndTime"`
+	} `json:"liveStreamingDetails"`
+}
+
+// WasEverLive reports whether the video is, was, or will be a live broadcast
+// (live, upcoming/premiere, scheduled, or a finished live VOD). Checking
+// liveBroadcastContent and scheduledStartTime — not just actualStartTime —
+// catches broadcasts that are currently live (actualStartTime can lag) or not
+// yet started.
+func (v VideoItem) WasEverLive() bool {
+	if lbc := v.Snippet.LiveBroadcastContent; lbc == "live" || lbc == "upcoming" {
+		return true
+	}
+	return v.LiveStreamingDetails.ActualStartTime != "" ||
+		v.LiveStreamingDetails.ScheduledStartTime != ""
+}
+
+// UploadsPlaylistID returns the channel's uploads playlist — the canonical
+// "every video on this channel" — or "" when the channel has none.
+func (c Client) UploadsPlaylistID() (string, error) {
+	var channels struct {
+		Items []struct {
+			ContentDetails struct {
+				RelatedPlaylists struct {
+					Uploads string `json:"uploads"`
+				} `json:"relatedPlaylists"`
+			} `json:"contentDetails"`
+		} `json:"items"`
+	}
+	if _, err := httpx.GetJSON(UploadsPlaylistURL, c.Headers(), &channels); err != nil {
+		return "", err
+	}
+	if len(channels.Items) == 0 {
+		return "", nil
+	}
+	return channels.Items[0].ContentDetails.RelatedPlaylists.Uploads, nil
+}
+
+// PlaylistVideoIDs reads one page of a playlist's video ids and the token for
+// the next, which is "" on the last page.
+func (c Client) PlaylistVideoIDs(playlistID, pageToken string) ([]string, string, error) {
+	endpoint := PlaylistItemsURL + "&playlistId=" + url.QueryEscape(playlistID)
+	if pageToken != "" {
+		endpoint += "&pageToken=" + url.QueryEscape(pageToken)
+	}
+	var page struct {
+		Items []struct {
+			ContentDetails struct {
+				VideoID string `json:"videoId"`
+			} `json:"contentDetails"`
+		} `json:"items"`
+		NextPageToken string `json:"nextPageToken"`
+	}
+	if _, err := httpx.GetJSON(endpoint, c.Headers(), &page); err != nil {
+		return nil, "", err
+	}
+	ids := make([]string, 0, len(page.Items))
+	for _, item := range page.Items {
+		if item.ContentDetails.VideoID != "" {
+			ids = append(ids, item.ContentDetails.VideoID)
+		}
+	}
+	next := page.NextPageToken
+	if len(page.Items) == 0 {
+		next = ""
+	}
+	return ids, next, nil
+}
+
+// VideosByID reads full records for up to 50 videos — the API's limit for one
+// videos.list call, which callers batch against.
+func (c Client) VideosByID(ids []string) ([]VideoItem, error) {
+	var videos struct {
+		Items []VideoItem `json:"items"`
+	}
+	if _, err := httpx.GetJSON(VideosURL+strings.Join(ids, ","),
+		c.Headers(), &videos); err != nil {
+		return nil, err
+	}
+	return videos.Items, nil
+}
+
+// VideoByID reads one video's full record.
+func (c Client) VideoByID(id string) (VideoItem, error) {
+	items, err := c.VideosByID([]string{url.QueryEscape(id)})
+	if err != nil {
+		return VideoItem{}, err
+	}
+	if len(items) == 0 {
+		return VideoItem{}, fmt.Errorf("video %s not found", id)
+	}
+	return items[0], nil
+}
+
+// CommentThread is one top-level comment with its reply count.
+type CommentThread struct {
+	Author      string
+	AvatarURL   string
+	Text        string
+	LikeCount   int64
+	ReplyCount  int64
+	PublishedAt string
+}
+
+// CommentThreads reads a video's top comments by relevance. A Google API key
+// reads public comments directly; without one the OAuth token is used, and
+// the device-authorization flow this app uses cannot request the scope
+// commentThreads.list needs — so a 403 is expected rather than a failure, and
+// the status is returned for the caller to say so.
+func (c Client) CommentThreads(videoID, apiKey string) ([]CommentThread, int, error) {
+	endpoint := CommentThreadsURL + url.QueryEscape(videoID)
+	headers := c.Headers()
+	if apiKey != "" {
+		endpoint += "&key=" + url.QueryEscape(apiKey)
+		headers = nil
+	}
+	var threads struct {
+		Items []struct {
+			Snippet struct {
+				TotalReplyCount int64 `json:"totalReplyCount"`
+				TopLevelComment struct {
+					Snippet struct {
+						AuthorDisplayName     string `json:"authorDisplayName"`
+						AuthorProfileImageURL string `json:"authorProfileImageUrl"`
+						TextDisplay           string `json:"textDisplay"`
+						LikeCount             int64  `json:"likeCount"`
+						PublishedAt           string `json:"publishedAt"`
+					} `json:"snippet"`
+				} `json:"topLevelComment"`
+			} `json:"snippet"`
+		} `json:"items"`
+	}
+	status, err := httpx.GetJSON(endpoint, headers, &threads)
+	if err != nil {
+		return nil, status, err
+	}
+	out := make([]CommentThread, 0, len(threads.Items))
+	for _, t := range threads.Items {
+		s := t.Snippet.TopLevelComment.Snippet
+		out = append(out, CommentThread{
+			Author:      s.AuthorDisplayName,
+			AvatarURL:   s.AuthorProfileImageURL,
+			Text:        s.TextDisplay,
+			LikeCount:   s.LikeCount,
+			ReplyCount:  t.Snippet.TotalReplyCount,
+			PublishedAt: s.PublishedAt,
+		})
+	}
+	return out, status, nil
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"bp-temp/internal/httpx"
 	"bp-temp/internal/platforms/twitch"
+	"bp-temp/internal/platforms/youtube"
 	"fmt"
 	"log"
 	"net/http"
@@ -524,68 +525,8 @@ func fetchTwitchVideoDetails(conn serviceConn, id string) (VideoDetails, error) 
 // YouTube
 // ---------------------------------------------------------------------------
 
-const (
-	youtubeUploadsPlaylistURL = "https://www.googleapis.com/youtube/v3/channels?part=contentDetails&mine=true"
-	youtubePlaylistItemsURL   = "https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&maxResults=50"
-	youtubeVideoListURL       = "https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails,status,liveStreamingDetails&id="
-	youtubeVideoDetailURL     = "https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails,status,liveStreamingDetails&id="
-	youtubeCommentThreadsURL  = "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&order=relevance&textFormat=plainText&maxResults=25&videoId="
-)
-
-// youtubeVideoItem is the videos.list payload shared by list and detail calls.
-type youtubeVideoItem struct {
-	ID      string `json:"id"`
-	Snippet struct {
-		Title        string `json:"title"`
-		Description  string `json:"description"`
-		PublishedAt  string `json:"publishedAt"`
-		ChannelTitle string `json:"channelTitle"`
-		// "live" | "upcoming" | "none" — the definitive live-broadcast flag.
-		LiveBroadcastContent string `json:"liveBroadcastContent"`
-		Thumbnails           struct {
-			Medium struct {
-				URL string `json:"url"`
-			} `json:"medium"`
-			High struct {
-				URL string `json:"url"`
-			} `json:"high"`
-		} `json:"thumbnails"`
-	} `json:"snippet"`
-	Statistics struct {
-		ViewCount     string `json:"viewCount"`
-		LikeCount     string `json:"likeCount"`
-		CommentCount  string `json:"commentCount"`
-		FavoriteCount string `json:"favoriteCount"`
-	} `json:"statistics"`
-	ContentDetails struct {
-		Duration   string `json:"duration"`
-		Definition string `json:"definition"`
-		Caption    string `json:"caption"`
-	} `json:"contentDetails"`
-	Status struct {
-		PrivacyStatus string `json:"privacyStatus"`
-	} `json:"status"`
-	LiveStreamingDetails struct {
-		ScheduledStartTime string `json:"scheduledStartTime"`
-		ActualStartTime    string `json:"actualStartTime"`
-		ActualEndTime      string `json:"actualEndTime"`
-	} `json:"liveStreamingDetails"`
-}
-
-// wasEverLive reports whether the video is, was, or will be a live broadcast
-// (live, upcoming/premiere, scheduled, or a finished live VOD). Such videos
-// belong to the Streams page, not Videos. Checking liveBroadcastContent and
-// scheduledStartTime — not just actualStartTime — catches broadcasts that are
-// currently live (actualStartTime can lag) or not yet started.
-func (v youtubeVideoItem) wasEverLive() bool {
-	if lbc := v.Snippet.LiveBroadcastContent; lbc == "live" || lbc == "upcoming" {
-		return true
-	}
-	return v.LiveStreamingDetails.ActualStartTime != "" ||
-		v.LiveStreamingDetails.ScheduledStartTime != ""
-}
-
-func (v youtubeVideoItem) toVideo() Video {
+// youtubeVideo maps a Data API video into the app's catalogue entry.
+func youtubeVideo(v youtube.VideoItem) Video {
 	compact := formatISODuration(v.ContentDetails.Duration)
 	return Video{
 		Platform:    "youtube",
@@ -611,54 +552,30 @@ func (v youtubeVideoItem) toVideo() Video {
 // page with stats and durations. Videos that originated as live broadcasts
 // are dropped — they belong to the Streams page.
 func fetchYouTubeVideos(conn serviceConn) ([]Video, error) {
-	headers := map[string]string{"Authorization": "Bearer " + conn.token}
+	client := youtubeClient(conn)
 
 	// The uploads playlist id is the canonical "all videos on this channel".
-	var channels struct {
-		Items []struct {
-			ContentDetails struct {
-				RelatedPlaylists struct {
-					Uploads string `json:"uploads"`
-				} `json:"relatedPlaylists"`
-			} `json:"contentDetails"`
-		} `json:"items"`
-	}
-	if _, err := httpx.GetJSON(youtubeUploadsPlaylistURL, headers, &channels); err != nil {
+	playlist, err := client.UploadsPlaylistID()
+	if err != nil {
 		return nil, err
 	}
-	if len(channels.Items) == 0 || channels.Items[0].ContentDetails.RelatedPlaylists.Uploads == "" {
+	if playlist == "" {
 		return nil, nil
 	}
-	playlist := channels.Items[0].ContentDetails.RelatedPlaylists.Uploads
 
 	var ids []string
 	pageToken := ""
 	for len(ids) < maxVideosPerPlatform {
-		endpoint := youtubePlaylistItemsURL + "&playlistId=" + url.QueryEscape(playlist)
-		if pageToken != "" {
-			endpoint += "&pageToken=" + url.QueryEscape(pageToken)
-		}
-		var page struct {
-			Items []struct {
-				ContentDetails struct {
-					VideoID string `json:"videoId"`
-				} `json:"contentDetails"`
-			} `json:"items"`
-			NextPageToken string `json:"nextPageToken"`
-		}
-		if _, err := httpx.GetJSON(endpoint, headers, &page); err != nil {
+		page, next, err := client.PlaylistVideoIDs(playlist, pageToken)
+		if err != nil {
 			if len(ids) > 0 {
 				break
 			}
 			return nil, err
 		}
-		for _, item := range page.Items {
-			if item.ContentDetails.VideoID != "" {
-				ids = append(ids, item.ContentDetails.VideoID)
-			}
-		}
-		pageToken = page.NextPageToken
-		if pageToken == "" || len(page.Items) == 0 {
+		ids = append(ids, page...)
+		pageToken = next
+		if pageToken == "" {
 			break
 		}
 	}
@@ -673,20 +590,18 @@ func fetchYouTubeVideos(conn serviceConn) ([]Video, error) {
 		if end > len(ids) {
 			end = len(ids)
 		}
-		var videos struct {
-			Items []youtubeVideoItem `json:"items"`
-		}
-		if _, err := httpx.GetJSON(youtubeVideoListURL+strings.Join(ids[start:end], ","), headers, &videos); err != nil {
+		items, err := client.VideosByID(ids[start:end])
+		if err != nil {
 			if len(out) > 0 {
 				break
 			}
 			return nil, err
 		}
-		for _, v := range videos.Items {
-			if v.wasEverLive() {
+		for _, v := range items {
+			if v.WasEverLive() {
 				continue // live broadcasts (and their VODs) belong to Streams
 			}
-			video := v.toVideo()
+			video := youtubeVideo(v)
 			if video.ChannelName == "" {
 				video.ChannelName = conn.account
 			}
@@ -697,20 +612,14 @@ func fetchYouTubeVideos(conn serviceConn) ([]Video, error) {
 }
 
 func fetchYouTubeVideoDetails(conn serviceConn, id, apiKey string) (VideoDetails, error) {
-	headers := map[string]string{"Authorization": "Bearer " + conn.token}
+	client := youtubeClient(conn)
 
-	var videos struct {
-		Items []youtubeVideoItem `json:"items"`
-	}
-	if _, err := httpx.GetJSON(youtubeVideoDetailURL+url.QueryEscape(id), headers, &videos); err != nil {
+	v, err := client.VideoByID(id)
+	if err != nil {
 		return VideoDetails{}, err
 	}
-	if len(videos.Items) == 0 {
-		return VideoDetails{}, fmt.Errorf("video %s not found", id)
-	}
-	v := videos.Items[0]
 
-	d := VideoDetails{Video: v.toVideo()}
+	d := VideoDetails{Video: youtubeVideo(v)}
 	d.Stats = append(d.Stats,
 		DetailItem{"Views", fmtCount(atoi64(v.Statistics.ViewCount))},
 		DetailItem{"Likes", fmtCount(atoi64(v.Statistics.LikeCount))},
@@ -730,33 +639,11 @@ func fetchYouTubeVideoDetails(conn serviceConn, id, apiKey string) (VideoDetails
 	}
 
 	// Top comments by relevance. Comments may be disabled for the video, in
-	// which case the API rejects the call — degrade to a note instead.
-	var threads struct {
-		Items []struct {
-			Snippet struct {
-				TotalReplyCount int64 `json:"totalReplyCount"`
-				TopLevelComment struct {
-					Snippet struct {
-						AuthorDisplayName     string `json:"authorDisplayName"`
-						AuthorProfileImageURL string `json:"authorProfileImageUrl"`
-						TextDisplay           string `json:"textDisplay"`
-						LikeCount             int64  `json:"likeCount"`
-						PublishedAt           string `json:"publishedAt"`
-					} `json:"snippet"`
-				} `json:"topLevelComment"`
-			} `json:"snippet"`
-		} `json:"items"`
-	}
-	// With a Google API key we can read public comments directly (no OAuth
-	// token — it lacks the youtube.force-ssl scope those need). Otherwise the
-	// OAuth call 403s and we explain how to enable them.
-	commentsURL := youtubeCommentThreadsURL + url.QueryEscape(id)
-	commentHeaders := headers
-	if apiKey != "" {
-		commentsURL += "&key=" + url.QueryEscape(apiKey)
-		commentHeaders = nil
-	}
-	if status, err := httpx.GetJSON(commentsURL, commentHeaders, &threads); err != nil {
+	// which case the API rejects the call — degrade to a note instead. With a
+	// Google API key public comments are read directly; the OAuth token lacks
+	// the youtube.force-ssl scope they otherwise need.
+	threads, status, err := client.CommentThreads(id, apiKey)
+	if err != nil {
 		if apiKey == "" && status == http.StatusForbidden {
 			// commentThreads.list needs the youtube.force-ssl scope, which the
 			// device-authorization flow this app uses cannot request, so a 403
@@ -767,15 +654,14 @@ func fetchYouTubeVideoDetails(conn serviceConn, id, apiKey string) (VideoDetails
 			d.CommentsNote = "Comments could not be loaded — they may be disabled for this video."
 		}
 	} else {
-		for _, t := range threads.Items {
-			c := t.Snippet.TopLevelComment.Snippet
+		for _, t := range threads {
 			d.Comments = append(d.Comments, VideoComment{
-				Author:      c.AuthorDisplayName,
-				AvatarURL:   c.AuthorProfileImageURL,
-				Text:        c.TextDisplay,
-				LikeCount:   c.LikeCount,
-				ReplyCount:  t.Snippet.TotalReplyCount,
-				PublishedAt: c.PublishedAt,
+				Author:      t.Author,
+				AvatarURL:   t.AvatarURL,
+				Text:        t.Text,
+				LikeCount:   t.LikeCount,
+				ReplyCount:  t.ReplyCount,
+				PublishedAt: t.PublishedAt,
 			})
 		}
 	}
