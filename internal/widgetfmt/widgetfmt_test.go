@@ -1,4 +1,4 @@
-package main
+package widgetfmt
 
 import (
 	"strings"
@@ -6,7 +6,7 @@ import (
 )
 
 func TestFormatWidgetJSX(t *testing.T) {
-	got := formatWidgetJSX(
+	got := JSX(
 		`<div className="w"><h2>{widget.name}</h2><p>{fields['Status']}</p><img src={fields['Art']} /></div>`)
 	want := strings.Join([]string{
 		`<div className="w">`,
@@ -21,13 +21,13 @@ func TestFormatWidgetJSX(t *testing.T) {
 
 	// Content that already has line structure is untouched.
 	pre := "<div>\n  <p>x</p>\n</div>"
-	if formatWidgetJSX(pre) != pre {
-		t.Fatalf("pre-formatted jsx should pass through: %q", formatWidgetJSX(pre))
+	if JSX(pre) != pre {
+		t.Fatalf("pre-formatted jsx should pass through: %q", JSX(pre))
 	}
 }
 
 func TestFormatWidgetCSS(t *testing.T) {
-	got := formatWidgetCSS(`.w{color:red;font-size:32px}.w h2{margin:0}`)
+	got := CSS(`.w{color:red;font-size:32px}.w h2{margin:0}`)
 	want := strings.Join([]string{
 		`.w {`,
 		`  color:red;`,
@@ -42,13 +42,13 @@ func TestFormatWidgetCSS(t *testing.T) {
 	}
 
 	pre := ".w {\n  color: red;\n}"
-	if formatWidgetCSS(pre) != pre {
-		t.Fatalf("pre-formatted css should pass through: %q", formatWidgetCSS(pre))
+	if CSS(pre) != pre {
+		t.Fatalf("pre-formatted css should pass through: %q", CSS(pre))
 	}
 }
 
 func TestFormatWidgetJS(t *testing.T) {
-	got := formatWidgetJS(`const el = root.querySelector('.w'); if (el) { el.classList.add('in'); setTimeout(function () { el.classList.remove('in'); }, 500); }`)
+	got := JS(`const el = root.querySelector('.w'); if (el) { el.classList.add('in'); setTimeout(function () { el.classList.remove('in'); }, 500); }`)
 	want := strings.Join([]string{
 		`const el = root.querySelector('.w');`,
 		`if (el) {`,
@@ -64,12 +64,12 @@ func TestFormatWidgetJS(t *testing.T) {
 
 	// Semicolons inside string literals never split lines.
 	lit := `el.textContent = 'a; b; c';`
-	if formatWidgetJS(lit) != lit {
-		t.Fatalf("string literal mangled: %q", formatWidgetJS(lit))
+	if JS(lit) != lit {
+		t.Fatalf("string literal mangled: %q", JS(lit))
 	}
 
 	pre := "let a = 1\nlet b = 2"
-	if formatWidgetJS(pre) != pre {
-		t.Fatalf("pre-formatted js should pass through: %q", formatWidgetJS(pre))
+	if JS(pre) != pre {
+		t.Fatalf("pre-formatted js should pass through: %q", JS(pre))
 	}
 }

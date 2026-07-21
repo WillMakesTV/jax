@@ -1,28 +1,26 @@
-package main
+// Package widgetfmt pretty-prints the JSX, CSS and JS a stream widget's
+// display template is made of.
+//
+// The model behind GenerateWidgetTemplate often returns each of them as one
+// long line, which reads terribly in the editors. These formatters fix that
+// case — and only that case: content that already has line structure
+// (hand-written, or a well-formatted response) is returned exactly as it came
+// in, so formatting never fights the author.
+package widgetfmt
 
 import (
 	"regexp"
 	"strings"
 )
 
-// ---------------------------------------------------------------------------
-// Widget display formatting
-//
-// The model behind GenerateWidgetTemplate often returns its JSX/CSS/JS as
-// one long line, which reads terribly in the editors. These formatters
-// pretty-print that case — and only that case: content that already has
-// line structure (hand-written, or a well-formatted response) is left
-// exactly as it is, so formatting never fights the author.
-// ---------------------------------------------------------------------------
-
 // widgetTagRe matches one JSX tag: closing slash, name, attributes
 // (tolerating quoted strings and braced expressions), self-closing slash.
 // The shape mirrors the frontend editor's lint (JsxTemplateField.tsx).
 var widgetTagRe = regexp.MustCompile(`<(/?)([A-Za-z][\w.-]*)((?:"[^"]*"|'[^']*'|\{[^}]*\}|[^<>"'{}])*?)(/?)>`)
 
-// formatWidgetJSX reindents a single-line JSX template: tags get their own
+// JSX reindents a single-line JSX template: tags get their own
 // lines, nested content indents two spaces per depth.
-func formatWidgetJSX(src string) string {
+func JSX(src string) string {
 	src = strings.TrimSpace(src)
 	if src == "" || strings.Contains(src, "\n") {
 		return src
@@ -61,9 +59,9 @@ func formatWidgetJSX(src string) string {
 	return strings.Join(out, "\n")
 }
 
-// formatWidgetCSS pretty-prints a single-line stylesheet: one declaration
+// CSS pretty-prints a single-line stylesheet: one declaration
 // per line, rules separated, indented inside braces.
-func formatWidgetCSS(src string) string {
+func CSS(src string) string {
 	src = strings.TrimSpace(src)
 	if src == "" || strings.Contains(src, "\n") {
 		return src
@@ -116,9 +114,9 @@ func formatWidgetCSS(src string) string {
 	return strings.Join(out, "\n")
 }
 
-// formatWidgetJS breaks a single-line script at statement and block
+// JS breaks a single-line script at statement and block
 // boundaries, skipping string literals, and indents by brace depth.
-func formatWidgetJS(src string) string {
+func JS(src string) string {
 	src = strings.TrimSpace(src)
 	if src == "" || strings.Contains(src, "\n") {
 		return src

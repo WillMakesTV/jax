@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bp-temp/internal/widgetfmt"
+
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -1025,13 +1027,13 @@ func mcpToolCatalog() []mcpTool {
 					// Single-line payloads get the same pretty-print the AI
 					// generation path applies (see widget_format.go).
 					if in.Template != nil {
-						w.Template = formatWidgetJSX(*in.Template)
+						w.Template = widgetfmt.JSX(*in.Template)
 					}
 					if in.CSS != nil {
-						w.CSS = formatWidgetCSS(*in.CSS)
+						w.CSS = widgetfmt.CSS(*in.CSS)
 					}
 					if in.JS != nil {
-						w.JS = formatWidgetJS(*in.JS)
+						w.JS = widgetfmt.JS(*in.JS)
 					}
 					return nil
 				})

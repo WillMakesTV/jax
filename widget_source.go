@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bp-temp/internal/widgetfmt"
+
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -684,9 +686,9 @@ wrap the JSON in code fences.`
 	return a.mutateStreamWidget(widgetID, func(sw *StreamWidget) error {
 		// Models often return everything on one line; pretty-print that
 		// case so the editors read properly (see widget_format.go).
-		sw.Template = formatWidgetJSX(parsed.Template)
-		sw.CSS = formatWidgetCSS(parsed.CSS)
-		sw.JS = formatWidgetJS(parsed.JS)
+		sw.Template = widgetfmt.JSX(parsed.Template)
+		sw.CSS = widgetfmt.CSS(parsed.CSS)
+		sw.JS = widgetfmt.JS(parsed.JS)
 		return nil
 	})
 }
