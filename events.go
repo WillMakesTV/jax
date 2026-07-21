@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bp-temp/internal/httpx"
 	"fmt"
 	"log"
 )
@@ -26,8 +25,6 @@ type LiveEvent struct {
 	Detail      string `json:"detail"` // human-readable summary
 	PublishedAt string `json:"publishedAt"`
 }
-
-const twitchEventSubURL = "https://api.twitch.tv/helix/eventsub/subscriptions"
 
 // twitchEventSubTypes lists the subscriptions requested for the frontend's
 // EventSub session. Scopes: follows need moderator:read:followers, sub events
@@ -56,7 +53,7 @@ func (a *App) SubscribeTwitchEvents(sessionID string) ([]string, error) {
 	if conn.userID == "" {
 		return nil, fmt.Errorf("Twitch account details unavailable — try reconnecting")
 	}
-	headers := twitchHeaders(conn)
+	client := twitchClient(conn)
 
 	warnings := []string{}
 	succeeded := 0
@@ -68,16 +65,7 @@ func (a *App) SubscribeTwitchEvents(sessionID string) ([]string, error) {
 		case "channel.raid":
 			condition = map[string]string{"to_broadcaster_user_id": conn.userID}
 		}
-		payload := map[string]any{
-			"type":      sub.Type,
-			"version":   sub.Version,
-			"condition": condition,
-			"transport": map[string]string{
-				"method":     "websocket",
-				"session_id": sessionID,
-			},
-		}
-		if status, err := httpx.PostJSON(twitchEventSubURL, headers, payload, nil); err != nil {
+		if status, err := client.SubscribeEvent(sub.Type, sub.Version, condition, sessionID); err != nil {
 			log.Printf("jax: eventsub %s: %v", sub.Type, err)
 			msg := sub.Type + " unavailable."
 			if status == 401 || status == 403 {

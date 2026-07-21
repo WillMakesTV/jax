@@ -37,11 +37,7 @@ type ChatUserInfo struct {
 	Details     []DetailItem `json:"details"`
 }
 
-const (
-	twitchFollowCheckURL = "https://api.twitch.tv/helix/channels/followers"
-	twitchSubCheckURL    = "https://api.twitch.tv/helix/subscriptions"
-	youtubeChannelByIDURL = "https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id="
-)
+const youtubeChannelByIDURL = "https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id="
 
 // GetChatUserInfo returns profile info for one chatter. id is the platform
 // user/channel id from the chat message; login is the Twitch login fallback
@@ -83,33 +79,11 @@ func (a *App) GetChatUserInfo(platform, id, login string) (ChatUserInfo, error) 
 }
 
 func fetchTwitchChatUser(conn serviceConn, id, login string) (ChatUserInfo, error) {
-	headers := twitchHeaders(conn)
-
-	query := "?id=" + url.QueryEscape(id)
-	if id == "" {
-		if login == "" {
-			return ChatUserInfo{}, fmt.Errorf("no user id or login to look up")
-		}
-		query = "?login=" + url.QueryEscape(strings.ToLower(login))
-	}
-	var users struct {
-		Data []struct {
-			ID              string `json:"id"`
-			Login           string `json:"login"`
-			DisplayName     string `json:"display_name"`
-			Description     string `json:"description"`
-			ProfileImageURL string `json:"profile_image_url"`
-			BroadcasterType string `json:"broadcaster_type"`
-			CreatedAt       string `json:"created_at"`
-		} `json:"data"`
-	}
-	if _, err := httpx.GetJSON(twitchUsersURL+query, headers, &users); err != nil {
+	client := twitchClient(conn)
+	u, err := client.LookupUser(id, login)
+	if err != nil {
 		return ChatUserInfo{}, err
 	}
-	if len(users.Data) == 0 {
-		return ChatUserInfo{}, fmt.Errorf("Twitch user not found")
-	}
-	u := users.Data[0]
 
 	info := ChatUserInfo{
 		Platform:    "twitch",
@@ -127,36 +101,20 @@ func fetchTwitchChatUser(conn serviceConn, id, login string) (ChatUserInfo, erro
 	}
 
 	// Does this user follow the broadcaster? Requires moderator:read:followers.
-	var follows struct {
-		Data []struct {
-			FollowedAt string `json:"followed_at"`
-		} `json:"data"`
-	}
-	if _, err := httpx.GetJSON(
-		twitchFollowCheckURL+"?broadcaster_id="+conn.userID+"&user_id="+u.ID,
-		headers, &follows,
-	); err == nil {
-		if len(follows.Data) > 0 {
+	if followedAt, err := client.FollowedAt(u.ID); err == nil {
+		if followedAt != "" {
 			info.Follower = "yes"
-			info.FollowedAt = follows.Data[0].FollowedAt
+			info.FollowedAt = followedAt
 		} else {
 			info.Follower = "no"
 		}
 	}
 
 	// Is this user subscribed? Requires channel:read:subscriptions.
-	var subs struct {
-		Data []struct {
-			Tier string `json:"tier"`
-		} `json:"data"`
-	}
-	if status, err := httpx.GetJSON(
-		twitchSubCheckURL+"?broadcaster_id="+conn.userID+"&user_id="+u.ID,
-		headers, &subs,
-	); err == nil {
-		if len(subs.Data) > 0 {
+	if tier, status, err := client.SubscriptionTier(u.ID); err == nil {
+		if tier != "" {
 			info.Subscriber = "yes"
-			switch subs.Data[0].Tier {
+			switch tier {
 			case "1000":
 				info.SubTier = "Tier 1"
 			case "2000":

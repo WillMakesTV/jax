@@ -43,10 +43,7 @@ type LiveChatPage struct {
 	PollIntervalMs int           `json:"pollIntervalMs"`
 }
 
-const (
-	youtubeChatMessagesURL = "https://www.googleapis.com/youtube/v3/liveChat/messages"
-	twitchChatMessagesURL  = "https://api.twitch.tv/helix/chat/messages"
-)
+const youtubeChatMessagesURL = "https://www.googleapis.com/youtube/v3/liveChat/messages"
 
 // cachedYouTubeChatID returns the memoised live-chat id, or "" when unset.
 func (a *App) cachedYouTubeChatID() string {
@@ -290,24 +287,12 @@ func (a *App) SendBroadcastChat(message string) []BroadcastSendResult {
 		if conn.userID == "" {
 			r.Error = "Twitch account details unavailable — try reconnecting."
 		} else {
-			var resp struct {
-				Data []struct {
-					IsSent     bool `json:"is_sent"`
-					DropReason struct {
-						Message string `json:"message"`
-					} `json:"drop_reason"`
-				} `json:"data"`
-			}
-			status, err := httpx.PostJSON(twitchChatMessagesURL, twitchHeaders(conn), map[string]string{
-				"broadcaster_id": conn.userID,
-				"sender_id":      conn.userID,
-				"message":        message,
-			}, &resp)
+			sent, dropped, status, err := twitchClient(conn).SendChatMessage(message)
 			switch {
 			case err != nil:
 				r.Error = sendErrorMessage("twitch", status, err)
-			case len(resp.Data) > 0 && !resp.Data[0].IsSent:
-				r.Error = firstNonEmpty(resp.Data[0].DropReason.Message, "Twitch dropped the message.")
+			case !sent:
+				r.Error = firstNonEmpty(dropped, "Twitch dropped the message.")
 			default:
 				r.Sent = true
 			}

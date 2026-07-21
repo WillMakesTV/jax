@@ -324,7 +324,7 @@ func (a *App) fetchTwitchLive(conn serviceConn) LiveStream {
 			Total  int64 `json:"total"`
 			Points int64 `json:"points"`
 		}
-		if _, err := httpx.GetJSON(twitchSubCheckURL+"?broadcaster_id="+conn.userID+"&first=1", headers, &subs); err == nil {
+		if _, err := httpx.GetJSON(twitch.SubscriptionsURL+"?broadcaster_id="+conn.userID+"&first=1", headers, &subs); err == nil {
 			out.Subscribers = fmtCount(subs.Total)
 			out.SubPoints = fmtCount(subs.Points)
 			out.SubscribersN = subs.Total
