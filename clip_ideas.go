@@ -25,8 +25,8 @@ import (
 
 // ClipIdea is one pitched script.
 type ClipIdea struct {
-	Title  string `json:"title"`
-	Hook   string `json:"hook"`   // one-line pitch: why this clip lands
+	Title string `json:"title"`
+	Hook  string `json:"hook"`   // one-line pitch: why this clip lands
 	Script string `json:"script"` // markdown script/edit directions
 }
 

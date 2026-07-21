@@ -51,8 +51,8 @@ type PastStream struct {
 	SeriesID string `json:"seriesId"`
 	// Episode data, set when the stream's series is episodic (see episodes.go;
 	// number 0 = the stream is not part of an episodic series).
-	EpisodeNumber      int    `json:"episodeNumber"`
-	EpisodeDescription string `json:"episodeDescription"`
+	EpisodeNumber      int             `json:"episodeNumber"`
+	EpisodeDescription string          `json:"episodeDescription"`
 	// Description is the stream's effective description: the user's custom
 	// text when set, otherwise the concluded plan's (see stream_desc.go).
 	Description string `json:"description"`

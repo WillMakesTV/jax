@@ -293,10 +293,10 @@ type twitchChannelInfo struct {
 	// and cannot be added up ("12.3K" + "1.2M" is not arithmetic), so the raw
 	// values are kept alongside them for the aggregate hero and the daily
 	// history (see metrics.go).
-	FollowersN   int64  `json:"followersN"`
-	SubscribersN int64  `json:"subscribersN"`
-	Avatar       string `json:"avatar"` // profile_image_url
-	Banner       string `json:"banner"` // offline_image_url
+	FollowersN   int64 `json:"followersN"`
+	SubscribersN int64 `json:"subscribersN"`
+	Avatar      string `json:"avatar"` // profile_image_url
+	Banner      string `json:"banner"` // offline_image_url
 }
 
 // RefreshChannelInfo drops the cached channel-level analytics for both
@@ -578,8 +578,8 @@ func (a *App) fetchYouTubeLive(conn serviceConn) LiveStream {
 					Title      string `json:"title"`
 					CustomURL  string `json:"customUrl"`
 					Thumbnails struct {
-						High    struct{ URL string } `json:"high"`
-						Medium  struct{ URL string } `json:"medium"`
+						High   struct{ URL string } `json:"high"`
+						Medium struct{ URL string } `json:"medium"`
 						Default struct{ URL string } `json:"default"`
 					} `json:"thumbnails"`
 				} `json:"snippet"`

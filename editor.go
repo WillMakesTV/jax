@@ -75,7 +75,7 @@ func videoUseDir() (string, error) {
 }
 
 // keyEditWorkspaceDir is the Settings → Videos workspace-folder override
-// (” = the default). Shared with the frontend's SETTING_KEYS.
+// ('' = the default). Shared with the frontend's SETTING_KEYS.
 const keyEditWorkspaceDir = "edit_workspace_dir"
 
 // DefaultEditWorkspaceDir is where edit workspaces land when no directory is

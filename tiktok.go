@@ -355,9 +355,9 @@ type tiktokChannelInfo struct {
 	Username  string `json:"username"`
 	Avatar    string `json:"avatar"`
 	Followers string `json:"followers"`
-	Likes     string `json:"likes"`
-	Videos    string `json:"videos"`
-	Link      string `json:"link"`
+	Likes  string `json:"likes"`
+	Videos string `json:"videos"`
+	Link   string `json:"link"`
 	// Handle is the @name, derived from the profile web link (no scope carries
 	// it directly); a posted video's URL is built from it.
 	Handle string `json:"handle"`

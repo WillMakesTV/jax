@@ -43,7 +43,7 @@ type StreamdeckMultiAction struct {
 	// Profile is the name of the Stream Deck profile holding the button.
 	Profile string `json:"profile"`
 	// Coordinates is the button's "column,row" position on its page.
-	Coordinates string        `json:"coordinates"`
+	Coordinates string `json:"coordinates"`
 	Steps       []RoutineStep `json:"steps"`
 }
 

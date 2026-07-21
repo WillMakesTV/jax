@@ -281,3 +281,4 @@ func (a *App) storedOutlineText(startedAt string) string {
 	}
 	return b.String()
 }
+

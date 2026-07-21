@@ -358,10 +358,10 @@ type xChannelInfo struct {
 	Posts     string `json:"posts"`
 	// The raw counts, for the aggregate hero and the daily history (see
 	// metrics.go); the strings above are formatted for display.
-	FollowersN int64  `json:"followersN"`
-	PostsN     int64  `json:"postsN"`
-	Avatar     string `json:"avatar"`
-	Bio        string `json:"bio"`
+	FollowersN int64 `json:"followersN"`
+	PostsN     int64 `json:"postsN"`
+	Avatar    string `json:"avatar"`
+	Bio       string `json:"bio"`
 }
 
 // fetchXLive fills the Dashboard card. X exposes no live-video state, so the
