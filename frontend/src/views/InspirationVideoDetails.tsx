@@ -25,7 +25,7 @@ import {formatCompact, formatDate} from '../lib/format'
 import {clock, inspirationError} from './Inspiration'
 import {isWorking, StatusPill} from './InspirationChannelDetails'
 
-type VideoTab = 'takeaways' | 'outline' | 'manifest' | 'transcript'
+type VideoTab = 'overview' | 'takeaways' | 'outline' | 'manifest' | 'transcript'
 
 /** How each takeaway's kind reads on its chip. */
 const TAKEAWAY_KINDS: Record<string, string> = {
@@ -38,9 +38,11 @@ const TAKEAWAY_KINDS: Record<string, string> = {
 }
 
 /**
- * One inspiration video in full: the local copy, the platform metadata, the
- * takeaways and AI-built outline and manifest (links, products, services),
- * and the transcript it was all read from.
+ * One inspiration video in full. Overview carries the video with its
+ * description and topics; the other sections keep the same player-and-summary
+ * hero and render their own content beneath it — takeaways, the AI-built
+ * outline, the manifest (links, products, services), and the transcript it
+ * was all read from.
  */
 export function InspirationVideoDetails({
   video: initial,
@@ -48,7 +50,7 @@ export function InspirationVideoDetails({
   video: main.InspirationVideo
 }) {
   const [video, setVideo] = useState(initial)
-  const [tab, setTab] = useState<VideoTab>('takeaways')
+  const [tab, setTab] = useState<VideoTab>('overview')
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const player = useRef<HTMLVideoElement>(null)
@@ -119,6 +121,7 @@ export function InspirationVideoDetails({
     video.transcript.length > 0 &&
     Boolean(video.outline)
   const tabs: {id: VideoTab; label: string; count?: number}[] = [
+    {id: 'overview', label: 'Overview'},
     {id: 'takeaways', label: 'Takeaways', count: video.takeaways.length},
     {id: 'outline', label: 'Outline'},
     {
@@ -211,8 +214,8 @@ export function InspirationVideoDetails({
           ))}
         </div>
 
-        {/* Hero: the local copy on the left, what the study made of it on
-            the right. */}
+        {/* Hero: the video on the left and its summary on the right, kept
+            on every section so the footage is always one click away. */}
         <section className="flex flex-col gap-4 lg:flex-row lg:items-start">
           <div
             ref={frame}
@@ -268,21 +271,24 @@ export function InspirationVideoDetails({
               )}
             </div>
 
-            {/* The video's own words, right under it. */}
-            <div className="border-t border-edge p-4">
-              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg-muted">
-                Description
-              </p>
-              {video.description ? (
-                <p className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words text-sm text-fg">
-                  {video.description}
+            {/* The video's own words, right under it — Overview only, so
+                the other sections keep the hero to the player and summary. */}
+            {tab === 'overview' && (
+              <div className="border-t border-edge p-4">
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+                  Description
                 </p>
-              ) : (
-                <p className="text-sm text-fg-muted">
-                  This video has no description.
-                </p>
-              )}
-            </div>
+                {video.description ? (
+                  <p className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words text-sm text-fg">
+                    {video.description}
+                  </p>
+                ) : (
+                  <p className="text-sm text-fg-muted">
+                    This video has no description.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex min-w-0 flex-1 flex-col gap-3">
@@ -307,7 +313,7 @@ export function InspirationVideoDetails({
         </section>
 
         {/* Topics span the page rather than crowding the hero's column. */}
-        {video.tags.length > 0 && (
+        {tab === 'overview' && video.tags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {video.tags.map((t) => (
               <span
