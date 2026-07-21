@@ -26,7 +26,7 @@ import {main} from '../../wailsjs/go/models'
 import {PageHeader} from '../components/PageHeader'
 import {openExternal} from '../lib/browser'
 import {useDataChanged} from '../lib/dataChanged'
-import {formatCompact} from '../lib/format'
+import {formatCompact, formatDate} from '../lib/format'
 import {
   AddInspirationModal,
   clock,
@@ -137,7 +137,11 @@ export function InspirationChannelDetails({
         }
       />
 
-      <ChannelHero channel={channel} videoCount={videos.length} />
+      <ChannelHero
+        channel={channel}
+        videos={videos}
+        takeawayCount={takeaways.length}
+      />
 
       <div
         role="tablist"
@@ -214,25 +218,42 @@ export function InspirationChannelDetails({
 
 /**
  * The channel at the top of its page: its banner, avatar, what it says about
- * itself, the numbers the platform reports, and the links it publishes —
- * everything the indexer could pull in.
+ * itself, the links it publishes, and two rows of numbers — what the platform
+ * reports about the channel, and what this library has made of it.
  */
 function ChannelHero({
   channel,
-  videoCount,
+  videos,
+  takeawayCount,
 }: {
   channel: main.InspirationChannel
-  videoCount: number
+  videos: main.InspirationVideo[]
+  takeawayCount: number
 }) {
-  const stats = [
+  const studied = videos.filter((v) => v.status === 'ready').length
+  const views = videos.reduce((sum, v) => sum + v.views, 0)
+  const runtime = videos.reduce((sum, v) => sum + v.durationSecs, 0)
+  const stats: {label: string; value: string}[] = [
     channel.subscribers > 0
-      ? `${formatCompact(channel.subscribers)} subscribers`
-      : '',
+      ? {label: 'Subscribers', value: formatCompact(channel.subscribers)}
+      : null,
     channel.videoCount > 0
-      ? `${formatCompact(channel.videoCount)} videos published`
-      : '',
-    `${videoCount} indexed here`,
-  ].filter(Boolean)
+      ? {label: 'Videos published', value: formatCompact(channel.videoCount)}
+      : null,
+    {label: 'Indexed here', value: String(videos.length)},
+    {label: 'Studied', value: String(studied)},
+    takeawayCount > 0
+      ? {label: 'Takeaways', value: String(takeawayCount)}
+      : null,
+    views > 0 ? {label: 'Views (indexed)', value: formatCompact(views)} : null,
+    views > 0 && videos.length > 0
+      ? {
+          label: 'Median views',
+          value: formatCompact(medianViews(videos)),
+        }
+      : null,
+    runtime > 0 ? {label: 'Runtime (indexed)', value: clock(runtime)} : null,
+  ].filter((s): s is {label: string; value: string} => s !== null)
 
   return (
     <section className="mb-6 overflow-hidden rounded-xl border border-edge bg-surface">
@@ -263,8 +284,13 @@ function ChannelHero({
           <div className="flex flex-wrap items-center gap-3 text-xs text-fg-muted">
             <span className="inline-flex items-center gap-1">
               <Users size={12} aria-hidden />
-              {stats.join(' · ')}
+              {channel.subscribers > 0
+                ? `${formatCompact(channel.subscribers)} subscribers`
+                : 'Subscriber count unknown'}
             </span>
+            {channel.indexedAt && (
+              <span>Indexed {formatDate(channel.indexedAt)}</span>
+            )}
           </div>
           {channel.description && (
             <p className="line-clamp-4 whitespace-pre-wrap text-sm text-fg-muted">
@@ -302,8 +328,34 @@ function ChannelHero({
           )}
         </div>
       </div>
+
+      {/* The numbers: what YouTube reports about the channel, and what this
+          library has made of it so far. */}
+      <dl className="grid grid-cols-2 gap-px border-t border-edge bg-edge sm:grid-cols-4 xl:grid-cols-8">
+        {stats.map((s) => (
+          <div key={s.label} className="bg-surface px-4 py-3">
+            <dt className="text-[11px] font-semibold uppercase tracking-wide text-fg-muted">
+              {s.label}
+            </dt>
+            <dd className="mt-0.5 text-lg font-semibold text-fg">{s.value}</dd>
+          </div>
+        ))}
+      </dl>
     </section>
   )
+}
+
+/** The middle view count across a channel's indexed videos. */
+function medianViews(videos: main.InspirationVideo[]): number {
+  const counts = videos
+    .map((v) => v.views)
+    .filter((n) => n > 0)
+    .sort((a, b) => a - b)
+  if (counts.length === 0) return 0
+  const mid = Math.floor(counts.length / 2)
+  return counts.length % 2 === 0
+    ? Math.round((counts[mid - 1] + counts[mid]) / 2)
+    : counts[mid]
 }
 
 /**
