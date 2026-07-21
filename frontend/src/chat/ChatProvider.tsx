@@ -77,6 +77,11 @@ interface ChatContextValue {
   /** Mark every current message as read (the Chat page displayed them). */
   markAllRead: () => void
   /**
+   * Drop one message from the feed — the local half of a moderation delete
+   * (DeleteChatMessage already removed it from the platform and the log).
+   */
+  removeMessage: (message: ChatItem) => void
+  /**
    * Send one message to every connected channel's chat as the broadcaster.
    * Resolves with each platform's outcome; a "broadcast" entry is appended to
    * the local feed when at least one platform accepted it.
@@ -193,6 +198,16 @@ export function ChatProvider({children}: {children: ReactNode}) {
     return () => {
       cancelled = true
     }
+  }, [])
+
+  // A removed message must not come back: the platform's copy is gone, but
+  // the reader may still replay it, so its identity stays in seenKeys.
+  const removeMessage = useCallback((message: ChatItem) => {
+    setMessages((prev) =>
+      prev.filter(
+        (m) => !(m.platform === message.platform && m.id === message.id),
+      ),
+    )
   }, [])
 
   const markAllRead = useCallback(() => {
@@ -396,8 +411,15 @@ export function ChatProvider({children}: {children: ReactNode}) {
     [messages],
   )
   const value = useMemo<ChatContextValue>(
-    () => ({messages, active, unreadCount, markAllRead, sendBroadcast}),
-    [messages, active, unreadCount, markAllRead, sendBroadcast],
+    () => ({
+      messages,
+      active,
+      unreadCount,
+      markAllRead,
+      removeMessage,
+      sendBroadcast,
+    }),
+    [messages, active, unreadCount, markAllRead, removeMessage, sendBroadcast],
   )
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>

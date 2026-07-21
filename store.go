@@ -1197,6 +1197,15 @@ func (s *Store) getChatHistory(limit int) ([]StoredChatMessage, error) {
 	return messages, rows.Err()
 }
 
+// deleteChatMessage drops one stored message (the local half of a moderation
+// delete — see DeleteChatMessage). Removing a message that is not stored is
+// not an error: the platform is the source of truth.
+func (s *Store) deleteChatMessage(platform, id string) error {
+	_, err := s.db.Exec(
+		`DELETE FROM chat_messages WHERE platform = ? AND id = ?`, platform, id)
+	return err
+}
+
 // markAllChatRead flips every stored message to read.
 func (s *Store) markAllChatRead() error {
 	_, err := s.db.Exec(`UPDATE chat_messages SET read = 1 WHERE read = 0`)

@@ -1,6 +1,10 @@
-import {ExternalLink, User} from 'lucide-react'
+import {Ban, ExternalLink, Trash2, User} from 'lucide-react'
 import {useEffect, useState} from 'react'
-import {GetChatUserInfo} from '../../wailsjs/go/main/App'
+import {
+  DeleteChatMessage,
+  GetChatUserInfo,
+  TimeoutChatUser,
+} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {BrandTile} from '../components/BrandTile'
 import {Modal} from '../components/Modal'
@@ -8,6 +12,7 @@ import {openExternal} from '../lib/browser'
 import {formatDate} from '../lib/format'
 import {platformName} from '../services/services'
 import type {ChatItem} from './ChatProvider'
+import {ChatText} from './ChatText'
 
 const timeFmt = new Intl.DateTimeFormat('en', {
   hour: 'numeric',
@@ -30,12 +35,15 @@ export function ChatUserModal({
   user,
   messages,
   onClose,
+  onRemoved,
 }: {
   /** The clicked message; identifies the chatter. Null = closed. */
   user: ChatItem | null
   /** Full chat history, for badge union + the user's recent messages. */
   messages: ChatItem[]
   onClose: () => void
+  /** A message was removed from the platform's chat; drop it from the feed. */
+  onRemoved?: (message: ChatItem) => void
 }) {
   const [info, setInfo] = useState<main.ChatUserInfo | null>(null)
   const [error, setError] = useState('')
@@ -67,6 +75,43 @@ export function ChatUserModal({
       cancelled = true
     }
   }, [user])
+
+  // Timeouts, bans, and message removals run on the chatter's own platform
+  // (see moderation.go); whatever it answers is shown beside the buttons
+  // rather than swallowed.
+  const [modBusy, setModBusy] = useState('')
+  const [modNote, setModNote] = useState('')
+
+  const moderate = async (seconds: number, label: string) => {
+    if (!user) return
+    setModBusy(label)
+    setModNote(`${label}…`)
+    try {
+      await TimeoutChatUser(user.platform, user.authorId, seconds, '')
+      setModNote(`${label} — done`)
+    } catch (err) {
+      setModNote(
+        err instanceof Error && err.message ? err.message : `${label} failed.`,
+      )
+    } finally {
+      setModBusy('')
+    }
+  }
+
+  const removeMessage = async (m: ChatItem) => {
+    setModNote('Removing…')
+    try {
+      await DeleteChatMessage(m.platform, m.id)
+      setModNote('Message removed')
+      onRemoved?.(m)
+    } catch (err) {
+      setModNote(
+        err instanceof Error && err.message
+          ? err.message
+          : 'The message could not be removed.',
+      )
+    }
+  }
 
   if (!user) return null
 
@@ -167,18 +212,61 @@ export function ChatUserModal({
             </p>
             <ul className="max-h-40 space-y-1.5 overflow-y-auto rounded-lg border border-edge bg-bg p-3">
               {recent.map((m) => (
-                <li key={`${m.platform}-${m.id}`} className="flex items-start gap-2">
+                <li
+                  key={`${m.platform}-${m.id}`}
+                  className="group flex items-start gap-2"
+                >
                   <p className="min-w-0 flex-1 break-words text-sm leading-snug text-fg">
-                    {m.text}
+                    <ChatText message={m} />
                   </p>
                   <span className="shrink-0 pt-0.5 text-[10px] text-fg-muted">
                     {timeFmt.format(m.at)}
                   </span>
+                  {/* Removing here removes it from the platform's chat too. */}
+                  <button
+                    type="button"
+                    onClick={() => void removeMessage(m)}
+                    title="Remove this message from chat"
+                    aria-label="Remove this message from chat"
+                    className="shrink-0 text-fg-muted opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 hover:text-red-600 dark:hover:text-red-400"
+                  >
+                    <Trash2 size={13} aria-hidden />
+                  </button>
                 </li>
               ))}
             </ul>
           </div>
         )}
+
+        {/* Moderation: applied on the chatter's own platform. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void moderate(600, 'Timeout 10m')}
+            disabled={modBusy !== ''}
+            className="rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm font-semibold text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+          >
+            Timeout 10m
+          </button>
+          <button
+            type="button"
+            onClick={() => void moderate(3600, 'Timeout 1h')}
+            disabled={modBusy !== ''}
+            className="rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm font-semibold text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+          >
+            Timeout 1h
+          </button>
+          <button
+            type="button"
+            onClick={() => void moderate(0, 'Ban')}
+            disabled={modBusy !== ''}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-red-600/40 bg-red-600/10 px-3 py-1.5 text-sm font-semibold text-red-600 transition-colors hover:bg-red-600/20 disabled:opacity-50 dark:text-red-400"
+          >
+            <Ban size={14} aria-hidden />
+            Ban
+          </button>
+          {modNote && <span className="text-xs text-fg-muted">{modNote}</span>}
+        </div>
 
         {info?.channelUrl && (
           <button

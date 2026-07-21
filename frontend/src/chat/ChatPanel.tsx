@@ -25,7 +25,14 @@ const BOTTOM_SLACK = 40
  * otherwise they stay unread and feed the status-bar notification.
  */
 export function ChatPanel() {
-  const {messages, active, unreadCount, markAllRead, sendBroadcast} = useChat()
+  const {
+    messages,
+    active,
+    unreadCount,
+    markAllRead,
+    removeMessage,
+    sendBroadcast,
+  } = useChat()
   const {statuses} = useServices()
   const listRef = useRef<HTMLDivElement>(null)
   // Follow new messages only while the user is already at the bottom.
@@ -275,6 +282,7 @@ export function ChatPanel() {
         user={selectedUser}
         messages={messages}
         onClose={() => setSelectedUser(null)}
+        onRemoved={removeMessage}
       />
 
       {/* Bots placeholder; management lands later. */}

@@ -178,6 +178,10 @@ export function DeleteProject(arg1) {
   return window['go']['main']['App']['DeleteProject'](arg1);
 }
 
+export function DeleteChatMessage(arg1, arg2) {
+  return window['go']['main']['App']['DeleteChatMessage'](arg1, arg2);
+}
+
 export function DeleteProjectAsset(arg1, arg2) {
   return window['go']['main']['App']['DeleteProjectAsset'](arg1, arg2);
 }
@@ -993,6 +997,10 @@ export function SyncPlatformEvents() {
 
 export function TestStreamWidget(arg1) {
   return window['go']['main']['App']['TestStreamWidget'](arg1);
+}
+
+export function TimeoutChatUser(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['TimeoutChatUser'](arg1, arg2, arg3, arg4);
 }
 
 export function TikTokRedirectURI() {

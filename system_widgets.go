@@ -158,12 +158,21 @@ func (a *App) serveUnifiedChat(w http.ResponseWriter, r *http.Request, action st
 		// Between sessions the page explains itself instead of replaying
 		// history.
 		session := a.GetActiveStreamSession()
+		// Each row names the channel it came from, so the merged column says
+		// where a message landed.
+		channels := map[string]string{}
+		for _, s := range a.GetServiceStatuses() {
+			if s.Connected && s.Account != "" {
+				channels[s.Name] = s.Account
+			}
+		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"sessionActive": session.Active,
 			"messages":      a.GetSessionChatHistory(150),
 			// Follows, subs, gifts, and raids, run inline with the chat.
-			"events": a.GetSessionLiveEvents(50),
+			"events":   a.GetSessionLiveEvents(50),
+			"channels": channels,
 		})
 	case "user":
 		// The user card behind clicking a message: profile info, the
@@ -184,6 +193,50 @@ func (a *App) serveUnifiedChat(w http.ResponseWriter, r *http.Request, action st
 				resp["modUrl"] = "https://www.twitch.tv/popout/" + url.PathEscape(conn.login) +
 					"/viewercard/" + url.PathEscape(strings.ToLower(login))
 			}
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(resp)
+	case "moderate":
+		// Timeout or ban the chatter on their own platform (see
+		// moderation.go); seconds <= 0 is a permanent ban.
+		if r.Method != http.MethodPost {
+			http.Error(w, "POST required", http.StatusMethodNotAllowed)
+			return
+		}
+		var in struct {
+			Platform string `json:"platform"`
+			UserID   string `json:"userId"`
+			Seconds  int    `json:"seconds"`
+			Reason   string `json:"reason"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{"ok": true}
+		if err := a.TimeoutChatUser(in.Platform, in.UserID, in.Seconds, in.Reason); err != nil {
+			resp = map[string]any{"ok": false, "error": err.Error()}
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(resp)
+	case "delete":
+		// Remove one message from the platform's chat and from the log, so
+		// it leaves the stream and every Jax surface at once.
+		if r.Method != http.MethodPost {
+			http.Error(w, "POST required", http.StatusMethodNotAllowed)
+			return
+		}
+		var in struct {
+			Platform  string `json:"platform"`
+			MessageID string `json:"messageId"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{"ok": true}
+		if err := a.DeleteChatMessage(in.Platform, in.MessageID); err != nil {
+			resp = map[string]any{"ok": false, "error": err.Error()}
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(resp)
@@ -281,12 +334,45 @@ const unifiedChatPage = `<!DOCTYPE html>
   .evt-gift   { background: rgba(255, 122, 0, 0.14);  border-color: rgba(255, 122, 0, 0.38); }
   .evt-raid   { background: rgba(145, 70, 255, 0.18); border-color: rgba(145, 70, 255, 0.42); }
   .evt-cheer  { background: rgba(0, 176, 255, 0.14);  border-color: rgba(0, 176, 255, 0.38); }
+  /* The row's corner: which channel it came from (always) plus the time and
+     the delete control (on hover). Floated so long messages wrap under it
+     instead of running beneath. */
+  .corner {
+    float: right; display: inline-flex; align-items: center; gap: 6px;
+    margin: 1px 0 3px 10px;
+  }
+  .source {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 700; color: rgba(255, 255, 255, 0.65);
+    max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .source svg { width: 13px; height: 13px; flex: none; fill: currentColor; }
   .time {
-    position: absolute; top: 7px; right: 10px;
     font-size: 11px; color: rgba(255, 255, 255, 0.5);
     opacity: 0; transition: opacity 0.15s;
   }
   .msg:hover .time { opacity: 1; }
+  .del {
+    border: 0; background: transparent; padding: 0 2px; cursor: pointer;
+    font-size: 12px; line-height: 1; color: rgba(255, 120, 120, 0.9);
+    opacity: 0; transition: opacity 0.15s;
+  }
+  .msg:hover .del { opacity: 1; }
+  .del:hover { color: #ff5252; }
+  /* Moderation row in the chatter card. */
+  .mods { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .mods button {
+    border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 8px;
+    background: rgba(255, 255, 255, 0.08); color: #fff;
+    font-size: 12px; font-weight: 600; padding: 5px 10px; cursor: pointer;
+  }
+  .mods button:hover { background: rgba(255, 255, 255, 0.16); }
+  .mods button.ban {
+    border-color: rgba(255, 82, 82, 0.5); background: rgba(255, 82, 82, 0.18);
+  }
+  .mods button:disabled { opacity: 0.5; cursor: default; }
+  .past .del { opacity: 0.6; }
+  .past:hover .del { opacity: 1; }
   #form { display: flex; gap: 8px; margin-top: 10px; }
   #input {
     flex: 1; border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 10px;
@@ -367,6 +453,85 @@ const unifiedChatPage = `<!DOCTYPE html>
     follow: '♥', sub: '★', gift: '🎁', raid: '⚑', cheer: '◆',
   }
 
+  // Brand marks for the row's channel-source badge, the same paths the app's
+  // BrandIcons draw.
+  var PLATFORM_PATHS = {
+    twitch: 'M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z',
+    youtube: 'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z',
+    kick: 'M1.333 0h8v5.333H12V2.667h2.667V0h8v8H20v2.667h-2.667v2.666H20V16h2.667v8h-8v-2.667H12v-2.666H9.333V24h-8Z',
+  }
+
+  var channels = {}
+
+  function platformLabel(platform) {
+    return channels[platform] || platform
+  }
+
+  // Logo + channel name, inline: the source badge every row carries.
+  function sourceEl(platform) {
+    var wrap = document.createElement('span')
+    wrap.className = 'source'
+    var path = PLATFORM_PATHS[platform]
+    if (path) {
+      var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+      svg.setAttribute('viewBox', '0 0 24 24')
+      var p = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+      p.setAttribute('d', path)
+      svg.appendChild(p)
+      svg.style.color = PLATFORM_COLORS[platform] || '#ffffff'
+      wrap.appendChild(svg)
+    }
+    var name = document.createElement('span')
+    name.textContent = platformLabel(platform)
+    wrap.appendChild(name)
+    return wrap
+  }
+
+  // The row's top-right corner: source badge, hover timestamp, and — for a
+  // deletable message — the remove control.
+  function cornerEl(item, deletable) {
+    var corner = document.createElement('span')
+    corner.className = 'corner'
+    if (deletable) {
+      var del = document.createElement('button')
+      del.className = 'del'
+      del.type = 'button'
+      del.title = 'Remove this message from chat'
+      del.textContent = '✕'
+      del.addEventListener('click', function (ev) {
+        ev.stopPropagation()
+        deleteMessage(item)
+      })
+      corner.appendChild(del)
+    }
+    var time = document.createElement('span')
+    time.className = 'time'
+    time.textContent = fmtTime(item.at)
+    corner.appendChild(time)
+    corner.appendChild(sourceEl(item.platform))
+    return corner
+  }
+
+  // Removing a message here removes it from the platform's chat too; the
+  // next poll drops the row, so nothing is hidden that is still live.
+  function deleteMessage(m) {
+    fetch(base + '/delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({platform: m.platform, messageId: m.id}),
+    })
+      .then(function (res) { return res.json() })
+      .then(function (data) {
+        if (data && data.ok) {
+          lastJSON = ''
+          tick()
+        } else {
+          showNote((data && data.error) || 'The message could not be removed.')
+        }
+      })
+      .catch(function (err) { showNote(String(err)) })
+  }
+
   function fmtTime(at) {
     var d = new Date(at)
     var h = d.getHours(), m = d.getMinutes()
@@ -423,22 +588,15 @@ const unifiedChatPage = `<!DOCTYPE html>
     var row = document.createElement('div')
     row.className = 'msg'
     row.title = 'View this chatter'
+    // The corner floats, so it goes in before the text it wraps around.
+    row.appendChild(cornerEl(m, true))
     row.appendChild(avatarEl(m))
-    var plat = document.createElement('span')
-    plat.className = 'plat'
-    plat.textContent = m.platform
-    plat.style.background = PLATFORM_COLORS[m.platform] || '#555555'
-    row.appendChild(plat)
     var author = document.createElement('span')
     author.className = 'author'
     author.textContent = m.author
     if (m.color) author.style.color = m.color
     row.appendChild(author)
     appendBody(row, m)
-    var time = document.createElement('span')
-    time.className = 'time'
-    time.textContent = fmtTime(m.at)
-    row.appendChild(time)
     row.addEventListener('click', function () { openUser(m) })
     return row
   }
@@ -448,30 +606,23 @@ const unifiedChatPage = `<!DOCTYPE html>
   function evtRow(e) {
     var row = document.createElement('div')
     row.className = 'msg evt evt-' + (e.type || 'follow')
+    row.appendChild(cornerEl(e, false))
     var icon = document.createElement('span')
     icon.className = 'evt-icon'
     icon.textContent = EVENT_ICONS[e.type] || '★'
     row.appendChild(icon)
-    var plat = document.createElement('span')
-    plat.className = 'plat'
-    plat.textContent = e.platform
-    plat.style.background = PLATFORM_COLORS[e.platform] || '#555555'
-    row.appendChild(plat)
     var author = document.createElement('span')
     author.className = 'author'
     author.textContent = e.author
     row.appendChild(author)
     row.appendChild(document.createTextNode(e.detail || ''))
-    var time = document.createElement('span')
-    time.className = 'time'
-    time.textContent = fmtTime(e.at)
-    row.appendChild(time)
     return row
   }
 
   function render(data) {
     var messages = data.messages || []
     var events = data.events || []
+    channels = data.channels || {}
     if (messages.length === 0 && events.length === 0) {
       list.style.display = 'none'
       empty.style.display = 'flex'
@@ -505,6 +656,53 @@ const unifiedChatPage = `<!DOCTYPE html>
     p.textContent = text
     parent.appendChild(p)
     return p
+  }
+
+  // Timeout/ban buttons for the chatter card. The action runs on the
+  // chatter's own platform (see moderation.go); whatever the platform says
+  // comes back on the button row rather than being swallowed.
+  function modControls(m) {
+    var wrap = document.createElement('div')
+    wrap.className = 'mods'
+    var status = document.createElement('span')
+    status.className = 'stats'
+
+    var run = function (seconds, label) {
+      var buttons = wrap.querySelectorAll('button')
+      for (var i = 0; i < buttons.length; i++) buttons[i].disabled = true
+      status.textContent = label + '…'
+      fetch(base + '/moderate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          platform: m.platform,
+          userId: m.authorId || '',
+          seconds: seconds,
+        }),
+      })
+        .then(function (res) { return res.json() })
+        .then(function (data) {
+          status.textContent = data && data.ok ? label + ' — done' : (data && data.error) || 'That failed.'
+        })
+        .catch(function (err) { status.textContent = String(err) })
+        .then(function () {
+          for (var i = 0; i < buttons.length; i++) buttons[i].disabled = false
+        })
+    }
+
+    var add = function (text, seconds, cls) {
+      var b = document.createElement('button')
+      b.type = 'button'
+      if (cls) b.className = cls
+      b.textContent = text
+      b.addEventListener('click', function () { run(seconds, text) })
+      wrap.appendChild(b)
+    }
+    add('Timeout 10m', 600)
+    add('Timeout 1h', 3600)
+    add('Ban', 0, 'ban')
+    wrap.appendChild(status)
+    return wrap
   }
 
   function closeCard() { overlay.className = '' }
@@ -586,10 +784,11 @@ const unifiedChatPage = `<!DOCTYPE html>
           a2.target = '_blank'
           a2.rel = 'noreferrer'
           a2.className = 'mod'
-          a2.textContent = 'Moderate (ban / timeout)'
+          a2.textContent = 'Open on ' + platformLabel('twitch')
           links.appendChild(a2)
         }
         if (links.childNodes.length) card.appendChild(links)
+        card.appendChild(modControls(m))
         var hist = document.createElement('div')
         hist.className = 'history'
         var h4 = document.createElement('h4')
@@ -602,6 +801,16 @@ const unifiedChatPage = `<!DOCTYPE html>
           past.forEach(function (pm) {
             var row = document.createElement('div')
             row.className = 'past'
+            var del = document.createElement('button')
+            del.className = 'del'
+            del.type = 'button'
+            del.title = 'Remove this message from chat'
+            del.textContent = '✕'
+            del.addEventListener('click', function () {
+              deleteMessage(pm)
+              row.remove()
+            })
+            row.appendChild(del)
             var t = document.createElement('span')
             t.className = 't'
             t.textContent = fmtTime(pm.at)

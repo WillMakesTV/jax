@@ -28,11 +28,14 @@ import {XConnectForm} from './XConnectForm'
 /**
  * Twitch scopes requested on connect: sending chat as the broadcaster
  * (broadcast messages), follower/subscriber lookups (chat user popup and
- * follow events), bits:read for cheer events, and channel:manage:broadcast
- * to push a planned stream's title/category before going live.
+ * follow events), bits:read for cheer events, channel:manage:broadcast to
+ * push a planned stream's title/category before going live, and the two
+ * moderator:manage scopes behind the chat's timeout/ban and message-removal
+ * controls.
  */
 const TWITCH_SCOPES =
-  'user:write:chat moderator:read:followers channel:read:subscriptions bits:read channel:manage:broadcast'
+  'user:write:chat moderator:read:followers channel:read:subscriptions bits:read ' +
+  'channel:manage:broadcast moderator:manage:banned_users moderator:manage:chat_messages'
 
 const ExternalHint = ({href, children}: {href: string; children: string}) => (
   <>

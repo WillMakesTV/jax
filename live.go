@@ -139,6 +139,33 @@ func patchJSON(endpoint string, headers map[string]string, payload any) (int, er
 	return sendJSON(http.MethodPatch, endpoint, headers, payload, nil)
 }
 
+// deleteResource performs an authenticated DELETE with no body. Any 2xx
+// counts as success (Twitch and YouTube both answer 204 No Content when a
+// chat message or ban is removed).
+func deleteResource(endpoint string, headers map[string]string) (int, error) {
+	req, err := http.NewRequest(http.MethodDelete, endpoint, nil)
+	if err != nil {
+		return 0, err
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		msg := string(body)
+		if len(msg) > 200 {
+			msg = msg[:200]
+		}
+		return resp.StatusCode, fmt.Errorf("request failed (%d): %s", resp.StatusCode, msg)
+	}
+	return resp.StatusCode, nil
+}
+
 // sendJSON performs an authenticated request with a JSON body and decodes the
 // JSON response into out (which may be nil). Any 2xx status counts as success.
 func sendJSON(method, endpoint string, headers map[string]string, payload any, out any) (int, error) {

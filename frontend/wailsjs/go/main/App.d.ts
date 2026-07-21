@@ -90,6 +90,8 @@ export function DeletePlannedStream(arg1:string):Promise<void>;
 
 export function DeleteProject(arg1:string):Promise<void>;
 
+export function DeleteChatMessage(arg1:string,arg2:string):Promise<void>;
+
 export function DeleteProjectAsset(arg1:string,arg2:string):Promise<main.Project>;
 
 export function DeleteProjectDoc(arg1:string,arg2:string):Promise<main.Project>;
@@ -497,6 +499,8 @@ export function SummarizePlanChanges(arg1:string):Promise<main.PlanChanges>;
 export function SyncPlatformEvents():Promise<Array<main.StoredLiveEvent>>;
 
 export function TestStreamWidget(arg1:string):Promise<void>;
+
+export function TimeoutChatUser(arg1:string,arg2:string,arg3:number,arg4:string):Promise<void>;
 
 export function TikTokRedirectURI():Promise<string>;
 
