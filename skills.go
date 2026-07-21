@@ -35,6 +35,7 @@ var appSkillDefs = []struct {
 	{"go-live", "Going live", "The broadcast-day flow: applying a plan, monitoring while live, and concluding the episode."},
 	{"past-streams", "Reviewing past streams", "Work the stream archive: transcripts, chat logs, and AI outlines for recaps and clip hunting."},
 	{"download-transcribe", "Downloads & transcription", "Pull VODs to disk and re-transcribe them locally for cleaner transcripts."},
+	{skillInspirationTakeaways, "Inspiration takeaways", "The brief behind what counts as a takeaway when a studied video is mined for tips, techniques and concepts — overridable per channel."},
 	{"inspiration", "Inspiration library", "Study other creators' videos: what has been indexed, what was derived from each, and how to search the library and cite it."},
 	{"videos", "Videos & video plans", "Browse the channels' catalogue, review performance, and prepare video plans for the editor."},
 	{"video-edit-directions", "Video edit script", "Turn a video plan, its source-stream context, and the producer's notes into the outline/script the edit session executes — including the short- and long-form runtime targets."},
@@ -55,6 +56,11 @@ var appSkillDefs = []struct {
 // skillAIDebugging is the optional developer skill, listed only while the
 // Settings → Development toggle (keyDevDebugSkillEnabled) is on.
 const skillAIDebugging = "ai-debugging"
+
+// skillInspirationTakeaways defines what counts as a takeaway. The
+// Inspiration pipeline reads it for every extraction, and a channel can
+// override it for its own videos (see inspiration.go).
+const skillInspirationTakeaways = "inspiration-takeaways"
 
 // devDebugSkillEnabled reports whether the AI Debugging skill is switched on.
 func (a *App) devDebugSkillEnabled() bool {

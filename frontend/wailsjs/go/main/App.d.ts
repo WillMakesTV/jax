@@ -222,6 +222,8 @@ export function GetInspirationChannel(arg1:string):Promise<main.InspirationChann
 
 export function GetInspirationChannels():Promise<Array<main.InspirationChannel>>;
 
+export function GetInspirationTakeaways(arg1:string):Promise<Array<main.InspirationTakeawayRef>>;
+
 export function GetInspirationVideo(arg1:string):Promise<main.InspirationVideo>;
 
 export function GetInspirationVideos(arg1:string):Promise<Array<main.InspirationVideo>>;
@@ -477,6 +479,8 @@ export function SetSetting(arg1:string,arg2:string):Promise<void>;
 export function SetSponsorLogo(arg1:string,arg2:string):Promise<main.Sponsor>;
 
 export function SetStreamDescription(arg1:string,arg2:string):Promise<void>;
+
+export function SetInspirationChannelTakeaways(arg1:string,arg2:string):Promise<main.InspirationChannel>;
 
 export function SetStreamEpisode(arg1:Array<string>,arg2:number,arg3:string):Promise<void>;
 

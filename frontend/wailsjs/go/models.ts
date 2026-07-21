@@ -1583,6 +1583,7 @@ export class InspirationChannel {
     links: InspirationLink[];
     addedAt: string;
     indexedAt: string;
+    takeawaysSkill: string;
 
     static createFrom(source: any = {}) {
         return new InspirationChannel(source);
@@ -1603,6 +1604,7 @@ export class InspirationChannel {
         this.links = this.convertValues(source["links"], InspirationLink);
         this.addedAt = source["addedAt"];
         this.indexedAt = source["indexedAt"];
+        this.takeawaysSkill = source["takeawaysSkill"];
     }
 
 	convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1729,6 +1731,32 @@ export class InspirationSearchHit {
         this.text = source["text"];
         this.score = source["score"];
         this.citation = source["citation"];
+    }
+}
+export class InspirationTakeawayRef {
+    kind: string;
+    title: string;
+    detail: string;
+    apply: string;
+    atSecs: number;
+    videoId: string;
+    videoTitle: string;
+    videoUrl: string;
+
+    static createFrom(source: any = {}) {
+        return new InspirationTakeawayRef(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.kind = source["kind"];
+        this.title = source["title"];
+        this.detail = source["detail"];
+        this.apply = source["apply"];
+        this.atSecs = source["atSecs"];
+        this.videoId = source["videoId"];
+        this.videoTitle = source["videoTitle"];
+        this.videoUrl = source["videoUrl"];
     }
 }
 export class InspirationTakeaway {

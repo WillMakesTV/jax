@@ -23,3 +23,5 @@ The `jax` MCP server exposes read and planning tools that mirror what the app's 
 ## Where to go deeper
 
 Each feature area has its own Application Skill: planning streams, content series, going live, past streams, downloads and transcription, videos, projects, and OBS setup. Read the relevant one before working in that area.
+
+- **Inspiration** is the reference shelf: other creators' videos, studied into summaries, outlines, manifests and takeaways. `search_inspiration` grounds an answer in what has actually been watched, and every hit carries a citation — see the "Inspiration library" skill.

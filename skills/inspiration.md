@@ -15,12 +15,20 @@ The pipeline is driven from the app (Inspiration → Add, or a video's Process b
 - `get_inspiration_video` — one video in full: description, summary, outline, beats, takeaways, links, mentions. Pass `includeTranscript: true` only when you actually need the words — transcripts run to thousands of lines.
 - `get_inspiration_transcript` — just the timestamped transcript.
 
+## Takeaways
+
+The last pass of the pipeline mines a studied video for what another creator could actually use: tips, techniques, concepts, hooks and formats, each with what the video does, how it could be applied, and the moment it comes up.
+
+What counts as a takeaway is not hard-coded — it is the **"Inspiration takeaways"** application skill (`get_skill` id `inspiration-takeaways`), editable in Settings → Skills like any other. Rewriting it changes every future extraction: narrow the kinds, change how many to pull, tell it what this producer cares about. The JSON object and its field names in that skill are a contract with the app's parser; an override that drops the shape makes extractions fail.
+
+A single channel can want something different from the rest of the library — a gear channel is worth mining for products, a storytelling channel for structure. **Inspiration → open a channel → Options** overrides the brief for that channel's videos only; clearing it falls back to the app-wide skill. The channel's **Takeaways** tab aggregates every takeaway lifted from its videos, each labelled with the video it came from.
+
 ## Searching it
 
 `search_inspiration` is the way in when you do not already know which video holds the answer. It ranks every passage in the library — summaries, outlines, beats, takeaways, mentions, links, descriptions, and transcript windows — against a query and returns the best ones, each with the video, the moment inside it, and a `citation` string carrying a URL that opens at that timestamp.
 
 - Search first, fetch second: find the passages, then `get_inspiration_video` for the one or two videos worth reading in full.
-- Narrow with `kinds` when the question has a shape: `["takeaway"]` for advice, `["mention", "link"]` for gear and tools, `["transcript"]` for what was actually said.
+- Narrow with `kinds` when the question has a shape: `["takeaway"]` for advice, `["mention", "link"]` for gear and tools, `["transcript"]` for what was actually said. Takeaways are the shelf's most directly reusable material, so a "how should I…" question usually starts there.
 - **Always cite.** When an answer draws on the library, quote the `citation` from the hits it came from. An uncited claim is indistinguishable from a guess, and the point of studying these videos is being able to point at them.
 - Nothing back means nothing studied covers it — say so rather than answering from general knowledge and implying it came from the shelf.
 

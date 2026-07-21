@@ -65,6 +65,9 @@ type InspirationChannel struct {
 	// IndexedAt is when the channel's own metadata was last refreshed —
 	// every video indexed from it brings this up to date.
 	IndexedAt string `json:"indexedAt"`
+	// TakeawaysSkill overrides the "Inspiration takeaways" skill for this
+	// channel's videos; blank uses the app-wide brief.
+	TakeawaysSkill string `json:"takeawaysSkill"`
 }
 
 // InspirationChapter is one chapter marker from the video's own metadata.
@@ -362,6 +365,7 @@ func (a *App) upsertInspirationChannel(lib *inspirationLibrary, ch InspirationCh
 		}
 		ch.AddedAt = old.AddedAt
 		ch.IndexedAt = firstNonEmpty(ch.IndexedAt, old.IndexedAt)
+		ch.TakeawaysSkill = firstNonEmpty(ch.TakeawaysSkill, old.TakeawaysSkill)
 		lib.Channels[i] = ch
 		return ch.ID
 	}
@@ -1079,21 +1083,74 @@ func (a *App) analyzeInspirationVideo(id string) error {
 	return nil
 }
 
-// inspirationTakeawayInstructions briefs the second pass: what a producer can
-// actually use, lifted out of the video's own outline.
-const inspirationTakeawayInstructions = `You are reading the study notes a creator's reference library holds for one YouTube video: its summary, its outline, its beats, and what it names. Pull out what another creator could take away and use.
-
-Respond with a single JSON object and nothing else:
-{
-  "takeaways": [{"kind": "tip|technique|concept|hook|format|other", "title": "<short label>", "detail": "<what the video does or says, in one or two sentences>", "apply": "<how another creator could use this on their own channel>", "atSecs": 0}]
+// takeawayInstructions resolves the brief for one video's extraction: the
+// channel's own override when it has one, otherwise the "Inspiration
+// takeaways" skill (itself editable in Settings → Skills).
+func (a *App) takeawayInstructions(channelID string) (string, error) {
+	if channelID != "" {
+		for _, c := range a.getInspiration().Channels {
+			if c.ID == channelID && strings.TrimSpace(c.TakeawaysSkill) != "" {
+				return c.TakeawaysSkill, nil
+			}
+		}
+	}
+	skill, err := a.getAppSkill(skillInspirationTakeaways)
+	if err != nil {
+		return defaultSkillContent(skillInspirationTakeaways)
+	}
+	if strings.TrimSpace(skill.Content) == "" {
+		return defaultSkillContent(skillInspirationTakeaways)
+	}
+	return skill.Content, nil
 }
 
-Rules:
-- 5-15 takeaways, ordered by how useful they are, not by when they appear.
-- Only what the notes actually support — never invent advice the video does not give.
-- kind: "tip" for concrete advice, "technique" for how something is executed, "concept" for an idea or framing, "hook" for an attention device, "format" for structure or packaging, "other" for anything else.
-- atSecs is seconds from the start of the video, taken from the beats; use -1 when a takeaway is about the video as a whole.
-- Do not wrap the JSON in code fences.`
+// SetInspirationChannelTakeaways overrides the takeaway brief for one
+// channel's videos. Blank content clears the override.
+func (a *App) SetInspirationChannelTakeaways(channelID, content string) (InspirationChannel, error) {
+	lib := a.getInspiration()
+	for i := range lib.Channels {
+		if lib.Channels[i].ID != channelID {
+			continue
+		}
+		lib.Channels[i].TakeawaysSkill = strings.TrimSpace(content)
+		if err := a.saveInspiration(lib); err != nil {
+			return InspirationChannel{}, err
+		}
+		out := lib.Channels[i]
+		fillInspirationChannel(&out)
+		return out, nil
+	}
+	return InspirationChannel{}, fmt.Errorf("that channel is no longer indexed")
+}
+
+// InspirationTakeawayRef is one takeaway with the video it came from — the
+// shape the channel page's aggregated list reads.
+type InspirationTakeawayRef struct {
+	Kind       string `json:"kind"`
+	Title      string `json:"title"`
+	Detail     string `json:"detail"`
+	Apply      string `json:"apply"`
+	AtSecs     int    `json:"atSecs"`
+	VideoID    string `json:"videoId"`
+	VideoTitle string `json:"videoTitle"`
+	VideoURL   string `json:"videoUrl"`
+}
+
+// GetInspirationTakeaways returns every takeaway lifted from a channel's
+// videos (or the whole library when channelID is blank), newest video first.
+func (a *App) GetInspirationTakeaways(channelID string) []InspirationTakeawayRef {
+	out := []InspirationTakeawayRef{}
+	for _, v := range a.GetInspirationVideos(channelID) {
+		for _, t := range v.Takeaways {
+			out = append(out, InspirationTakeawayRef{
+				Kind: t.Kind, Title: t.Title, Detail: t.Detail,
+				Apply: t.Apply, AtSecs: t.AtSecs,
+				VideoID: v.ID, VideoTitle: v.Title, VideoURL: v.URL,
+			})
+		}
+	}
+	return out
+}
 
 // ExtractInspirationTakeaways re-runs the takeaway pass over a studied video
 // (the pipeline runs it once; the video page offers it again).
@@ -1143,7 +1200,11 @@ func (a *App) extractInspirationTakeaways(id string) error {
 		}
 	}
 
-	text, err := a.askAIText(inspirationTakeawayInstructions, in.String())
+	instructions, err := a.takeawayInstructions(video.ChannelID)
+	if err != nil {
+		return err
+	}
+	text, err := a.askAIText(instructions, in.String())
 	if err != nil {
 		return err
 	}

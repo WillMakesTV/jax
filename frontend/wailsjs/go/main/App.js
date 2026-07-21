@@ -442,6 +442,10 @@ export function GetInspirationChannels() {
   return window['go']['main']['App']['GetInspirationChannels']();
 }
 
+export function GetInspirationTakeaways(arg1) {
+  return window['go']['main']['App']['GetInspirationTakeaways'](arg1);
+}
+
 export function GetInspirationVideo(arg1) {
   return window['go']['main']['App']['GetInspirationVideo'](arg1);
 }
@@ -952,6 +956,10 @@ export function SetSponsorLogo(arg1, arg2) {
 
 export function SetStreamDescription(arg1, arg2) {
   return window['go']['main']['App']['SetStreamDescription'](arg1, arg2);
+}
+
+export function SetInspirationChannelTakeaways(arg1, arg2) {
+  return window['go']['main']['App']['SetInspirationChannelTakeaways'](arg1, arg2);
 }
 
 export function SetStreamEpisode(arg1, arg2, arg3) {

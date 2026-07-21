@@ -4,6 +4,7 @@ import {
   ExternalLink,
   Eye,
   Link2,
+  Lightbulb,
   Loader2,
   Play,
   Plus,
@@ -16,8 +17,10 @@ import {useCallback, useEffect, useState} from 'react'
 import {
   DeleteInspirationVideo,
   GetInspirationChannel,
+  GetInspirationTakeaways,
   GetInspirationVideos,
   ProcessInspirationVideo,
+  SetInspirationChannelTakeaways,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {PageHeader} from '../components/PageHeader'
@@ -54,6 +57,18 @@ export function isWorking(status: string): boolean {
   )
 }
 
+type ChannelTab = 'videos' | 'takeaways' | 'options'
+
+/** How each takeaway's kind reads on its chip. */
+const TAKEAWAY_KINDS: Record<string, string> = {
+  tip: 'Tip',
+  technique: 'Technique',
+  concept: 'Concept',
+  hook: 'Hook',
+  format: 'Format',
+  other: 'Note',
+}
+
 /**
  * One inspiration channel: the videos indexed from it, in the same card
  * language the Videos section uses. Tracked videos carry a Process CTA that
@@ -69,11 +84,16 @@ export function InspirationChannelDetails({
 }) {
   const [channel, setChannel] = useState(initial)
   const [videos, setVideos] = useState<main.InspirationVideo[]>([])
+  const [takeaways, setTakeaways] = useState<main.InspirationTakeawayRef[]>([])
+  const [tab, setTab] = useState<ChannelTab>('videos')
   const [addOpen, setAddOpen] = useState(false)
 
   const load = useCallback(() => {
     GetInspirationVideos(initial.id)
       .then((v) => setVideos(v ?? []))
+      .catch(() => {})
+    GetInspirationTakeaways(initial.id)
+      .then((t) => setTakeaways(t ?? []))
       .catch(() => {})
     // Indexing a video refreshes the channel's own branding and metrics
     // behind the page, so re-read it alongside the videos.
@@ -119,17 +139,72 @@ export function InspirationChannelDetails({
 
       <ChannelHero channel={channel} videoCount={videos.length} />
 
-      {videos.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-edge bg-surface p-6 text-sm text-fg-muted">
-          Nothing indexed from this channel yet. Add a video to download,
-          transcribe, and break it down.
-        </p>
-      ) : (
-        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {videos.map((v) => (
-            <VideoCard key={v.id} video={v} onOpen={() => onOpenVideo(v)} />
-          ))}
-        </ul>
+      <div
+        role="tablist"
+        aria-label="Channel sections"
+        className="mb-4 flex w-fit items-center gap-1 rounded-lg border border-edge bg-surface p-1"
+      >
+        {(
+          [
+            {id: 'videos', label: 'Videos', count: videos.length},
+            {id: 'takeaways', label: 'Takeaways', count: takeaways.length},
+            {id: 'options', label: 'Options'},
+          ] as {id: ChannelTab; label: string; count?: number}[]
+        ).map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.id}
+            onClick={() => setTab(t.id)}
+            className={clsx(
+              'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+              tab === t.id
+                ? 'bg-accent text-accent-fg'
+                : 'text-fg-muted hover:bg-surface-hover hover:text-fg',
+            )}
+          >
+            {t.label}
+            {Boolean(t.count) && (
+              <span
+                className={clsx(
+                  'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
+                  tab === t.id
+                    ? 'bg-accent-fg/20 text-accent-fg'
+                    : 'bg-surface-hover text-fg-muted',
+                )}
+              >
+                {t.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'videos' &&
+        (videos.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-edge bg-surface p-6 text-sm text-fg-muted">
+            Nothing indexed from this channel yet. Add a video to download,
+            transcribe, and break it down.
+          </p>
+        ) : (
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {videos.map((v) => (
+              <VideoCard key={v.id} video={v} onOpen={() => onOpenVideo(v)} />
+            ))}
+          </ul>
+        ))}
+
+      {tab === 'takeaways' && (
+        <ChannelTakeaways
+          takeaways={takeaways}
+          videos={videos}
+          onOpenVideo={onOpenVideo}
+        />
+      )}
+
+      {tab === 'options' && (
+        <TakeawaySkillOptions channel={channel} onSaved={setChannel} />
       )}
 
       <AddInspirationModal open={addOpen} onClose={() => setAddOpen(false)} />
@@ -226,6 +301,158 @@ function ChannelHero({
             </div>
           )}
         </div>
+      </div>
+    </section>
+  )
+}
+
+/**
+ * Everything this channel's videos have taught, in one place: the takeaways
+ * from every studied video, packed by height and labelled with the video they
+ * came from (clicking one opens it).
+ */
+function ChannelTakeaways({
+  takeaways,
+  videos,
+  onOpenVideo,
+}: {
+  takeaways: main.InspirationTakeawayRef[]
+  videos: main.InspirationVideo[]
+  onOpenVideo: (video: main.InspirationVideo) => void
+}) {
+  if (takeaways.length === 0) {
+    return (
+      <p className="rounded-xl border border-dashed border-edge bg-surface p-6 text-sm text-fg-muted">
+        Nothing lifted out of this channel yet — process a video and its
+        takeaways collect here.
+      </p>
+    )
+  }
+  return (
+    <ul className="columns-1 gap-3 sm:columns-2 xl:columns-3">
+      {takeaways.map((t, i) => (
+        <li
+          key={`${t.videoId}-${t.title}-${i}`}
+          className="mb-3 flex break-inside-avoid flex-col gap-2 rounded-xl border border-edge bg-surface p-4"
+        >
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-edge bg-bg px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">
+              {TAKEAWAY_KINDS[t.kind] ?? t.kind}
+            </span>
+            {t.atSecs >= 0 && (
+              <span className="font-mono text-xs text-accent">
+                {clock(t.atSecs)}
+              </span>
+            )}
+          </div>
+          <p className="text-sm font-semibold text-fg">{t.title}</p>
+          {t.detail && <p className="text-sm text-fg-muted">{t.detail}</p>}
+          {t.apply && (
+            <p className="flex gap-2 rounded-lg bg-surface-hover p-2 text-sm text-fg">
+              <Lightbulb
+                size={14}
+                aria-hidden
+                className="mt-0.5 shrink-0 text-accent"
+              />
+              {t.apply}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              const video = videos.find((v) => v.id === t.videoId)
+              if (video) onOpenVideo(video)
+            }}
+            className="truncate text-left text-xs text-fg-muted transition-colors hover:text-accent"
+          >
+            {t.videoTitle}
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * The channel's own definition of a takeaway. Blank means the app-wide
+ * "Inspiration takeaways" skill (Settings → Skills) applies; anything here
+ * replaces it for this channel's videos only.
+ */
+function TakeawaySkillOptions({
+  channel,
+  onSaved,
+}: {
+  channel: main.InspirationChannel
+  onSaved: (channel: main.InspirationChannel) => void
+}) {
+  const [draft, setDraft] = useState(channel.takeawaysSkill)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [note, setNote] = useState('')
+
+  useEffect(() => setDraft(channel.takeawaysSkill), [channel.takeawaysSkill])
+
+  const save = async (content: string) => {
+    setBusy(true)
+    setError('')
+    setNote('')
+    try {
+      const saved = await SetInspirationChannelTakeaways(channel.id, content)
+      onSaved(saved)
+      setNote(
+        content.trim()
+          ? 'Saved — this channel now uses its own brief.'
+          : 'Cleared — this channel follows the app-wide skill again.',
+      )
+    } catch (err) {
+      setError(inspirationError(err, 'That could not be saved.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="flex max-w-3xl flex-col gap-3 rounded-xl border border-edge bg-surface p-4">
+      <div>
+        <p className="text-sm font-semibold text-fg">Takeaways brief</p>
+        <p className="mt-1 text-xs text-fg-muted">
+          What counts as a takeaway for this channel. Leave it empty to follow
+          the app-wide "Inspiration takeaways" skill (Settings → Skills). Keep
+          the JSON shape the skill describes — the app parses the reply.
+        </p>
+      </div>
+      <textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        rows={14}
+        spellCheck={false}
+        placeholder="Empty — following the app-wide skill."
+        className="w-full rounded-lg border border-edge bg-bg p-3 font-mono text-xs text-fg outline-none focus:border-accent"
+      />
+      {error && (
+        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+      {note && <p className="text-sm text-fg-muted">{note}</p>}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => void save(draft)}
+          disabled={busy || draft === channel.takeawaysSkill}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
+          {busy && <Loader2 size={14} aria-hidden className="animate-spin" />}
+          Save override
+        </button>
+        {channel.takeawaysSkill && (
+          <button
+            type="button"
+            onClick={() => void save('')}
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+          >
+            Use the app-wide skill
+          </button>
+        )}
       </div>
     </section>
   )
