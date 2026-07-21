@@ -8,7 +8,9 @@
 package youtube
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -45,7 +47,13 @@ const (
 	// not be combined with mine=.
 	UpcomingBroadcastsURL = "https://www.googleapis.com/youtube/v3/liveBroadcasts" +
 		"?part=id,snippet,status,contentDetails&broadcastStatus=upcoming&broadcastType=all"
+	// ThumbnailSetURL is an upload endpoint: the image is the request body,
+	// not JSON, so it does not go through httpx's helpers.
+	ThumbnailSetURL = "https://www.googleapis.com/upload/youtube/v3/thumbnails/set?uploadType=media&videoId="
 )
+
+// MaxThumbnailBytes is YouTube's thumbnail upload limit.
+const MaxThumbnailBytes = 2 * 1024 * 1024
 
 // Client is an authenticated YouTube caller.
 type Client struct {
@@ -717,4 +725,33 @@ func (c Client) MyChannelBasic() (id, title string, err error) {
 		return "", "", fmt.Errorf("YouTube returned no channel for this token")
 	}
 	return channels.Items[0].ID, channels.Items[0].Snippet.Title, nil
+}
+
+// SetThumbnail uploads a custom thumbnail for a video. The image is the
+// request body — a media upload, not a JSON call — so this builds its own
+// request rather than going through httpx's JSON helpers. Returns the HTTP
+// status alongside any error so a caller can tell a missing permission from
+// a rejected image.
+func (c Client) SetThumbnail(videoID string, image []byte, contentType string) (int, error) {
+	if len(image) > MaxThumbnailBytes {
+		return 0, fmt.Errorf("the thumbnail is over YouTube's 2 MB limit")
+	}
+	req, err := http.NewRequest(http.MethodPost,
+		ThumbnailSetURL+url.QueryEscape(videoID), bytes.NewReader(image))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("Content-Type", contentType)
+	resp, err := httpx.Client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return resp.StatusCode, fmt.Errorf("YouTube rejected the thumbnail (%d): %s",
+			resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return resp.StatusCode, nil
 }

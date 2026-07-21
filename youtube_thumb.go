@@ -1,16 +1,14 @@
 package main
 
 import (
-	"bp-temp/internal/httpx"
+	"bp-temp/internal/platforms/youtube"
 	"bytes"
 	"fmt"
 	"image"
 	_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
-	"io"
 	"log"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -45,12 +43,9 @@ func (a *App) thumbPushes() map[string]string {
 	return m
 }
 
-// youtubeThumbSetURL is the thumbnails.set upload endpoint; the video id is
-// appended as a query parameter.
-const youtubeThumbSetURL = "https://www.googleapis.com/upload/youtube/v3/thumbnails/set?uploadType=media&videoId="
-
-// youtubeMaxThumbBytes is YouTube's thumbnail upload limit (2 MB).
-const youtubeMaxThumbBytes = 2 * 1024 * 1024
+// youtubeMaxThumbBytes is YouTube's thumbnail upload limit (2 MB), mirrored
+// from the package so the re-encode below can aim under it.
+const youtubeMaxThumbBytes = youtube.MaxThumbnailBytes
 
 // youtubeVideoID extracts the video id from a watch URL
 // (youtube.com/watch?v=ID or youtu.be/ID).
@@ -138,25 +133,10 @@ func (a *App) UpdateYouTubeThumbnail(startedAt string, videoURLs []string) (Stre
 		return StreamThumbInfo{}, fmt.Errorf("connect YouTube in Settings → Services first")
 	}
 
+	client := youtubeClient(conn)
 	for _, id := range ids {
-		req, err := http.NewRequest(http.MethodPost, youtubeThumbSetURL+url.QueryEscape(id), bytes.NewReader(data))
-		if err != nil {
+		if _, err := client.SetThumbnail(id, data, contentType); err != nil {
 			return StreamThumbInfo{}, err
-		}
-		req.Header.Set("Authorization", "Bearer "+conn.token)
-		req.Header.Set("Content-Type", contentType)
-		resp, err := httpx.Client.Do(req)
-		if err != nil {
-			return StreamThumbInfo{}, err
-		}
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if resp.StatusCode < 200 || resp.StatusCode > 299 {
-			msg := string(body)
-			if len(msg) > 300 {
-				msg = msg[:300]
-			}
-			return StreamThumbInfo{}, fmt.Errorf("YouTube rejected the thumbnail (%d): %s", resp.StatusCode, msg)
 		}
 	}
 

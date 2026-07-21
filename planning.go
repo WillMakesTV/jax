@@ -7,10 +7,8 @@ import (
 	_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
-	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -478,7 +476,6 @@ func (a *App) applyPlanToYouTube(plan PlannedStream, series *ContentSeries) stri
 	if !ok {
 		return "YouTube is not connected — its stream info was not updated."
 	}
-	headers := map[string]string{"Authorization": "Bearer " + conn.token}
 	videoID := a.currentYTBroadcastID(conn)
 	if videoID == "" {
 		return "YouTube: no live or upcoming broadcast to update — schedule one in YouTube Studio, or run “Apply stream info” after the stream starts."
@@ -546,7 +543,7 @@ func (a *App) applyPlanToYouTube(plan PlannedStream, series *ContentSeries) stri
 	}
 	// The plan's thumbnail rides along onto the broadcast video. (Twitch has
 	// no equivalent — its live thumbnails are platform-generated.)
-	return a.pushYouTubeThumbnail(headers, videoID, plan.ThumbnailFile)
+	return a.pushYouTubeThumbnail(conn, videoID, plan.ThumbnailFile)
 }
 
 // youtubeThumbMaxBytes is YouTube's custom-thumbnail size cap.
@@ -592,7 +589,7 @@ var thumbUploadHTTP = &http.Client{Timeout: 2 * time.Minute}
 // image ("" file = the plan has none; nothing pushed). Oversized images are
 // re-encoded as JPEG to fit YouTube's 2MB cap. Returns a warning string on
 // failure, "" on success or no-op.
-func (a *App) pushYouTubeThumbnail(headers map[string]string, videoID, thumbFile string) string {
+func (a *App) pushYouTubeThumbnail(conn serviceConn, videoID, thumbFile string) string {
 	base := sanitizeThumbFile(thumbFile)
 	if base == "" {
 		return ""
@@ -614,27 +611,14 @@ func (a *App) pushYouTubeThumbnail(headers map[string]string, videoID, thumbFile
 		}
 	}
 
-	req, err := http.NewRequest(http.MethodPost,
-		"https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId="+url.QueryEscape(videoID),
-		bytes.NewReader(raw))
-	if err != nil {
-		return ""
-	}
-	req.Header.Set("Content-Type", contentType)
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	resp, err := thumbUploadHTTP.Do(req)
+	status, err := youtubeClient(conn).SetThumbnail(videoID, raw, contentType)
 	if err != nil {
 		log.Printf("jax: youtube thumbnail: %v", err)
-		return "YouTube: the thumbnail could not be uploaded."
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
-		log.Printf("jax: youtube thumbnail: %d %s", resp.StatusCode, body)
-		if resp.StatusCode == 401 || resp.StatusCode == 403 {
+		if status == 401 || status == 403 {
 			return "YouTube: reconnect in Settings → Services to grant the thumbnail permission."
+		}
+		if status == 0 {
+			return "YouTube: the thumbnail could not be uploaded."
 		}
 		return "YouTube: the thumbnail could not be updated."
 	}

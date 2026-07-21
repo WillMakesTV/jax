@@ -2,13 +2,13 @@ package main
 
 import (
 	"bp-temp/internal/httpx"
+	"bp-temp/internal/platforms/youtube"
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -355,20 +355,8 @@ func (a *App) pushThumbToVideo(token, videoID, thumbFile string) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest(http.MethodPost, youtubeThumbSetURL+url.QueryEscape(videoID), bytes.NewReader(data))
-	if err != nil {
+	if _, err := (youtube.Client{Token: token}).SetThumbnail(videoID, data, contentType); err != nil {
 		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", contentType)
-	resp, err := thumbUploadHTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("thumbnails.set failed (%d): %s", resp.StatusCode, truncateErr(string(body)))
 	}
 	return nil
 }
