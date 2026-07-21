@@ -1,11 +1,8 @@
 package main
 
 import (
-	"bp-temp/internal/platforms/youtube"
-	"bp-temp/internal/httpx"
 	"fmt"
 	"log"
-	"net/url"
 	"strings"
 )
 
@@ -44,8 +41,6 @@ type LiveChatPage struct {
 	PollIntervalMs int           `json:"pollIntervalMs"`
 }
 
-const youtubeChatMessagesURL = "https://www.googleapis.com/youtube/v3/liveChat/messages"
-
 // cachedYouTubeChatID returns the memoised live-chat id, or "" when unset.
 func (a *App) cachedYouTubeChatID() string {
 	a.mu.Lock()
@@ -62,25 +57,18 @@ func (a *App) setYouTubeChatID(id string) {
 // resolveYouTubeChatID returns the active broadcast's live-chat id, memoised
 // between calls (looking it up on every chat poll would double the quota cost
 // of polling). Returns "" when there is no active broadcast.
-func (a *App) resolveYouTubeChatID(headers map[string]string) string {
+func (a *App) resolveYouTubeChatID(conn serviceConn) string {
 	if chatID := a.cachedYouTubeChatID(); chatID != "" {
 		return chatID
 	}
-	var broadcasts struct {
-		Items []struct {
-			Snippet struct {
-				LiveChatID string `json:"liveChatId"`
-			} `json:"snippet"`
-		} `json:"items"`
-	}
-	if _, err := httpx.GetJSON(youtube.ActiveBroadcastURL, headers, &broadcasts); err != nil {
+	chatID, err := youtubeClient(conn).LiveChatID()
+	if err != nil {
 		log.Printf("jax: youtube chat broadcast lookup: %v", err)
 		return ""
 	}
-	if len(broadcasts.Items) == 0 || broadcasts.Items[0].Snippet.LiveChatID == "" {
+	if chatID == "" {
 		return "" // not live
 	}
-	chatID := broadcasts.Items[0].Snippet.LiveChatID
 	a.setYouTubeChatID(chatID)
 	return chatID
 }
@@ -94,58 +82,13 @@ func (a *App) GetYouTubeLiveChat(pageToken string) LiveChatPage {
 	if !ok {
 		return LiveChatPage{}
 	}
-	headers := map[string]string{"Authorization": "Bearer " + conn.token}
-
-	chatID := a.resolveYouTubeChatID(headers)
+	chatID := a.resolveYouTubeChatID(conn)
 	if chatID == "" {
 		return LiveChatPage{}
 	}
 
-	endpoint := youtubeChatMessagesURL +
-		"?part=snippet,authorDetails&maxResults=200&liveChatId=" + url.QueryEscape(chatID)
-	if pageToken != "" {
-		endpoint += "&pageToken=" + url.QueryEscape(pageToken)
-	}
-
-	var resp struct {
-		NextPageToken         string `json:"nextPageToken"`
-		PollingIntervalMillis int    `json:"pollingIntervalMillis"`
-		OfflineAt             string `json:"offlineAt"`
-		Items                 []struct {
-			ID      string `json:"id"`
-			Snippet struct {
-				Type             string `json:"type"`
-				DisplayMessage   string `json:"displayMessage"`
-				PublishedAt      string `json:"publishedAt"`
-				SuperChatDetails struct {
-					AmountDisplayString string `json:"amountDisplayString"`
-					UserComment         string `json:"userComment"`
-				} `json:"superChatDetails"`
-				SuperStickerDetails struct {
-					AmountDisplayString string `json:"amountDisplayString"`
-				} `json:"superStickerDetails"`
-				NewSponsorDetails struct {
-					MemberLevelName string `json:"memberLevelName"`
-					IsUpgrade       bool   `json:"isUpgrade"`
-				} `json:"newSponsorDetails"`
-				MemberMilestoneChatDetails struct {
-					MemberLevelName string `json:"memberLevelName"`
-					MemberMonth     int    `json:"memberMonth"`
-					UserComment     string `json:"userComment"`
-				} `json:"memberMilestoneChatDetails"`
-			} `json:"snippet"`
-			AuthorDetails struct {
-				DisplayName     string `json:"displayName"`
-				ChannelID       string `json:"channelId"`
-				ProfileImageURL string `json:"profileImageUrl"`
-				IsVerified      bool   `json:"isVerified"`
-				IsChatOwner     bool   `json:"isChatOwner"`
-				IsChatSponsor   bool   `json:"isChatSponsor"`
-				IsChatModerator bool   `json:"isChatModerator"`
-			} `json:"authorDetails"`
-		} `json:"items"`
-	}
-	if _, err := httpx.GetJSON(endpoint, headers, &resp); err != nil {
+	resp, err := youtubeClient(conn).ChatMessages(chatID, pageToken)
+	if err != nil {
 		// Chat gone (stream ended, id stale): drop the cache so the next poll
 		// re-resolves against the current broadcast.
 		log.Printf("jax: youtube chat messages: %v", err)
@@ -303,13 +246,12 @@ func (a *App) SendBroadcastChat(message string) []BroadcastSendResult {
 
 	if conn, ok := a.freshConn("youtube"); ok {
 		r := BroadcastSendResult{Platform: "youtube"}
-		headers := map[string]string{"Authorization": "Bearer " + conn.token}
 		client := youtubeClient(conn)
 		send := func(chatID string) (int, error) {
 			return client.SendChatMessage(chatID, message)
 		}
 
-		chatID := a.resolveYouTubeChatID(headers)
+		chatID := a.resolveYouTubeChatID(conn)
 		if chatID == "" {
 			r.Error = "No active YouTube live chat — the channel must be live to receive chat."
 		} else {
@@ -318,7 +260,7 @@ func (a *App) SendBroadcastChat(message string) []BroadcastSendResult {
 				// The memoised chat id may belong to an earlier, ended
 				// broadcast. Re-resolve against the current one and retry.
 				a.setYouTubeChatID("")
-				if fresh := a.resolveYouTubeChatID(headers); fresh != "" && fresh != chatID {
+				if fresh := a.resolveYouTubeChatID(conn); fresh != "" && fresh != chatID {
 					status, err = send(fresh)
 				}
 			}

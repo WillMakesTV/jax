@@ -60,8 +60,7 @@ func (a *App) TimeoutChatUser(platform, userID string, seconds int, reason strin
 		if !ok {
 			return fmt.Errorf("connect YouTube in Settings → Services first")
 		}
-		headers := map[string]string{"Authorization": "Bearer " + conn.token}
-		chatID := a.resolveYouTubeChatID(headers)
+		chatID := a.resolveYouTubeChatID(conn)
 		if chatID == "" {
 			return fmt.Errorf("YouTube has no live chat open right now")
 		}

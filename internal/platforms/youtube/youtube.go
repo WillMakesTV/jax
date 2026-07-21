@@ -32,6 +32,8 @@ const (
 	LiveVideoURL       = "https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,status,liveStreamingDetails&id="
 	CompletedURL       = "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet&broadcastStatus=completed&broadcastType=all&maxResults=20"
 	VideoMetaURL       = "https://www.googleapis.com/youtube/v3/videos?part=statistics,contentDetails&id="
+	SubscribersURL     = "https://www.googleapis.com/youtube/v3/subscriptions" +
+		"?part=snippet,subscriberSnippet&myRecentSubscribers=true&maxResults=50"
 )
 
 // Client is an authenticated YouTube caller.
@@ -494,4 +496,108 @@ func (c Client) VideoMetaByIDs(ids []string) ([]VideoMeta, error) {
 		return nil, err
 	}
 	return videos.Items, nil
+}
+
+// LiveChatID returns the active broadcast's live-chat id, or "" when the
+// channel is not broadcasting.
+func (c Client) LiveChatID() (string, error) {
+	var broadcasts struct {
+		Items []struct {
+			Snippet struct {
+				LiveChatID string `json:"liveChatId"`
+			} `json:"snippet"`
+		} `json:"items"`
+	}
+	if _, err := httpx.GetJSON(ActiveBroadcastURL, c.Headers(), &broadcasts); err != nil {
+		return "", err
+	}
+	if len(broadcasts.Items) == 0 {
+		return "", nil
+	}
+	return broadcasts.Items[0].Snippet.LiveChatID, nil
+}
+
+// ChatMessage is one live-chat item: an ordinary message, a Super Chat or
+// Super Sticker, a new member, or a membership milestone — YouTube delivers
+// them all through the same stream, and Snippet.Type says which.
+type ChatMessage struct {
+	ID      string `json:"id"`
+	Snippet struct {
+		Type             string `json:"type"`
+		DisplayMessage   string `json:"displayMessage"`
+		PublishedAt      string `json:"publishedAt"`
+		SuperChatDetails struct {
+			AmountDisplayString string `json:"amountDisplayString"`
+			UserComment         string `json:"userComment"`
+		} `json:"superChatDetails"`
+		SuperStickerDetails struct {
+			AmountDisplayString string `json:"amountDisplayString"`
+		} `json:"superStickerDetails"`
+		NewSponsorDetails struct {
+			MemberLevelName string `json:"memberLevelName"`
+			IsUpgrade       bool   `json:"isUpgrade"`
+		} `json:"newSponsorDetails"`
+		MemberMilestoneChatDetails struct {
+			MemberLevelName string `json:"memberLevelName"`
+			MemberMonth     int    `json:"memberMonth"`
+			UserComment     string `json:"userComment"`
+		} `json:"memberMilestoneChatDetails"`
+	} `json:"snippet"`
+	AuthorDetails struct {
+		DisplayName     string `json:"displayName"`
+		ChannelID       string `json:"channelId"`
+		ProfileImageURL string `json:"profileImageUrl"`
+		IsVerified      bool   `json:"isVerified"`
+		IsChatOwner     bool   `json:"isChatOwner"`
+		IsChatSponsor   bool   `json:"isChatSponsor"`
+		IsChatModerator bool   `json:"isChatModerator"`
+	} `json:"authorDetails"`
+}
+
+// ChatPage is one page of live chat, with what the API says about polling
+// again: the token to continue from, how long to wait, and — once set —
+// when the chat goes offline.
+type ChatPage struct {
+	Items                 []ChatMessage `json:"items"`
+	NextPageToken         string        `json:"nextPageToken"`
+	PollingIntervalMillis int           `json:"pollingIntervalMillis"`
+	OfflineAt             string        `json:"offlineAt"`
+}
+
+// ChatMessages reads a page of a live chat. An empty pageToken starts from
+// the recent history the API provides.
+func (c Client) ChatMessages(chatID, pageToken string) (ChatPage, error) {
+	endpoint := ChatMessagesURL +
+		"?part=snippet,authorDetails&maxResults=200&liveChatId=" + url.QueryEscape(chatID)
+	if pageToken != "" {
+		endpoint += "&pageToken=" + url.QueryEscape(pageToken)
+	}
+	var page ChatPage
+	if _, err := httpx.GetJSON(endpoint, c.Headers(), &page); err != nil {
+		return ChatPage{}, err
+	}
+	return page, nil
+}
+
+// Subscriber is one recent subscriber. Only subscriptions the viewer made
+// public are ever listed.
+type Subscriber struct {
+	ID      string `json:"id"`
+	Snippet struct {
+		PublishedAt string `json:"publishedAt"`
+	} `json:"snippet"`
+	SubscriberSnippet struct {
+		Title string `json:"title"`
+	} `json:"subscriberSnippet"`
+}
+
+// RecentSubscribers lists the channel's most recent public subscribers.
+func (c Client) RecentSubscribers() ([]Subscriber, error) {
+	var resp struct {
+		Items []Subscriber `json:"items"`
+	}
+	if _, err := httpx.GetJSON(SubscribersURL, c.Headers(), &resp); err != nil {
+		return nil, err
+	}
+	return resp.Items, nil
 }

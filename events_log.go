@@ -220,9 +220,6 @@ func (a *App) fetchTwitchFollowers() []StoredLiveEvent {
 	return events
 }
 
-const youtubeSubscriptionsURL = "https://www.googleapis.com/youtube/v3/subscriptions" +
-	"?part=snippet,subscriberSnippet&myRecentSubscribers=true&maxResults=50"
-
 // fetchYouTubeSubscribers lists the channel's most recent subscribers as feed
 // events — the YouTube equivalent of a Twitch follow. The API only exposes
 // subscribers whose subscriptions are public, so private subscribers never
@@ -233,24 +230,12 @@ func (a *App) fetchYouTubeSubscribers() []StoredLiveEvent {
 	if !ok {
 		return events
 	}
-	headers := map[string]string{"Authorization": "Bearer " + conn.token}
-
-	var resp struct {
-		Items []struct {
-			ID      string `json:"id"`
-			Snippet struct {
-				PublishedAt string `json:"publishedAt"`
-			} `json:"snippet"`
-			SubscriberSnippet struct {
-				Title string `json:"title"`
-			} `json:"subscriberSnippet"`
-		} `json:"items"`
-	}
-	if _, err := httpx.GetJSON(youtubeSubscriptionsURL, headers, &resp); err != nil {
+	subscribers, err := youtubeClient(conn).RecentSubscribers()
+	if err != nil {
 		log.Printf("jax: youtube subscribers sync: %v", err)
 		return events
 	}
-	for _, item := range resp.Items {
+	for _, item := range subscribers {
 		if item.ID == "" {
 			continue
 		}
