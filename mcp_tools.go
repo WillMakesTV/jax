@@ -586,6 +586,161 @@ func mcpToolCatalog() []mcpTool {
 			},
 		},
 
+		// --- Inspiration ---------------------------------------------------
+		{
+			name:        "list_inspiration_channels",
+			description: "The channels tracked in the Inspiration library — the creators whose videos are studied as reference. Use list_inspiration_videos for what has been indexed from one.",
+			handler: func(a *App, _ json.RawMessage) (any, error) {
+				return a.GetInspirationChannels(), nil
+			},
+		},
+		{
+			name:        "list_inspiration_videos",
+			description: `Videos in the Inspiration library, newest published first: metadata, pipeline status ("tracked" until downloaded, then downloading/transcribing/analyzing/extracting/"ready"), and how much has been derived from each. Bodies (outline, transcript, takeaways) are omitted — use get_inspiration_video.`,
+			inputSchema: objSchema(map[string]any{
+				"channelId": prop("string", "Only this channel's videos, as returned by list_inspiration_channels. Omit for the whole library."),
+			}),
+			handler: func(a *App, args json.RawMessage) (any, error) {
+				var in struct {
+					ChannelID string `json:"channelId"`
+				}
+				if err := decodeArgs(args, &in); err != nil {
+					return nil, err
+				}
+				type summary struct {
+					ID            string `json:"id"`
+					ChannelID     string `json:"channelId"`
+					Title         string `json:"title"`
+					URL           string `json:"url"`
+					PublishedAt   string `json:"publishedAt"`
+					DurationSecs  int    `json:"durationSecs"`
+					Views         int    `json:"views"`
+					Status        string `json:"status"`
+					Summary       string `json:"summary"`
+					HasOutline    bool   `json:"hasOutline"`
+					BeatCount     int    `json:"beatCount"`
+					TakeawayCount int    `json:"takeawayCount"`
+					LinkCount     int    `json:"linkCount"`
+					MentionCount  int    `json:"mentionCount"`
+					TranscriptLen int    `json:"transcriptLines"`
+				}
+				out := []summary{}
+				for _, v := range a.GetInspirationVideos(in.ChannelID) {
+					out = append(out, summary{
+						ID: v.ID, ChannelID: v.ChannelID, Title: v.Title,
+						URL: v.URL, PublishedAt: v.PublishedAt,
+						DurationSecs: v.DurationSecs, Views: v.Views,
+						Status: v.Status, Summary: v.Summary,
+						HasOutline:    v.Outline != "",
+						BeatCount:     len(v.Beats),
+						TakeawayCount: len(v.Takeaways),
+						LinkCount:     len(v.Links),
+						MentionCount:  len(v.Mentions),
+						TranscriptLen: len(v.Transcript),
+					})
+				}
+				return out, nil
+			},
+		},
+		{
+			name:        "get_inspiration_video",
+			description: "One studied video in full: its description, AI summary and outline, the beats, the takeaways (tips, techniques, concepts lifted out of it), and the manifest of links and named products/services/tools. The transcript is omitted unless asked for — it is long.",
+			inputSchema: objSchema(map[string]any{
+				"id":                prop("string", "The video id from list_inspiration_videos."),
+				"includeTranscript": prop("boolean", "Include the timestamped transcript too. Default false."),
+			}, "id"),
+			handler: func(a *App, args json.RawMessage) (any, error) {
+				var in struct {
+					ID                string `json:"id"`
+					IncludeTranscript bool   `json:"includeTranscript"`
+				}
+				if err := decodeArgs(args, &in); err != nil {
+					return nil, err
+				}
+				video, err := a.GetInspirationVideo(in.ID)
+				if err != nil {
+					return nil, err
+				}
+				if !in.IncludeTranscript {
+					video.Transcript = []InspirationLine{}
+				}
+				return video, nil
+			},
+		},
+		{
+			name:        "get_inspiration_transcript",
+			description: "The timestamped transcript of a studied inspiration video, in video-relative seconds.",
+			inputSchema: objSchema(map[string]any{
+				"id": prop("string", "The video id from list_inspiration_videos."),
+			}, "id"),
+			handler: func(a *App, args json.RawMessage) (any, error) {
+				var in struct {
+					ID string `json:"id"`
+				}
+				if err := decodeArgs(args, &in); err != nil {
+					return nil, err
+				}
+				video, err := a.GetInspirationVideo(in.ID)
+				if err != nil {
+					return nil, err
+				}
+				if len(video.Transcript) == 0 {
+					return nil, fmt.Errorf("%q has not been transcribed yet", video.Title)
+				}
+				return video.Transcript, nil
+			},
+		},
+		{
+			name:        "search_inspiration",
+			description: "Search everything studied in the Inspiration library — summaries, outlines, beats, takeaways, mentions, links, descriptions, and transcripts — and get the best passages back, each with the video, the moment inside it, and a citation URL that opens there. This is how to ground an answer in what has actually been watched.",
+			inputSchema: objSchema(map[string]any{
+				"query": prop("string", "What to look for: a topic, technique, product, or phrase."),
+				"limit": prop("integer", "How many passages to return (default 10, max 50)."),
+				"kinds": strArrayProp(`Only these parts of the notes: "summary", "outline", "beat", "takeaway", "mention", "link", "description", "transcript". Omit for all of them.`),
+			}, "query"),
+			handler: func(a *App, args json.RawMessage) (any, error) {
+				var in struct {
+					Query string   `json:"query"`
+					Limit int      `json:"limit"`
+					Kinds []string `json:"kinds"`
+				}
+				if err := decodeArgs(args, &in); err != nil {
+					return nil, err
+				}
+				// Filtering by kind narrows the result set, so ask for more
+				// than the caller wants and trim after.
+				want := in.Limit
+				if want <= 0 {
+					want = 10
+				}
+				ask := want
+				if len(in.Kinds) > 0 {
+					ask = want * 5
+				}
+				hits, err := a.SearchInspiration(in.Query, ask)
+				if err != nil {
+					return nil, err
+				}
+				if len(in.Kinds) > 0 {
+					keep := map[string]bool{}
+					for _, k := range in.Kinds {
+						keep[strings.ToLower(strings.TrimSpace(k))] = true
+					}
+					filtered := []InspirationSearchHit{}
+					for _, h := range hits {
+						if keep[h.Kind] {
+							filtered = append(filtered, h)
+						}
+					}
+					hits = filtered
+				}
+				if len(hits) > want {
+					hits = hits[:want]
+				}
+				return hits, nil
+			},
+		},
+
 		// --- Projects ------------------------------------------------------
 		{
 			name:        "list_projects",

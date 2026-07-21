@@ -436,6 +436,8 @@ export function SaveWidgetFieldType(arg1:main.WidgetFieldType):Promise<main.Widg
 
 export function SearchDebugReports(arg1:string):Promise<Array<main.DebugReport>>;
 
+export function SearchInspiration(arg1:string,arg2:number):Promise<Array<main.InspirationSearchHit>>;
+
 export function SearchKickCategories(arg1:string):Promise<Array<main.ServiceCategory>>;
 
 export function SearchTwitchCategories(arg1:string):Promise<Array<main.ServiceCategory>>;

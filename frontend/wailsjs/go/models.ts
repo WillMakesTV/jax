@@ -1669,6 +1669,36 @@ export class InspirationMention {
         this.atSecs = source["atSecs"];
     }
 }
+export class InspirationSearchHit {
+    videoId: string;
+    title: string;
+    url: string;
+    channelId: string;
+    channel: string;
+    kind: string;
+    atSecs: number;
+    text: string;
+    score: number;
+    citation: string;
+
+    static createFrom(source: any = {}) {
+        return new InspirationSearchHit(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.videoId = source["videoId"];
+        this.title = source["title"];
+        this.url = source["url"];
+        this.channelId = source["channelId"];
+        this.channel = source["channel"];
+        this.kind = source["kind"];
+        this.atSecs = source["atSecs"];
+        this.text = source["text"];
+        this.score = source["score"];
+        this.citation = source["citation"];
+    }
+}
 export class InspirationTakeaway {
     kind: string;
     title: string;

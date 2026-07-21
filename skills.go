@@ -35,6 +35,7 @@ var appSkillDefs = []struct {
 	{"go-live", "Going live", "The broadcast-day flow: applying a plan, monitoring while live, and concluding the episode."},
 	{"past-streams", "Reviewing past streams", "Work the stream archive: transcripts, chat logs, and AI outlines for recaps and clip hunting."},
 	{"download-transcribe", "Downloads & transcription", "Pull VODs to disk and re-transcribe them locally for cleaner transcripts."},
+	{"inspiration", "Inspiration library", "Study other creators' videos: what has been indexed, what was derived from each, and how to search the library and cite it."},
 	{"videos", "Videos & video plans", "Browse the channels' catalogue, review performance, and prepare video plans for the editor."},
 	{"video-edit-directions", "Video edit script", "Turn a video plan, its source-stream context, and the producer's notes into the outline/script the edit session executes — including the short- and long-form runtime targets."},
 	{"video-script-ideas", "Video script ideas", "How the three candidate scripts pitched on a past stream's Clips tab are written — distinct angles, hooks, runtime targets — refined automatically by which pitch the producer picks."},

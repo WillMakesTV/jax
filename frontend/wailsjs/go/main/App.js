@@ -870,6 +870,10 @@ export function SearchDebugReports(arg1) {
   return window['go']['main']['App']['SearchDebugReports'](arg1);
 }
 
+export function SearchInspiration(arg1, arg2) {
+  return window['go']['main']['App']['SearchInspiration'](arg1, arg2);
+}
+
 export function SearchKickCategories(arg1) {
   return window['go']['main']['App']['SearchKickCategories'](arg1);
 }
