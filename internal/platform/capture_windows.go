@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package platform
 
 import (
 	"fmt"
@@ -53,9 +53,9 @@ func ownedTopLevelWindows() []uintptr {
 	return enumOwned
 }
 
-// applyCaptureExclusion sets or clears the capture-exclusion display affinity
+// ApplyCaptureExclusion sets or clears the capture-exclusion display affinity
 // on the app's windows.
-func applyCaptureExclusion(hidden bool) error {
+func ApplyCaptureExclusion(hidden bool) error {
 	windows := ownedTopLevelWindows()
 	if len(windows) == 0 {
 		return fmt.Errorf("the app window could not be found")

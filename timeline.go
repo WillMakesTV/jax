@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/platform"
 	"bufio"
 	"encoding/json"
 	"fmt"
@@ -359,7 +360,7 @@ func probeVideo(path string) (videoProps, error) {
 		"-v", "error",
 		"-show_entries", "stream=codec_type,width,height,r_frame_rate",
 		"-of", "json", path)
-	hideWindow(cmd)
+	platform.HideWindow(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		return p, fmt.Errorf("could not read %s: %v", filepath.Base(path), err)
@@ -582,7 +583,7 @@ func (a *App) runPaddedExport(planID, ffmpeg, src, dst string, segments []Timeli
 // of the cut's total duration.
 func (a *App) runFFmpegProgress(planID, ffmpeg string, args []string, total float64) error {
 	cmd := exec.Command(ffmpeg, args...)
-	hideWindow(cmd)
+	platform.HideWindow(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err

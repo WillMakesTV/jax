@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package platform
 
 import (
 	"fmt"
@@ -200,10 +200,10 @@ func utf16Ptr(s string) *uint16 {
 	return p
 }
 
-// systemPrefersDark reads Windows' per-user app theme — the same OS setting
+// SystemPrefersDark reads Windows' per-user app theme — the same OS setting
 // the frontend's prefers-color-scheme resolves against. AppsUseLightTheme=0
 // means dark; a missing value (older Windows) counts as light.
-func systemPrefersDark() bool {
+func SystemPrefersDark() bool {
 	const hkcu = 0x80000001
 	const rrfRtRegDword = 0x00000010
 	var val, size uint32 = 0, 4
@@ -246,9 +246,9 @@ func applyScriptTopmost(hwnd uintptr, onTop bool) {
 		swpNoMove|swpNoSize|swpNoActivate)
 }
 
-// setScriptWindowTopmost applies keep-on-top to the open script window; with
+// SetScriptWindowTopmost applies keep-on-top to the open script window; with
 // no window open there is nothing to move and the preference just persists.
-func setScriptWindowTopmost(onTop bool) error {
+func SetScriptWindowTopmost(onTop bool) error {
 	scriptMu.Lock()
 	hwnd := scriptHwnd
 	scriptMu.Unlock()
@@ -294,12 +294,12 @@ func registerScriptClass() error {
 	return scriptClassErr
 }
 
-// openScriptWindow shows the plan's script in the process-owned side window,
+// OpenScriptWindow shows the plan's script in the process-owned side window,
 // creating it (on a dedicated message-loop thread) or updating the one
 // already open. The window follows the app's resolved theme via dark and the
 // keep-on-top preference via topmost. The caller re-applies the capture
 // affinity afterwards.
-func openScriptWindow(title, text string, dark, topmost bool) error {
+func OpenScriptWindow(title, text string, dark, topmost bool) error {
 	// The EDIT control needs CRLF line endings.
 	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\n", "\r\n")
 

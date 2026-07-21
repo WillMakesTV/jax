@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/platform"
 	"fmt"
 	"log"
 	"strconv"
@@ -29,7 +30,7 @@ func (a *App) scriptWindowDark() bool {
 	case "light":
 		return false
 	}
-	return systemPrefersDark()
+	return platform.SystemPrefersDark()
 }
 
 // scriptWindowTopmost reads the persisted keep-on-top preference.
@@ -45,7 +46,7 @@ func (a *App) scriptWindowTopmost() bool {
 // preference. An already-open window flips immediately; otherwise the choice
 // takes effect the next time the window opens.
 func (a *App) SetScriptWindowTopmost(onTop bool) error {
-	if err := setScriptWindowTopmost(onTop); err != nil {
+	if err := platform.SetScriptWindowTopmost(onTop); err != nil {
 		return err
 	}
 	if a.store == nil {
@@ -72,12 +73,12 @@ func (a *App) OpenScriptWindow(planID string) error {
 	if strings.TrimSpace(plan.Title) != "" {
 		title = "Script — " + strings.TrimSpace(plan.Title)
 	}
-	if err := openScriptWindow(title, script, a.scriptWindowDark(), a.scriptWindowTopmost()); err != nil {
+	if err := platform.OpenScriptWindow(title, script, a.scriptWindowDark(), a.scriptWindowTopmost()); err != nil {
 		return err
 	}
 	if a.store != nil {
 		if v, err := a.store.getSetting(settingHideFromCapture); err == nil && v == "true" {
-			if err := applyCaptureExclusion(true); err != nil {
+			if err := platform.ApplyCaptureExclusion(true); err != nil {
 				log.Printf("jax: hide script window from capture: %v", err)
 			}
 		}

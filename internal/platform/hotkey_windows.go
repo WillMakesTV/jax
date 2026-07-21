@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package platform
 
 import (
 	"fmt"
@@ -50,9 +50,9 @@ func keyEvent(vk uint16, up bool) winInput {
 	return in
 }
 
-// pressHotkey sends the shortcut as one SendInput batch so no other input can
+// PressHotkey sends the shortcut as one SendInput batch so no other input can
 // interleave between the modifier and key events.
-func pressHotkey(vkey int, ctrl, shift, alt, win bool) error {
+func PressHotkey(vkey int, ctrl, shift, alt, win bool) error {
 	var keys []uint16
 	if ctrl {
 		keys = append(keys, vkCtrl)

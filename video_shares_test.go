@@ -159,7 +159,7 @@ func TestTrackedVideoAggregatesShares(t *testing.T) {
 	}
 
 	tracked, err := a.SetVideoPlanShares(plan.ID, []string{
-		"https://youtu.be/ytid1",                          // alias of the publish record — must not double count
+		"https://youtu.be/ytid1",                           // alias of the publish record — must not double count
 		"https://www.tiktok.com/@creator/video/7300000001", // matched by parsed id
 		"https://www.instagram.com/p/Cxyz123/",             // matched by shortcode (IG ids aren't in permalinks)
 		"https://someother.site/video/42",                  // unmatched — listed, contributes 0

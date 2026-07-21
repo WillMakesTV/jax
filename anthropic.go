@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/platform"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -103,7 +104,7 @@ func claudeHeadlessCmd(ctx context.Context, prompt string, extraArgs ...string) 
 	// subscription login — scrub it so account mode always bills the
 	// subscription (same lesson as twitch-chatter-bot's llm module).
 	cmd.Env = envWithout(os.Environ(), "ANTHROPIC_API_KEY")
-	hideWindow(cmd)
+	platform.HideWindow(cmd)
 	return cmd, nil
 }
 
@@ -201,7 +202,7 @@ func openTerminal(program string, args ...string) bool {
 	}
 	// `start` detaches a new console window; the empty string is its title.
 	cmd := exec.Command("cmd", append([]string{"/c", "start", "", program}, args...)...)
-	hideWindow(cmd)
+	platform.HideWindow(cmd)
 	return cmd.Start() == nil
 }
 

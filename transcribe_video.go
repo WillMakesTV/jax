@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/platform"
 	"bufio"
 	_ "embed"
 	"encoding/json"
@@ -364,7 +365,7 @@ func (a *App) startVodJob(job *vodJob) error {
 		args = append(args, "--start", strconv.FormatFloat(resume, 'f', 2, 64))
 	}
 	cmd := exec.Command(python, args...)
-	backgroundProcess(cmd) // below-normal priority: never starve live capture
+	platform.BackgroundProcess(cmd) // below-normal priority: never starve live capture
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

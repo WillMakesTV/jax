@@ -18,11 +18,11 @@ import (
 
 // ChatMessage is one chat message from any platform.
 type ChatMessage struct {
-	ID          string `json:"id"`
-	Platform    string `json:"platform"`
-	Author      string `json:"author"`
-	AuthorID    string `json:"authorId"` // YouTube channel id / Twitch user id
-	AvatarURL   string `json:"avatarUrl"`
+	ID        string `json:"id"`
+	Platform  string `json:"platform"`
+	Author    string `json:"author"`
+	AuthorID  string `json:"authorId"` // YouTube channel id / Twitch user id
+	AvatarURL string `json:"avatarUrl"`
 	// Badges are normalised author roles ("Owner", "Moderator", "Member",
 	// "Verified", "Subscriber", ...).
 	Badges      []string `json:"badges"`
@@ -178,8 +178,8 @@ func (a *App) GetYouTubeLiveChat(pageToken string) LiveChatPage {
 		case "superStickerEvent":
 			events = append(events, LiveEvent{
 				ID: item.ID, Platform: "youtube", Type: "supersticker",
-				Author: item.AuthorDetails.DisplayName,
-				Detail: "sent a " + item.Snippet.SuperStickerDetails.AmountDisplayString + " Super Sticker",
+				Author:      item.AuthorDetails.DisplayName,
+				Detail:      "sent a " + item.Snippet.SuperStickerDetails.AmountDisplayString + " Super Sticker",
 				PublishedAt: item.Snippet.PublishedAt,
 			})
 			continue

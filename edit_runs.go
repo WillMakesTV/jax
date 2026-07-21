@@ -70,7 +70,7 @@ func (a *App) recordEditRunStart(planID string) {
 }
 
 // recordEditRunEnd clocks the plan's live session out with its outcome
-// (errDetail '' = a clean run).
+// (errDetail ” = a clean run).
 func (a *App) recordEditRunEnd(planID, errDetail string) {
 	m := a.editRunLog()
 	runs := m[planID]

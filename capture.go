@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/platform"
 	"log"
 	"strconv"
 	"time"
@@ -19,7 +20,7 @@ const settingHideFromCapture = "hide_from_capture"
 // preference. The error surfaces in the settings UI when the platform can't
 // honour it (non-Windows, or Windows older than 10 2004).
 func (a *App) SetHideFromCapture(hidden bool) error {
-	if err := applyCaptureExclusion(hidden); err != nil {
+	if err := platform.ApplyCaptureExclusion(hidden); err != nil {
 		return err
 	}
 	if a.store == nil {
@@ -41,7 +42,7 @@ func (a *App) restoreCaptureExclusion() {
 	}
 	var lastErr error
 	for i := 0; i < 25; i++ {
-		if lastErr = applyCaptureExclusion(true); lastErr == nil {
+		if lastErr = platform.ApplyCaptureExclusion(true); lastErr == nil {
 			return
 		}
 		time.Sleep(200 * time.Millisecond)

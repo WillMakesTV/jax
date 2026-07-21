@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/platform"
 	"bufio"
 	_ "embed"
 	"encoding/json"
@@ -472,7 +473,7 @@ func (a *App) inspirationSidecar(args ...string) (*exec.Cmd, error) {
 		return nil, err
 	}
 	cmd := exec.Command(python, append(append(pyArgs, script), args...)...)
-	backgroundProcess(cmd) // never outrank live capture
+	platform.BackgroundProcess(cmd) // never outrank live capture
 	return cmd, nil
 }
 
@@ -1132,7 +1133,7 @@ func (a *App) transcribeInspirationVideo(id, path string) ([]InspirationLine, er
 	}
 	cmd := exec.Command(python, append(append(pyArgs, script),
 		"--input", path, "--model", "small")...)
-	backgroundProcess(cmd)
+	platform.BackgroundProcess(cmd)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

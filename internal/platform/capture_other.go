@@ -1,12 +1,12 @@
 //go:build !windows
 
-package main
+package platform
 
 import "fmt"
 
-// applyCaptureExclusion hides the app window from screen capture. Only
+// ApplyCaptureExclusion hides the app window from screen capture. Only
 // implemented on Windows (SetWindowDisplayAffinity), the platform Jax's
 // OBS/Stream Deck workflow runs on.
-func applyCaptureExclusion(hidden bool) error {
+func ApplyCaptureExclusion(hidden bool) error {
 	return fmt.Errorf("hiding from screen capture is only supported on Windows")
 }

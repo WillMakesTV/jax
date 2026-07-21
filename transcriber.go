@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/platform"
 	"bufio"
 	_ "embed"
 	"encoding/json"
@@ -72,7 +73,7 @@ func (a *App) ensureTranscriber() error {
 	}
 
 	cmd := exec.Command(python, append(pyArgs, script, "--model", "small")...)
-	hideWindow(cmd)
+	platform.HideWindow(cmd)
 
 	stdin, err := cmd.StdinPipe() // the command channel; closing it exits the sidecar
 	if err != nil {

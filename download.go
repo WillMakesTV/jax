@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/platform"
 	"bufio"
 	_ "embed"
 	"encoding/json"
@@ -127,7 +128,7 @@ func (a *App) StartDownload(name, subfolder, manifestJSON string, fresh bool, ur
 	}
 	args = append(args, urls...)
 	cmd := exec.Command(python, args...)
-	hideWindow(cmd)
+	platform.HideWindow(cmd)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

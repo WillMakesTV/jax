@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/platform"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -354,9 +355,9 @@ type tiktokChannelInfo struct {
 	Username  string `json:"username"`
 	Avatar    string `json:"avatar"`
 	Followers string `json:"followers"`
-	Likes  string `json:"likes"`
-	Videos string `json:"videos"`
-	Link   string `json:"link"`
+	Likes     string `json:"likes"`
+	Videos    string `json:"videos"`
+	Link      string `json:"link"`
 	// Handle is the @name, derived from the profile web link (no scope carries
 	// it directly); a posted video's URL is built from it.
 	Handle string `json:"handle"`
@@ -695,7 +696,7 @@ func (a *App) renderAnnouncementVideo(plan PlannedStream) (string, error) {
 		"-c:a", "aac", "-shortest", out,
 	)
 	cmd := exec.Command(ffmpeg, args...)
-	hideWindow(cmd)
+	platform.HideWindow(cmd)
 	if raw, err := cmd.CombinedOutput(); err != nil {
 		msg := strings.TrimSpace(string(raw))
 		if len(msg) > 200 {

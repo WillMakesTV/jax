@@ -74,9 +74,9 @@ type MetricTotals struct {
 // MetricsSnapshot is the Dashboard hero's data: the totals now, the same totals
 // as of the comparison day, and the per-platform breakdown behind them.
 type MetricsSnapshot struct {
-	Day        string           `json:"day"` // YYYY-MM-DD
-	Totals     MetricTotals     `json:"totals"`
-	Platforms  []ChannelMetrics `json:"platforms"`
+	Day       string           `json:"day"` // YYYY-MM-DD
+	Totals    MetricTotals     `json:"totals"`
+	Platforms []ChannelMetrics `json:"platforms"`
 	// Previous is the earliest snapshot inside the requested window, and
 	// Growth the change from it. Both are zero until there is history to
 	// compare against — the app cannot invent a past it never recorded.
@@ -405,4 +405,3 @@ func (a *App) snapshotMetricsDaily() {
 		tick()
 	}
 }
-

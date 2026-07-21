@@ -37,8 +37,8 @@ type ChatUserInfo struct {
 }
 
 const (
-	twitchFollowCheckURL = "https://api.twitch.tv/helix/channels/followers"
-	twitchSubCheckURL    = "https://api.twitch.tv/helix/subscriptions"
+	twitchFollowCheckURL  = "https://api.twitch.tv/helix/channels/followers"
+	twitchSubCheckURL     = "https://api.twitch.tv/helix/subscriptions"
 	youtubeChannelByIDURL = "https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id="
 )
 

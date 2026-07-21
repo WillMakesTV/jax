@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/platform"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -118,7 +119,7 @@ $synth.Speak($text)
 $synth.Dispose()`, textPath, outPath)
 
 	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", script)
-	hideWindow(cmd)
+	platform.HideWindow(cmd)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		msg := strings.TrimSpace(string(out))
 		if len(msg) > 300 {

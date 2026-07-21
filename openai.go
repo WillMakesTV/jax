@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/platform"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -111,7 +112,7 @@ func (a *App) codexBrowserLogin(codexPath string) (string, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, codexPath, "login")
 	cmd.Env = envWithout(os.Environ(), "OPENAI_API_KEY")
-	hideWindow(cmd)
+	platform.HideWindow(cmd)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -181,7 +182,7 @@ func codexHeadlessCmd(ctx context.Context, prompt string, extraArgs ...string) (
 	// subscription login — scrub it so account mode always bills the
 	// subscription (same lesson as claudeHeadlessCmd).
 	cmd.Env = envWithout(os.Environ(), "OPENAI_API_KEY")
-	hideWindow(cmd)
+	platform.HideWindow(cmd)
 	return cmd, nil
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/platform"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -115,7 +116,7 @@ func extractFrame(ffmpeg, video, out string, seekSecs int) error {
 		"-q:v", "4",
 		out,
 	)
-	hideWindow(cmd)
+	platform.HideWindow(cmd)
 	raw, err := cmd.CombinedOutput()
 	if err != nil {
 		_ = os.Remove(out)

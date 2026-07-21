@@ -618,10 +618,10 @@ func kickUnofficialGet(path string, out any) error {
 
 // kickVODItem is one entry of /channels/{slug}/videos.
 type kickVODItem struct {
-	SessionTitle string      `json:"session_title"`
-	StartTime    string      `json:"start_time"`
-	Duration     int64       `json:"duration"` // milliseconds
-	Views        int         `json:"views"`
+	SessionTitle string `json:"session_title"`
+	StartTime    string `json:"start_time"`
+	Duration     int64  `json:"duration"` // milliseconds
+	Views        int    `json:"views"`
 	Thumbnail    struct {
 		Src string `json:"src"`
 	} `json:"thumbnail"`

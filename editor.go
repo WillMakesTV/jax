@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/platform"
 	"bufio"
 	"context"
 	"encoding/json"
@@ -74,7 +75,7 @@ func videoUseDir() (string, error) {
 }
 
 // keyEditWorkspaceDir is the Settings → Videos workspace-folder override
-// ('' = the default). Shared with the frontend's SETTING_KEYS.
+// (” = the default). Shared with the frontend's SETTING_KEYS.
 const keyEditWorkspaceDir = "edit_workspace_dir"
 
 // DefaultEditWorkspaceDir is where edit workspaces land when no directory is
@@ -135,7 +136,7 @@ func (a *App) GetEditorTools() EditorTools {
 	}
 	if node, err := exec.LookPath("node"); err == nil {
 		cmd := exec.Command(node, "--version")
-		hideWindow(cmd)
+		platform.HideWindow(cmd)
 		if out, err := cmd.Output(); err == nil {
 			t.Node = strings.TrimSpace(string(out))
 		}
@@ -170,7 +171,7 @@ func (a *App) InstallEditorTools() (EditorTools, error) {
 
 	runStep := func(name string, cmd *exec.Cmd) error {
 		a.emitEditorSetup(name + "…")
-		hideWindow(cmd)
+		platform.HideWindow(cmd)
 		out, err := cmd.CombinedOutput()
 		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 			if strings.TrimSpace(line) != "" {
@@ -534,7 +535,7 @@ func linkDir(link, target string) error {
 	}
 	if runtime.GOOS == "windows" {
 		cmd := exec.Command("cmd", "/c", "mklink", "/J", link, target)
-		hideWindow(cmd)
+		platform.HideWindow(cmd)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("could not link the video-use skill: %s",
 				firstNonEmpty(strings.TrimSpace(string(out)), err.Error()))
@@ -1477,7 +1478,7 @@ func killTree(p *os.Process) {
 	}
 	if runtime.GOOS == "windows" {
 		cmd := exec.Command("taskkill", "/pid", strconv.Itoa(p.Pid), "/t", "/f")
-		hideWindow(cmd)
+		platform.HideWindow(cmd)
 		if err := cmd.Run(); err == nil {
 			return
 		}
