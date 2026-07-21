@@ -99,7 +99,15 @@ export function InspirationVideoDetails({
   }
 
   const working = isWorking(video.status)
-  const studied = Boolean(video.outline) || video.beats.length > 0
+  // Takeaways are lifted out of the study, so extracting them only makes
+  // sense once the whole pipeline has landed: the local copy, its transcript,
+  // and the manifest the outline comes from.
+  const studied =
+    !working &&
+    video.status === 'ready' &&
+    Boolean(video.videoFile) &&
+    video.transcript.length > 0 &&
+    Boolean(video.outline)
   const tabs: {id: VideoTab; label: string; count?: number}[] = [
     {id: 'takeaways', label: 'Takeaways', count: video.takeaways.length},
     {id: 'outline', label: 'Outline'},
@@ -301,15 +309,15 @@ export function InspirationVideoDetails({
                       ? 'Takeaways are lifted out of the outline once the video has been studied.'
                       : studied
                         ? 'No takeaways yet — they are extracted in the background, or run it now below.'
-                        : 'No takeaways yet — download and study this video first.'
+                        : 'No takeaways yet — this video needs to be downloaded, transcribed and studied first.'
                   }
                 />
               ) : (
-                <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <ul className="columns-1 gap-3 sm:columns-2 xl:columns-3">
                   {video.takeaways.map((t, i) => (
                     <li
                       key={`${t.title}-${i}`}
-                      className="flex flex-col gap-2 rounded-xl border border-edge bg-surface p-4"
+                      className="mb-3 flex break-inside-avoid flex-col gap-2 rounded-xl border border-edge bg-surface p-4"
                     >
                       <div className="flex items-center gap-2">
                         <span className="rounded-full border border-edge bg-bg px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">
@@ -337,7 +345,7 @@ export function InspirationVideoDetails({
                   ))}
                 </ul>
               )}
-              {studied && !working && (
+              {studied && (
                 <button
                   type="button"
                   onClick={() => void run('takeaways')}
