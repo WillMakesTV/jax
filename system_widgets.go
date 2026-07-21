@@ -318,11 +318,7 @@ const unifiedChatPage = `<!DOCTYPE html>
     border: 1px solid rgba(255, 255, 255, 0.14);
     font-size: 12px; font-weight: 700; color: #fff;
   }
-  .chan svg { width: 14px; height: 14px; flex: none; fill: currentColor; }
-  .chan .who {
-    max-width: 120px; white-space: nowrap; overflow: hidden;
-    text-overflow: ellipsis; color: rgba(255, 255, 255, 0.75);
-  }
+  .chan svg { width: 15px; height: 15px; flex: none; fill: currentColor; }
   .chan .viewers {
     display: inline-flex; align-items: center; gap: 4px;
     font-variant-numeric: tabular-nums;
@@ -391,11 +387,10 @@ const unifiedChatPage = `<!DOCTYPE html>
     margin: 1px 0 3px 10px;
   }
   .source {
-    display: inline-flex; align-items: center; gap: 5px;
-    font-size: 11px; font-weight: 700; color: rgba(255, 255, 255, 0.65);
-    max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    display: inline-flex; align-items: center;
+    color: rgba(255, 255, 255, 0.75);
   }
-  .source svg { width: 13px; height: 13px; flex: none; fill: currentColor; }
+  .source svg { width: 15px; height: 15px; flex: none; fill: currentColor; }
   .time {
     font-size: 11px; color: rgba(255, 255, 255, 0.5);
     opacity: 0; transition: opacity 0.15s;
@@ -546,10 +541,6 @@ const unifiedChatPage = `<!DOCTYPE html>
       chip.title = (ch.channel || ch.platform) + ' — live'
       var svg = platformSvg(ch.platform)
       if (svg) chip.appendChild(svg)
-      var who = document.createElement('span')
-      who.className = 'who'
-      who.textContent = ch.channel || ch.platform
-      chip.appendChild(who)
       var viewers = document.createElement('span')
       viewers.className = 'viewers'
       var dot = document.createElement('span')
@@ -563,15 +554,15 @@ const unifiedChatPage = `<!DOCTYPE html>
     })
   }
 
-  // Logo + channel name, inline: the source badge every row carries.
+  // The source badge every row carries: the platform's mark alone — the
+  // channel is always ours, so its name only repeated itself down the
+  // column. It stays in the badge's tooltip.
   function sourceEl(platform) {
     var wrap = document.createElement('span')
     wrap.className = 'source'
+    wrap.title = platformLabel(platform)
     var svg = platformSvg(platform)
     if (svg) wrap.appendChild(svg)
-    var name = document.createElement('span')
-    name.textContent = platformLabel(platform)
-    wrap.appendChild(name)
     return wrap
   }
 
