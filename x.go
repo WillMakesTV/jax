@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/platforms/x"
 	"bp-temp/internal/httpx"
 	"context"
 	"crypto/sha256"
@@ -41,8 +42,6 @@ import (
 const (
 	xAuthorizeURL = "https://x.com/i/oauth2/authorize"
 	xTokenURL     = "https://api.x.com/2/oauth2/token"
-	xUsersMeURL   = "https://api.x.com/2/users/me"
-	xTweetsURL    = "https://api.x.com/2/tweets"
 
 	// xScopes: read the own account, post announcements, and keep a refresh
 	// token (offline.access).
@@ -55,6 +54,12 @@ const (
 )
 
 var xRedirectURI = fmt.Sprintf("http://localhost:%d%s", xRedirectPort, xRedirectPath)
+
+// xClient adapts a stored connection into the X caller (see
+// internal/platforms/x), which owns the endpoints and request shapes.
+func xClient(conn serviceConn) x.Client {
+	return x.Client{Token: conn.token}
+}
 
 // XRedirectURI exposes the redirect URI to the connect form.
 func (a *App) XRedirectURI() string {
@@ -329,17 +334,11 @@ type xUser struct {
 
 func fetchXUser(token string) xUser {
 	fallback := xUser{name: "X account"}
-	var r struct {
-		Data struct {
-			ID       string `json:"id"`
-			Username string `json:"username"`
-			Name     string `json:"name"`
-		} `json:"data"`
-	}
-	if _, err := httpx.GetJSON(xUsersMeURL, map[string]string{"Authorization": "Bearer " + token}, &r); err != nil {
+	u, err := (x.Client{Token: token}).Self()
+	if err != nil {
 		return fallback
 	}
-	return xUser{id: r.Data.ID, username: r.Data.Username, name: r.Data.Name}
+	return xUser{id: u.ID, username: u.Username, name: u.Name}
 }
 
 // ---------------------------------------------------------------------------
@@ -380,29 +379,18 @@ func (a *App) fetchXLive(conn serviceConn) LiveStream {
 
 	info, _, _, err := cachedJSON(a, keyXChannelInfo, xProfileTTL, false, func() (xChannelInfo, error) {
 		out := xChannelInfo{}
-		var r struct {
-			Data struct {
-				Description   string `json:"description"`
-				ProfileImage  string `json:"profile_image_url"`
-				PublicMetrics struct {
-					Followers int64 `json:"followers_count"`
-					Following int64 `json:"following_count"`
-					Tweets    int64 `json:"tweet_count"`
-				} `json:"public_metrics"`
-			} `json:"data"`
-		}
-		endpoint := xUsersMeURL + "?user.fields=public_metrics,profile_image_url,description"
-		if _, err := httpx.GetJSON(endpoint, map[string]string{"Authorization": "Bearer " + conn.token}, &r); err != nil {
+		profile, err := xClient(conn).SelfProfile()
+		if err != nil {
 			return out, err
 		}
-		out.Followers = fmtCount(r.Data.PublicMetrics.Followers)
-		out.Following = fmtCount(r.Data.PublicMetrics.Following)
-		out.Posts = fmtCount(r.Data.PublicMetrics.Tweets)
-		out.FollowersN = r.Data.PublicMetrics.Followers
-		out.PostsN = r.Data.PublicMetrics.Tweets
+		out.Followers = fmtCount(profile.PublicMetrics.Followers)
+		out.Following = fmtCount(profile.PublicMetrics.Following)
+		out.Posts = fmtCount(profile.PublicMetrics.Tweets)
+		out.FollowersN = profile.PublicMetrics.Followers
+		out.PostsN = profile.PublicMetrics.Tweets
 		// X serves a tiny avatar by default; ask for the 400x400 variant.
-		out.Avatar = strings.Replace(r.Data.ProfileImage, "_normal.", "_400x400.", 1)
-		out.Bio = r.Data.Description
+		out.Avatar = strings.Replace(profile.ProfileImage, "_normal.", "_400x400.", 1)
+		out.Bio = profile.Description
 		return out, nil
 	})
 	if err != nil {
@@ -453,13 +441,7 @@ func (a *App) applyPlanToX(plan PlannedStream, _ *ContentSeries) string {
 	// X counts every link as 23 chars; a conservative 270-rune budget stays
 	// safely under the 280 cap.
 	text := announcementBody(broadcastBaseTitle(plan), a.watchLinks(2), 270)
-	var resp struct {
-		Data struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	status, err := httpx.PostJSON(xTweetsURL, map[string]string{"Authorization": "Bearer " + conn.token},
-		map[string]string{"text": text}, &resp)
+	postID, status, err := xClient(conn).Post(text)
 	if err != nil {
 		log.Printf("jax: x announce: %v", err)
 		if status == 401 || status == 403 {
@@ -471,7 +453,7 @@ func (a *App) applyPlanToX(plan PlannedStream, _ *ContentSeries) string {
 		return "X: the announcement could not be posted."
 	}
 
-	a.markAnnounced("x", plan.ID, resp.Data.ID)
+	a.markAnnounced("x", plan.ID, postID)
 	return ""
 }
 
