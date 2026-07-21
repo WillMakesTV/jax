@@ -11,7 +11,7 @@ import {
   ThumbsUp,
 } from 'lucide-react'
 import clsx from 'clsx'
-import {useCallback, useEffect, useState} from 'react'
+import {useCallback, useEffect, useRef, useState} from 'react'
 import {
   AnalyzeInspirationVideo,
   ExtractInspirationTakeaways,
@@ -53,6 +53,26 @@ export function InspirationVideoDetails({
   const [tab, setTab] = useState<VideoTab>('takeaways')
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
+  const player = useRef<HTMLVideoElement>(null)
+
+  // Every timestamp on the page is a cue: jump the local copy there and play
+  // it. Without a local copy the moment opens on YouTube instead.
+  const seek = useCallback(
+    (atSecs: number) => {
+      const el = player.current
+      if (!el) {
+        if (video.url) {
+          const sep = video.url.includes('?') ? '&' : '?'
+          openExternal(`${video.url}${sep}t=${Math.max(0, atSecs)}s`)
+        }
+        return
+      }
+      el.currentTime = Math.max(0, atSecs)
+      void el.play().catch(() => {})
+      el.scrollIntoView({behavior: 'smooth', block: 'center'})
+    },
+    [video.url],
+  )
 
   const load = useCallback(() => {
     GetInspirationVideo(initial.id)
@@ -180,6 +200,7 @@ export function InspirationVideoDetails({
           <div className="w-full shrink-0 overflow-hidden rounded-xl border border-edge bg-surface lg:w-[30rem] xl:w-[38rem]">
             {video.mediaUrl ? (
               <video
+                ref={player}
                 src={video.mediaUrl}
                 poster={video.thumbUrl || video.thumbnailUrl || undefined}
                 controls
@@ -295,9 +316,7 @@ export function InspirationVideoDetails({
                           {TAKEAWAY_KINDS[t.kind] ?? t.kind}
                         </span>
                         {t.atSecs >= 0 && (
-                          <span className="font-mono text-xs text-accent">
-                            {clock(t.atSecs)}
-                          </span>
+                          <Cue atSecs={t.atSecs} onSeek={seek} />
                         )}
                       </div>
                       <p className="text-sm font-semibold text-fg">{t.title}</p>
@@ -347,9 +366,7 @@ export function InspirationVideoDetails({
                       key={`${b.atSecs}-${i}`}
                       className="flex gap-3 rounded-lg border border-edge bg-surface p-3"
                     >
-                      <span className="shrink-0 font-mono text-xs text-accent">
-                        {clock(b.atSecs)}
-                      </span>
+                      <Cue atSecs={b.atSecs} onSeek={seek} className="mt-0.5" />
                       <span className="min-w-0">
                         <span className="block text-sm font-semibold text-fg">
                           {b.title}
@@ -447,9 +464,11 @@ export function InspirationVideoDetails({
                             </span>
                           )}
                         </span>
-                        <span className="shrink-0 text-xs text-fg-muted">
+                        <span className="flex shrink-0 items-center gap-1.5 text-xs text-fg-muted">
                           {m.kind}
-                          {m.atSecs >= 0 ? ` · ${clock(m.atSecs)}` : ''}
+                          {m.atSecs >= 0 && (
+                            <Cue atSecs={m.atSecs} onSeek={seek} />
+                          )}
                         </span>
                       </li>
                     ))}
@@ -468,9 +487,7 @@ export function InspirationVideoDetails({
                         key={`${c.startSecs}-${i}`}
                         className="flex gap-3 text-sm text-fg"
                       >
-                        <span className="font-mono text-xs text-fg-muted">
-                          {clock(c.startSecs)}
-                        </span>
+                        <Cue atSecs={c.startSecs} onSeek={seek} />
                         {c.title}
                       </li>
                     ))}
@@ -494,9 +511,7 @@ export function InspirationVideoDetails({
                 <ul className="flex flex-col gap-1.5">
                   {video.transcript.map((l, i) => (
                     <li key={`${l.atSecs}-${i}`} className="flex gap-3 text-sm">
-                      <span className="shrink-0 font-mono text-xs text-fg-muted">
-                        {clock(l.atSecs)}
-                      </span>
+                      <Cue atSecs={l.atSecs} onSeek={seek} className="mt-0.5" />
                       <span className="text-fg">{l.text}</span>
                     </li>
                   ))}
@@ -507,6 +522,34 @@ export function InspirationVideoDetails({
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * A timestamp that plays the video from that moment. Every part of the study
+ * notes carries these, so they all read and behave the same.
+ */
+function Cue({
+  atSecs,
+  onSeek,
+  className,
+}: {
+  atSecs: number
+  onSeek: (atSecs: number) => void
+  className?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSeek(atSecs)}
+      title="Play from here"
+      className={clsx(
+        'shrink-0 font-mono text-xs text-accent transition-opacity hover:opacity-70',
+        className,
+      )}
+    >
+      {clock(atSecs)}
+    </button>
   )
 }
 
