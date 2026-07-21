@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bp-temp/internal/httpx"
+	"bp-temp/internal/platforms/kick"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -46,11 +45,6 @@ import (
 const (
 	kickAuthorizeURL   = "https://id.kick.com/oauth/authorize"
 	kickTokenURL       = "https://id.kick.com/oauth/token"
-	kickUsersURL       = "https://api.kick.com/public/v1/users"
-	kickChannelsURL    = "https://api.kick.com/public/v1/channels"
-	kickCategoriesURL  = "https://api.kick.com/public/v1/categories"
-	kickChatSendURL    = "https://api.kick.com/public/v1/chat"
-	kickUnofficialBase = "https://kick.com/api/v2"
 
 	// kickScopes covers reading the channel, updating stream info, and
 	// sending chat as the broadcaster.
@@ -293,18 +287,10 @@ type kickUser struct {
 
 // fetchKickUser returns the token owner's identity.
 func fetchKickUser(token string) kickUser {
-	fallback := kickUser{name: "Kick account"}
-	var r struct {
-		Data []struct {
-			UserID         json.Number `json:"user_id"`
-			Name           string      `json:"name"`
-			ProfilePicture string      `json:"profile_picture"`
-		} `json:"data"`
+	u, err := (kick.Client{Token: token}).Self()
+	if err != nil {
+		return kickUser{name: "Kick account"}
 	}
-	if _, err := httpx.GetJSON(kickUsersURL, map[string]string{"Authorization": "Bearer " + token}, &r); err != nil || len(r.Data) == 0 {
-		return fallback
-	}
-	u := r.Data[0]
 	return kickUser{
 		id:     u.UserID.String(),
 		name:   firstNonEmpty(u.Name, "Kick account"),
@@ -312,59 +298,33 @@ func fetchKickUser(token string) kickUser {
 	}
 }
 
-// kickChannel is the own-channel read used by live status and info checks.
-type kickChannel struct {
-	BroadcasterUserID json.Number `json:"broadcaster_user_id"`
-	Slug              string      `json:"slug"`
-	ChannelDesc       string      `json:"channel_description"`
-	BannerPicture     string      `json:"banner_picture"`
-	StreamTitle       string      `json:"stream_title"`
-	Category          struct {
-		ID   json.Number `json:"id"`
-		Name string      `json:"name"`
-	} `json:"category"`
-	Stream struct {
-		IsLive      bool   `json:"is_live"`
-		IsMature    bool   `json:"is_mature"`
-		Language    string `json:"language"`
-		StartTime   string `json:"start_time"`
-		Thumbnail   string `json:"thumbnail"`
-		URL         string `json:"url"`
-		ViewerCount int    `json:"viewer_count"`
-	} `json:"stream"`
-}
+// kickChannel is the own-channel read used by live status and info checks
+// (the shape lives with the API — see internal/platforms/kick).
+type kickChannel = kick.Channel
 
 func kickHeaders(conn serviceConn) map[string]string {
-	return map[string]string{"Authorization": "Bearer " + conn.token}
+	return kickClient(conn).Headers()
+}
+
+// kickClient adapts a stored connection into the Kick caller (see
+// internal/platforms/kick), which owns the endpoints and request shapes.
+func kickClient(conn serviceConn) kick.Client {
+	return kick.Client{Token: conn.token, UserID: conn.userID}
 }
 
 // fetchKickChannel reads the connected account's channel.
 func fetchKickChannel(conn serviceConn) (kickChannel, int, error) {
-	var r struct {
-		Data []kickChannel `json:"data"`
-	}
-	status, err := httpx.GetJSON(kickChannelsURL, kickHeaders(conn), &r)
-	if err != nil {
-		return kickChannel{}, status, err
-	}
-	if len(r.Data) == 0 {
-		return kickChannel{}, status, fmt.Errorf("kick returned no channel")
-	}
-	return r.Data[0], status, nil
+	return kickClient(conn).MyChannel()
 }
 
 // fetchKickSlug returns the token owner's channel slug (the kick.com URL and
 // the key the unofficial endpoints address channels by).
 func fetchKickSlug(token string) string {
-	var r struct {
-		Data []struct {
-			Slug string `json:"slug"`
-		} `json:"data"`
-	}
-	if _, err := httpx.GetJSON(kickChannelsURL, map[string]string{"Authorization": "Bearer " + token}, &r); err != nil || len(r.Data) == 0 {
+	ch, _, err := (kick.Client{Token: token}).MyChannel()
+	if err != nil {
 		return ""
 	}
-	return r.Data[0].Slug
+	return ch.Slug
 }
 
 // keyKickChannelInfo caches the slow-moving channel-level data: branding from
@@ -490,27 +450,7 @@ func kickTimeToRFC3339(s string) string {
 
 // sendKickChat posts a message to the broadcaster's chat as the user.
 func sendKickChat(conn serviceConn, message string) (int, error) {
-	id, err := strconv.Atoi(conn.userID)
-	if err != nil {
-		return 0, fmt.Errorf("kick account details unavailable — try reconnecting")
-	}
-	var resp struct {
-		Data struct {
-			IsSent bool `json:"is_sent"`
-		} `json:"data"`
-	}
-	status, err := httpx.PostJSON(kickChatSendURL, kickHeaders(conn), map[string]any{
-		"broadcaster_user_id": id,
-		"content":             message,
-		"type":                "user",
-	}, &resp)
-	if err != nil {
-		return status, err
-	}
-	if !resp.Data.IsSent {
-		return status, fmt.Errorf("kick dropped the message")
-	}
-	return status, nil
+	return kickClient(conn).SendChatMessage(message)
 }
 
 // KickChatIDs are the Pusher subscription keys for the connected channel:
@@ -595,26 +535,7 @@ func fetchKickChatUser(login string) (ChatUserInfo, error) {
 // it and may refuse non-browser clients, so a browser-like UA is sent and
 // callers must tolerate failure.
 func kickUnofficialGet(path string, out any) error {
-	req, err := http.NewRequest(http.MethodGet, kickUnofficialBase+path, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("User-Agent",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36")
-	req.Header.Set("Accept", "application/json")
-	resp, err := httpx.Client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("kick.com refused the request (%d)", resp.StatusCode)
-	}
-	return json.Unmarshal(body, out)
+	return kick.SiteGet(path, out)
 }
 
 // kickVODItem is one entry of /channels/{slug}/videos.
@@ -764,13 +685,7 @@ func (a *App) SearchKickCategories(query string) ([]ServiceCategory, error) {
 		return nil, fmt.Errorf("connect Kick in Settings → Services first")
 	}
 
-	var r struct {
-		Data []struct {
-			ID   json.Number `json:"id"`
-			Name string      `json:"name"`
-		} `json:"data"`
-	}
-	status, err := httpx.GetJSON(kickCategoriesURL+"?q="+url.QueryEscape(query), kickHeaders(conn), &r)
+	found, status, err := kickClient(conn).SearchCategories(query)
 	if err != nil {
 		if status == http.StatusUnauthorized {
 			return nil, errors.New(errReauth)
@@ -778,9 +693,9 @@ func (a *App) SearchKickCategories(query string) ([]ServiceCategory, error) {
 		return nil, fmt.Errorf("Kick category search failed: %v", err)
 	}
 
-	out := make([]ServiceCategory, 0, len(r.Data))
-	for _, d := range r.Data {
-		out = append(out, ServiceCategory{ID: d.ID.String(), Name: d.Name})
+	out := make([]ServiceCategory, 0, len(found))
+	for _, d := range found {
+		out = append(out, ServiceCategory{ID: d.ID, Name: d.Name})
 	}
 	return out, nil
 }
@@ -823,7 +738,7 @@ func applyKickInfo(conn serviceConn, title, categoryID string) error {
 			payload["category_id"] = id
 		}
 	}
-	status, err := httpx.PatchJSON(kickChannelsURL, kickHeaders(conn), payload)
+	status, err := kickClient(conn).UpdateChannel(payload)
 	if err != nil {
 		if status == http.StatusUnauthorized || status == http.StatusForbidden {
 			return fmt.Errorf("kick rejected the update (%d) — reconnect Kick in Settings → Services so the channel:write permission is granted, and check the scope is enabled on your Kick app", status)
