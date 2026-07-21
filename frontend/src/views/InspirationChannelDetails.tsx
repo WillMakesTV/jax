@@ -26,6 +26,7 @@ import {
   SetInspirationChannelTypes,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
+import {MarkdownField} from '../components/markdown/MarkdownField'
 import {PageHeader} from '../components/PageHeader'
 import {openExternal} from '../lib/browser'
 import {useDataChanged} from '../lib/dataChanged'
@@ -562,13 +563,11 @@ function TakeawaySkillOptions({
           the JSON shape the skill describes — the app parses the reply.
         </p>
       </div>
-      <textarea
+      <MarkdownField
+        id={`inspiration-channel-takeaways-${channel.id}`}
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        rows={14}
-        spellCheck={false}
+        onChange={setDraft}
         placeholder="Empty — following the app-wide skill."
-        className="w-full rounded-lg border border-edge bg-bg p-3 font-mono text-xs text-fg outline-none focus:border-accent"
       />
       {error && (
         <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
