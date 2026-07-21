@@ -10,6 +10,14 @@ export function AddCampaignAssets(arg1, arg2) {
   return window['go']['main']['App']['AddCampaignAssets'](arg1, arg2);
 }
 
+export function AddInspirationChannel(arg1) {
+  return window['go']['main']['App']['AddInspirationChannel'](arg1);
+}
+
+export function AddInspirationVideo(arg1) {
+  return window['go']['main']['App']['AddInspirationVideo'](arg1);
+}
+
 export function AddProjectAssets(arg1) {
   return window['go']['main']['App']['AddProjectAssets'](arg1);
 }
@@ -20,6 +28,10 @@ export function AddSponsorBranding(arg1) {
 
 export function AddTranscriptLine(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['AddTranscriptLine'](arg1, arg2, arg3, arg4);
+}
+
+export function AnalyzeInspirationVideo(arg1) {
+  return window['go']['main']['App']['AnalyzeInspirationVideo'](arg1);
 }
 
 export function AddWidgetField(arg1, arg2, arg3) {
@@ -168,6 +180,14 @@ export function DeleteDebugReport(arg1) {
 
 export function DeleteLocalStream(arg1) {
   return window['go']['main']['App']['DeleteLocalStream'](arg1);
+}
+
+export function DeleteInspirationChannel(arg1) {
+  return window['go']['main']['App']['DeleteInspirationChannel'](arg1);
+}
+
+export function DeleteInspirationVideo(arg1) {
+  return window['go']['main']['App']['DeleteInspirationVideo'](arg1);
 }
 
 export function DeletePlannedStream(arg1) {
@@ -414,6 +434,18 @@ export function GetGitHubConnection() {
   return window['go']['main']['App']['GetGitHubConnection']();
 }
 
+export function GetInspirationChannels() {
+  return window['go']['main']['App']['GetInspirationChannels']();
+}
+
+export function GetInspirationVideo(arg1) {
+  return window['go']['main']['App']['GetInspirationVideo'](arg1);
+}
+
+export function GetInspirationVideos(arg1) {
+  return window['go']['main']['App']['GetInspirationVideos'](arg1);
+}
+
 export function GetInstagramLiveChat() {
   return window['go']['main']['App']['GetInstagramLiveChat']();
 }
@@ -656,6 +688,10 @@ export function OutlineInProgress(arg1) {
 
 export function PickFootageFiles() {
   return window['go']['main']['App']['PickFootageFiles']();
+}
+
+export function ProcessInspirationVideo(arg1) {
+  return window['go']['main']['App']['ProcessInspirationVideo'](arg1);
 }
 
 export function PollFacebookDeviceAuth(arg1, arg2, arg3) {

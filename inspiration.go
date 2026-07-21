@@ -1,0 +1,917 @@
+package main
+
+import (
+	"bufio"
+	_ "embed"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+)
+
+// ---------------------------------------------------------------------------
+// Inspiration
+//
+// The reference library: YouTube videos (and whole channels) worth studying,
+// indexed locally. Adding a video downloads it under the Videos workspace
+// (Settings → Videos) into inspiration/<channel>/<video id>/, transcribes it
+// with the same faster-whisper sidecar the VOD transcriber uses, and then
+// asks the connected AI to read the description, chapters, and transcript and
+// return a manifest: a summary, a timestamped outline, the links, and the
+// products/services/tools the video names.
+//
+// Everything is stored under one settings key so an MCP client or a second
+// window sees the same library ("data:changed" fires on every write); the
+// media itself stays on disk and is served to the app by the media server's
+// /edits/ prefix (the workspace root).
+// ---------------------------------------------------------------------------
+
+//go:embed inspiration/fetch_video.py
+var inspirationScript []byte
+
+// keyInspiration holds the whole library (channels + videos).
+const keyInspiration = "inspiration"
+
+// inspirationDirName is the folder the library lives in, inside the Videos
+// workspace root (see resolveEditRoot).
+const inspirationDirName = "inspiration"
+
+// InspirationChannel is one indexed source channel.
+type InspirationChannel struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Handle      string `json:"handle"`
+	URL         string `json:"url"`
+	Description string `json:"description"`
+	AddedAt     string `json:"addedAt"`
+}
+
+// InspirationChapter is one chapter marker from the video's own metadata.
+type InspirationChapter struct {
+	Title     string `json:"title"`
+	StartSecs int    `json:"startSecs"`
+}
+
+// InspirationLine is one transcribed utterance, in video-relative seconds.
+type InspirationLine struct {
+	AtSecs  float64 `json:"atSecs"`
+	EndSecs float64 `json:"endSecs"`
+	Text    string  `json:"text"`
+}
+
+// InspirationBeat is one entry of the AI-built outline: a moment in the video
+// with what happens there.
+type InspirationBeat struct {
+	AtSecs  int    `json:"atSecs"`
+	Title   string `json:"title"`
+	Summary string `json:"summary"`
+}
+
+// InspirationLink is a URL the video points at (description or spoken).
+type InspirationLink struct {
+	Label string `json:"label"`
+	URL   string `json:"url"`
+}
+
+// InspirationMention is a product, service, tool, or brand the video names,
+// with the moment it comes up (-1 when it is only in the description).
+type InspirationMention struct {
+	Kind   string `json:"kind"` // product | service | tool | brand | person | other
+	Name   string `json:"name"`
+	Detail string `json:"detail"`
+	AtSecs int    `json:"atSecs"`
+}
+
+// Inspiration video statuses, in pipeline order.
+const (
+	inspirationTracked      = "tracked"
+	inspirationDownloading  = "downloading"
+	inspirationTranscribing = "transcribing"
+	inspirationAnalyzing    = "analyzing"
+	inspirationReady        = "ready"
+	inspirationError        = "error"
+)
+
+// InspirationVideo is one indexed video: its platform metadata, the local
+// copy, and everything the pipeline derived from it.
+type InspirationVideo struct {
+	ID           string   `json:"id"` // the platform's video id
+	ChannelID    string   `json:"channelId"`
+	Title        string   `json:"title"`
+	URL          string   `json:"url"`
+	Description  string   `json:"description"`
+	PublishedAt  string   `json:"publishedAt"`
+	DurationSecs int      `json:"durationSecs"`
+	Views        int      `json:"views"`
+	Likes        int      `json:"likes"`
+	Comments     int      `json:"comments"`
+	Tags         []string `json:"tags"`
+	Categories   []string `json:"categories"`
+	// ThumbnailURL is the platform's thumbnail; ThumbnailFile is the copy
+	// yt-dlp saved beside the video, served through MediaURL's folder.
+	ThumbnailURL  string `json:"thumbnailUrl"`
+	ThumbnailFile string `json:"thumbnailFile"`
+	// Folder is the library-relative path ("<channel>/<video id>") and
+	// VideoFile the media file inside it; both empty until it downloads.
+	Folder    string `json:"folder"`
+	VideoFile string `json:"videoFile"`
+	// MediaURL is the app-served address of the downloaded video, computed
+	// on read and never persisted.
+	MediaURL string `json:"mediaUrl"`
+	// ThumbURL is the app-served address of the saved thumbnail, likewise
+	// derived per read.
+	ThumbURL string `json:"thumbUrl"`
+
+	Status       string `json:"status"`
+	StatusDetail string `json:"statusDetail"`
+	Progress     int    `json:"progress"` // download percent while downloading
+
+	Chapters   []InspirationChapter `json:"chapters"`
+	Transcript []InspirationLine    `json:"transcript"`
+
+	Summary  string               `json:"summary"`
+	Outline  string               `json:"outline"` // markdown
+	Beats    []InspirationBeat    `json:"beats"`
+	Links    []InspirationLink    `json:"links"`
+	Mentions []InspirationMention `json:"mentions"`
+
+	AddedAt    string `json:"addedAt"`
+	AnalyzedAt string `json:"analyzedAt"`
+}
+
+// inspirationLibrary is the stored shape behind keyInspiration.
+type inspirationLibrary struct {
+	Channels []InspirationChannel `json:"channels"`
+	Videos   []InspirationVideo   `json:"videos"`
+}
+
+// inspirationRoot returns the library folder inside the Videos workspace,
+// creating it if necessary.
+func (a *App) inspirationRoot() (string, error) {
+	root := filepath.Join(a.resolveEditRoot(), inspirationDirName)
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return "", fmt.Errorf("could not create the inspiration folder: %w", err)
+	}
+	return root, nil
+}
+
+// getInspiration reads the stored library. Never returns nil slices.
+func (a *App) getInspiration() inspirationLibrary {
+	lib := inspirationLibrary{}
+	if a.store != nil {
+		if _, err := a.store.getJSON(keyInspiration, &lib); err != nil {
+			log.Printf("jax: getInspiration: %v", err)
+		}
+	}
+	if lib.Channels == nil {
+		lib.Channels = []InspirationChannel{}
+	}
+	if lib.Videos == nil {
+		lib.Videos = []InspirationVideo{}
+	}
+	return lib
+}
+
+func (a *App) saveInspiration(lib inspirationLibrary) error {
+	if a.store == nil {
+		return fmt.Errorf("storage unavailable")
+	}
+	return a.store.setJSON(keyInspiration, lib)
+}
+
+// fillInspirationURLs stamps a video's app-served media addresses.
+func (a *App) fillInspirationURLs(v *InspirationVideo) {
+	a.mu.Lock()
+	base := a.mediaBaseURL
+	a.mu.Unlock()
+	if v.Tags == nil {
+		v.Tags = []string{}
+	}
+	if v.Categories == nil {
+		v.Categories = []string{}
+	}
+	if v.Chapters == nil {
+		v.Chapters = []InspirationChapter{}
+	}
+	if v.Transcript == nil {
+		v.Transcript = []InspirationLine{}
+	}
+	if v.Beats == nil {
+		v.Beats = []InspirationBeat{}
+	}
+	if v.Links == nil {
+		v.Links = []InspirationLink{}
+	}
+	if v.Mentions == nil {
+		v.Mentions = []InspirationMention{}
+	}
+	if base == "" || v.Folder == "" {
+		return
+	}
+	prefix := base + editsPrefix + inspirationDirName + "/"
+	for _, part := range strings.Split(filepath.ToSlash(v.Folder), "/") {
+		prefix += url.PathEscape(part) + "/"
+	}
+	if v.VideoFile != "" {
+		v.MediaURL = prefix + url.PathEscape(v.VideoFile)
+	}
+	if v.ThumbnailFile != "" {
+		v.ThumbURL = prefix + url.PathEscape(v.ThumbnailFile)
+	}
+}
+
+// GetInspirationChannels returns the indexed channels, newest first. Never nil.
+func (a *App) GetInspirationChannels() []InspirationChannel {
+	lib := a.getInspiration()
+	sort.SliceStable(lib.Channels, func(i, j int) bool {
+		return lib.Channels[i].AddedAt > lib.Channels[j].AddedAt
+	})
+	return lib.Channels
+}
+
+// GetInspirationVideos returns a channel's videos (all of them when channelID
+// is empty), newest published first. Never nil.
+func (a *App) GetInspirationVideos(channelID string) []InspirationVideo {
+	lib := a.getInspiration()
+	out := []InspirationVideo{}
+	for i := range lib.Videos {
+		if channelID != "" && lib.Videos[i].ChannelID != channelID {
+			continue
+		}
+		v := lib.Videos[i]
+		a.fillInspirationURLs(&v)
+		out = append(out, v)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].PublishedAt != out[j].PublishedAt {
+			return out[i].PublishedAt > out[j].PublishedAt
+		}
+		return out[i].AddedAt > out[j].AddedAt
+	})
+	return out
+}
+
+// GetInspirationVideo returns one video by id, or an error when it is gone.
+func (a *App) GetInspirationVideo(id string) (InspirationVideo, error) {
+	for _, v := range a.getInspiration().Videos {
+		if v.ID == id {
+			a.fillInspirationURLs(&v)
+			return v, nil
+		}
+	}
+	return InspirationVideo{}, fmt.Errorf("that video is no longer indexed")
+}
+
+// upsertInspirationChannel stores a channel (matched by id), keeping the
+// original AddedAt, and returns its id.
+func (a *App) upsertInspirationChannel(lib *inspirationLibrary, ch InspirationChannel) string {
+	if ch.ID == "" {
+		ch.ID = "chan_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	}
+	for i := range lib.Channels {
+		if lib.Channels[i].ID != ch.ID {
+			continue
+		}
+		added := lib.Channels[i].AddedAt
+		if ch.Description == "" {
+			ch.Description = lib.Channels[i].Description
+		}
+		ch.AddedAt = added
+		lib.Channels[i] = ch
+		return ch.ID
+	}
+	ch.AddedAt = time.Now().UTC().Format(time.RFC3339)
+	lib.Channels = append(lib.Channels, ch)
+	return ch.ID
+}
+
+// mutateInspirationVideo applies fn to the stored video with the given id and
+// persists the library. Missing videos are ignored (a delete may have raced).
+func (a *App) mutateInspirationVideo(id string, fn func(v *InspirationVideo)) {
+	lib := a.getInspiration()
+	for i := range lib.Videos {
+		if lib.Videos[i].ID != id {
+			continue
+		}
+		fn(&lib.Videos[i])
+		if err := a.saveInspiration(lib); err != nil {
+			log.Printf("jax: save inspiration: %v", err)
+		}
+		return
+	}
+}
+
+// inspirationStatus records a pipeline step and reports it to open pages.
+func (a *App) inspirationStatus(id, status, detail string, progress int) {
+	a.mutateInspirationVideo(id, func(v *InspirationVideo) {
+		v.Status = status
+		v.StatusDetail = detail
+		v.Progress = progress
+	})
+	if a.ctx != nil {
+		wruntime.EventsEmit(a.ctx, "inspiration:status", id, status, detail, progress)
+	}
+}
+
+// inspirationSidecar writes the embedded fetcher and returns the command to
+// run it with the given arguments.
+func (a *App) inspirationSidecar(args ...string) (*exec.Cmd, error) {
+	dir, err := dataDir()
+	if err != nil {
+		return nil, fmt.Errorf("no data directory: %w", err)
+	}
+	script := filepath.Join(dir, "inspiration_fetch.py")
+	if err := os.WriteFile(script, inspirationScript, 0o600); err != nil {
+		return nil, fmt.Errorf("could not write the indexer script: %w", err)
+	}
+	python, pyArgs, err := findPython()
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(python, append(append(pyArgs, script), args...)...)
+	backgroundProcess(cmd) // never outrank live capture
+	return cmd, nil
+}
+
+// sidecarLine is one JSON line from the fetcher.
+type sidecarLine struct {
+	Status  string `json:"status"`
+	Percent int    `json:"percent"`
+	Dir     string `json:"dir"`
+	Rel     string `json:"rel"`
+	File    string `json:"file"`
+	Thumb   string `json:"thumbnail"`
+	Error   string `json:"error"`
+	Channel struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Handle      string `json:"handle"`
+		URL         string `json:"url"`
+		Description string `json:"description"`
+	} `json:"channel"`
+	Video struct {
+		ID           string               `json:"id"`
+		Title        string               `json:"title"`
+		URL          string               `json:"url"`
+		Description  string               `json:"description"`
+		PublishedAt  string               `json:"publishedAt"`
+		DurationSecs int                  `json:"durationSecs"`
+		Views        int                  `json:"views"`
+		Likes        int                  `json:"likes"`
+		Comments     int                  `json:"comments"`
+		Tags         []string             `json:"tags"`
+		Categories   []string             `json:"categories"`
+		ThumbnailURL string               `json:"thumbnailUrl"`
+		Chapters     []InspirationChapter `json:"chapters"`
+		Channel      struct {
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			Handle      string `json:"handle"`
+			URL         string `json:"url"`
+			Description string `json:"description"`
+		} `json:"channel"`
+	} `json:"video"`
+}
+
+// runInspirationSidecar runs the fetcher and hands every parsed line to onLine.
+// The returned error carries the sidecar's own error line when it reported one.
+func (a *App) runInspirationSidecar(onLine func(sidecarLine), args ...string) error {
+	cmd, err := a.inspirationSidecar(args...)
+	if err != nil {
+		return err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	cmd.Stderr = nil
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("could not start the indexer: %w", err)
+	}
+
+	lastErr := ""
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	for scanner.Scan() {
+		raw := strings.TrimSpace(scanner.Text())
+		if raw == "" {
+			continue
+		}
+		var line sidecarLine
+		if err := json.Unmarshal([]byte(raw), &line); err != nil {
+			continue
+		}
+		if line.Error != "" {
+			lastErr = line.Error
+			continue
+		}
+		onLine(line)
+	}
+	if err := cmd.Wait(); err != nil {
+		if lastErr != "" {
+			return fmt.Errorf("%s", lastErr)
+		}
+		return err
+	}
+	if lastErr != "" {
+		return fmt.Errorf("%s", lastErr)
+	}
+	return nil
+}
+
+// AddInspirationChannel indexes a YouTube channel: the channel itself plus
+// its most recent videos, tracked but not downloaded (download one from its
+// page when it is worth studying). Returns the stored channel.
+func (a *App) AddInspirationChannel(channelURL string) (InspirationChannel, error) {
+	channelURL = strings.TrimSpace(channelURL)
+	if channelURL == "" {
+		return InspirationChannel{}, fmt.Errorf("paste a YouTube channel URL first")
+	}
+
+	var channel InspirationChannel
+	found := []InspirationVideo{}
+	err := a.runInspirationSidecar(func(line sidecarLine) {
+		switch line.Status {
+		case "channel":
+			channel = InspirationChannel{
+				ID:          line.Channel.ID,
+				Name:        line.Channel.Name,
+				Handle:      line.Channel.Handle,
+				URL:         line.Channel.URL,
+				Description: line.Channel.Description,
+			}
+		case "video":
+			found = append(found, InspirationVideo{
+				ID:           line.Video.ID,
+				Title:        line.Video.Title,
+				URL:          line.Video.URL,
+				Description:  line.Video.Description,
+				PublishedAt:  line.Video.PublishedAt,
+				DurationSecs: line.Video.DurationSecs,
+				Views:        line.Video.Views,
+				ThumbnailURL: line.Video.ThumbnailURL,
+				Status:       inspirationTracked,
+			})
+		}
+	}, "--url", channelURL, "--index", "--limit", "30")
+	if err != nil {
+		return InspirationChannel{}, err
+	}
+	if channel.Name == "" && channel.ID == "" {
+		return InspirationChannel{}, fmt.Errorf("that URL did not resolve to a channel")
+	}
+
+	lib := a.getInspiration()
+	id := a.upsertInspirationChannel(&lib, channel)
+	known := map[string]bool{}
+	for _, v := range lib.Videos {
+		known[v.ID] = true
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, v := range found {
+		if v.ID == "" || known[v.ID] {
+			continue
+		}
+		v.ChannelID = id
+		v.AddedAt = now
+		lib.Videos = append(lib.Videos, v)
+	}
+	if err := a.saveInspiration(lib); err != nil {
+		return InspirationChannel{}, err
+	}
+	for _, ch := range lib.Channels {
+		if ch.ID == id {
+			return ch, nil
+		}
+	}
+	return channel, nil
+}
+
+// AddInspirationVideo indexes one video: it is stored immediately (so the
+// library shows it right away) and the download → transcribe → analyse
+// pipeline runs in the background, reporting through "inspiration:status".
+// The video's channel is indexed alongside it.
+func (a *App) AddInspirationVideo(videoURL string) (InspirationVideo, error) {
+	videoURL = strings.TrimSpace(videoURL)
+	if videoURL == "" {
+		return InspirationVideo{}, fmt.Errorf("paste a YouTube video URL first")
+	}
+	if a.store == nil {
+		return InspirationVideo{}, fmt.Errorf("storage unavailable")
+	}
+
+	stub := InspirationVideo{
+		ID:      "pending_" + strconv.FormatInt(time.Now().UnixNano(), 10),
+		URL:     videoURL,
+		Title:   videoURL,
+		Status:  inspirationDownloading,
+		AddedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	lib := a.getInspiration()
+	lib.Videos = append(lib.Videos, stub)
+	if err := a.saveInspiration(lib); err != nil {
+		return InspirationVideo{}, err
+	}
+
+	go a.processInspirationVideo(stub.ID, videoURL)
+	return stub, nil
+}
+
+// ProcessInspirationVideo runs (or re-runs) the pipeline for a video already
+// in the library — how a channel-tracked video gets downloaded and studied.
+func (a *App) ProcessInspirationVideo(id string) error {
+	video, err := a.GetInspirationVideo(id)
+	if err != nil {
+		return err
+	}
+	if video.URL == "" {
+		return fmt.Errorf("that video has no URL to fetch")
+	}
+	a.inspirationStatus(id, inspirationDownloading, "", 0)
+	go a.processInspirationVideo(id, video.URL)
+	return nil
+}
+
+// processInspirationVideo is the pipeline: download, transcribe, analyse.
+// Each step records its status so a page open on the video follows along.
+func (a *App) processInspirationVideo(id, videoURL string) {
+	root, err := a.inspirationRoot()
+	if err != nil {
+		a.inspirationStatus(id, inspirationError, err.Error(), 0)
+		return
+	}
+
+	// --- Download -----------------------------------------------------
+	var meta sidecarLine
+	var folder, file, thumb string
+	err = a.runInspirationSidecar(func(line sidecarLine) {
+		switch line.Status {
+		case "meta":
+			meta = line
+		case "downloading":
+			a.inspirationStatus(id, inspirationDownloading, "", line.Percent)
+		case "done":
+			folder = line.Rel
+			if folder == "" {
+				if rel, rerr := filepath.Rel(root, line.Dir); rerr == nil {
+					folder = filepath.ToSlash(rel)
+				}
+			}
+			file = line.File
+			thumb = line.Thumb
+		}
+	}, "--url", videoURL, "--dir", root)
+	if err != nil {
+		a.inspirationStatus(id, inspirationError, err.Error(), 0)
+		return
+	}
+	if file == "" {
+		a.inspirationStatus(id, inspirationError, "the download produced no video file", 0)
+		return
+	}
+
+	// The platform's own id replaces the pending one, and the channel is
+	// indexed alongside the video.
+	lib := a.getInspiration()
+	channelID := a.upsertInspirationChannel(&lib, InspirationChannel{
+		ID:          meta.Video.Channel.ID,
+		Name:        meta.Video.Channel.Name,
+		Handle:      meta.Video.Channel.Handle,
+		URL:         meta.Video.Channel.URL,
+		Description: meta.Video.Channel.Description,
+	})
+	realID := meta.Video.ID
+	for i := range lib.Videos {
+		if lib.Videos[i].ID != id {
+			continue
+		}
+		v := &lib.Videos[i]
+		if realID != "" {
+			v.ID = realID
+		}
+		v.ChannelID = channelID
+		v.Title = meta.Video.Title
+		v.URL = firstNonEmpty(meta.Video.URL, videoURL)
+		v.Description = meta.Video.Description
+		v.PublishedAt = meta.Video.PublishedAt
+		v.DurationSecs = meta.Video.DurationSecs
+		v.Views = meta.Video.Views
+		v.Likes = meta.Video.Likes
+		v.Comments = meta.Video.Comments
+		v.Tags = meta.Video.Tags
+		v.Categories = meta.Video.Categories
+		v.ThumbnailURL = meta.Video.ThumbnailURL
+		v.Chapters = meta.Video.Chapters
+		v.Folder = folder
+		v.VideoFile = file
+		v.ThumbnailFile = thumb
+		v.Status = inspirationTranscribing
+		v.StatusDetail = ""
+		v.Progress = 100
+		break
+	}
+	// A duplicate of the same video (added twice) collapses onto one entry.
+	if realID != "" {
+		seen := false
+		out := lib.Videos[:0]
+		for _, v := range lib.Videos {
+			if v.ID == realID {
+				if seen {
+					continue
+				}
+				seen = true
+			}
+			out = append(out, v)
+		}
+		lib.Videos = out
+		id = realID
+	}
+	if err := a.saveInspiration(lib); err != nil {
+		log.Printf("jax: save inspiration: %v", err)
+	}
+	if a.ctx != nil {
+		wruntime.EventsEmit(a.ctx, "inspiration:status", id, inspirationTranscribing, "", 100)
+	}
+
+	// --- Transcribe ---------------------------------------------------
+	lines, err := a.transcribeInspirationVideo(id, filepath.Join(root, filepath.FromSlash(folder), file))
+	if err != nil {
+		a.inspirationStatus(id, inspirationError, err.Error(), 0)
+		return
+	}
+	a.mutateInspirationVideo(id, func(v *InspirationVideo) {
+		v.Transcript = lines
+		v.Status = inspirationAnalyzing
+	})
+	if a.ctx != nil {
+		wruntime.EventsEmit(a.ctx, "inspiration:status", id, inspirationAnalyzing, "", 0)
+	}
+
+	// --- Analyse ------------------------------------------------------
+	if err := a.analyzeInspirationVideo(id); err != nil {
+		a.inspirationStatus(id, inspirationError, err.Error(), 0)
+		return
+	}
+	a.inspirationStatus(id, inspirationReady, "", 0)
+}
+
+// transcribeInspirationVideo runs the faster-whisper sidecar over the local
+// copy and returns its utterances in video-relative seconds.
+func (a *App) transcribeInspirationVideo(id, path string) ([]InspirationLine, error) {
+	if _, err := os.Stat(path); err != nil {
+		return nil, fmt.Errorf("the downloaded video is missing: %w", err)
+	}
+	dir, err := dataDir()
+	if err != nil {
+		return nil, err
+	}
+	script := filepath.Join(dir, "transcribe_video.py")
+	if err := os.WriteFile(script, transcribeVideoScript, 0o600); err != nil {
+		return nil, fmt.Errorf("could not write the transcriber script: %w", err)
+	}
+	python, pyArgs, err := findPython()
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(python, append(append(pyArgs, script),
+		"--input", path, "--model", "small")...)
+	backgroundProcess(cmd)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("could not start the transcriber: %w", err)
+	}
+
+	lines := []InspirationLine{}
+	lastErr := ""
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		raw := strings.TrimSpace(scanner.Text())
+		if raw == "" {
+			continue
+		}
+		var seg struct {
+			Text  string  `json:"text"`
+			Start float64 `json:"start"`
+			End   float64 `json:"end"`
+			Pos   float64 `json:"pos"`
+			Error string  `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(raw), &seg); err != nil {
+			continue
+		}
+		switch {
+		case seg.Error != "":
+			lastErr = seg.Error
+		case seg.Text != "":
+			lines = append(lines, InspirationLine{
+				AtSecs: seg.Start, EndSecs: seg.End, Text: seg.Text,
+			})
+		case seg.Pos > 0:
+			// A heartbeat: report how far through the video the pass is.
+			a.inspirationStatus(id, inspirationTranscribing, "", int(seg.Pos))
+		}
+	}
+	if err := cmd.Wait(); err != nil {
+		if lastErr != "" {
+			return nil, fmt.Errorf("%s", lastErr)
+		}
+		return nil, err
+	}
+	if lastErr != "" {
+		return nil, fmt.Errorf("%s", lastErr)
+	}
+	return lines, nil
+}
+
+// inspirationInstructions briefs the model that builds a video's manifest.
+const inspirationInstructions = `You are indexing a YouTube video for a creator's reference library. You are given the video's metadata, its chapter markers, and a timestamped transcript of its audio.
+
+Study it the way a producer would: what the video does, how it is built, what it points the viewer at.
+
+Respond with a single JSON object and nothing else:
+{
+  "summary": "<2-4 sentences: what this video is and who it is for>",
+  "outline": "<markdown outline of the whole video, using '## mm:ss — Section' headings and bullets underneath; cover the video end to end>",
+  "beats": [{"atSecs": 0, "title": "<short label>", "summary": "<what happens here>"}],
+  "links": [{"label": "<what it is>", "url": "<url>"}],
+  "mentions": [{"kind": "product|service|tool|brand|person|other", "name": "<name>", "detail": "<how it is used or why it comes up>", "atSecs": 0}]
+}
+
+Rules:
+- Timestamps are seconds from the start of the video, taken from the transcript. Use -1 for a mention that appears only in the description.
+- links: every URL in the description, plus any spoken or clearly named destination. Keep product ids, SKUs, and discount codes in the label when they are given.
+- mentions: every product, service, tool, brand, or person the video names — including gear shown or read out. Do not invent any.
+- beats: 8-20 entries, in time order, covering the whole runtime.
+- Do not wrap the JSON in code fences.`
+
+// AnalyzeInspirationVideo re-runs the AI pass over an indexed video (the
+// pipeline calls it once; the video page offers it again after edits).
+func (a *App) AnalyzeInspirationVideo(id string) error {
+	if err := a.analyzeInspirationVideo(id); err != nil {
+		a.inspirationStatus(id, inspirationError, err.Error(), 0)
+		return err
+	}
+	a.inspirationStatus(id, inspirationReady, "", 0)
+	return nil
+}
+
+// analyzeInspirationVideo asks the connected AI for the video's manifest and
+// stores it.
+func (a *App) analyzeInspirationVideo(id string) error {
+	video, err := a.GetInspirationVideo(id)
+	if err != nil {
+		return err
+	}
+
+	var in strings.Builder
+	fmt.Fprintf(&in, "# Video\nTitle: %s\nURL: %s\n", video.Title, video.URL)
+	if video.PublishedAt != "" {
+		fmt.Fprintf(&in, "Published: %s\n", video.PublishedAt)
+	}
+	if video.DurationSecs > 0 {
+		fmt.Fprintf(&in, "Duration: %s\n", formatClock(video.DurationSecs))
+	}
+	if len(video.Tags) > 0 {
+		fmt.Fprintf(&in, "Tags: %s\n", strings.Join(video.Tags, ", "))
+	}
+	if strings.TrimSpace(video.Description) != "" {
+		fmt.Fprintf(&in, "\n## Description\n%s\n", video.Description)
+	}
+	if len(video.Chapters) > 0 {
+		in.WriteString("\n## Chapters\n")
+		for _, c := range video.Chapters {
+			fmt.Fprintf(&in, "- %s %s\n", formatClock(c.StartSecs), c.Title)
+		}
+	}
+	if len(video.Transcript) > 0 {
+		in.WriteString("\n## Transcript\n")
+		for _, l := range video.Transcript {
+			fmt.Fprintf(&in, "[%s] %s\n", formatClock(int(l.AtSecs)), l.Text)
+		}
+	} else {
+		in.WriteString("\n## Transcript\n(none — the audio produced no speech)\n")
+	}
+
+	text, err := a.askAIText(inspirationInstructions, in.String())
+	if err != nil {
+		return err
+	}
+	var parsed struct {
+		Summary  string               `json:"summary"`
+		Outline  string               `json:"outline"`
+		Beats    []InspirationBeat    `json:"beats"`
+		Links    []InspirationLink    `json:"links"`
+		Mentions []InspirationMention `json:"mentions"`
+	}
+	if err := json.Unmarshal([]byte(extractJSONObject(text)), &parsed); err != nil {
+		return fmt.Errorf("the model's manifest could not be read: %w", err)
+	}
+
+	a.mutateInspirationVideo(id, func(v *InspirationVideo) {
+		v.Summary = parsed.Summary
+		v.Outline = parsed.Outline
+		v.Beats = parsed.Beats
+		v.Links = parsed.Links
+		v.Mentions = parsed.Mentions
+		v.Status = inspirationReady
+		v.StatusDetail = ""
+		v.AnalyzedAt = time.Now().UTC().Format(time.RFC3339)
+	})
+	return nil
+}
+
+// DeleteInspirationVideo removes a video from the library and its downloaded
+// copy from disk.
+func (a *App) DeleteInspirationVideo(id string) error {
+	lib := a.getInspiration()
+	folder := ""
+	out := make([]InspirationVideo, 0, len(lib.Videos))
+	for _, v := range lib.Videos {
+		if v.ID == id {
+			folder = v.Folder
+			continue
+		}
+		out = append(out, v)
+	}
+	lib.Videos = out
+	if err := a.saveInspiration(lib); err != nil {
+		return err
+	}
+	if folder != "" {
+		if root, err := a.inspirationRoot(); err == nil {
+			_ = os.RemoveAll(filepath.Join(root, filepath.FromSlash(folder)))
+		}
+	}
+	return nil
+}
+
+// DeleteInspirationChannel removes a channel, its videos, and their files.
+func (a *App) DeleteInspirationChannel(id string) error {
+	lib := a.getInspiration()
+	channels := make([]InspirationChannel, 0, len(lib.Channels))
+	for _, c := range lib.Channels {
+		if c.ID != id {
+			channels = append(channels, c)
+		}
+	}
+	lib.Channels = channels
+
+	folders := []string{}
+	videos := make([]InspirationVideo, 0, len(lib.Videos))
+	for _, v := range lib.Videos {
+		if v.ChannelID == id {
+			if v.Folder != "" {
+				folders = append(folders, v.Folder)
+			}
+			continue
+		}
+		videos = append(videos, v)
+	}
+	lib.Videos = videos
+	if err := a.saveInspiration(lib); err != nil {
+		return err
+	}
+	if root, err := a.inspirationRoot(); err == nil {
+		for _, f := range folders {
+			_ = os.RemoveAll(filepath.Join(root, filepath.FromSlash(f)))
+		}
+	}
+	return nil
+}
+
+// formatClock renders seconds as h:mm:ss (or m:ss under an hour).
+func formatClock(secs int) string {
+	if secs < 0 {
+		secs = 0
+	}
+	h, m, s := secs/3600, (secs%3600)/60, secs%60
+	if h > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
+	}
+	return fmt.Sprintf("%d:%02d", m, s)
+}
+
+// extractJSONObject returns the outermost {...} of a model reply, so a stray
+// sentence or code fence around the JSON does not break parsing.
+func extractJSONObject(text string) string {
+	start := strings.Index(text, "{")
+	end := strings.LastIndex(text, "}")
+	if start < 0 || end <= start {
+		return text
+	}
+	return text[start : end+1]
+}

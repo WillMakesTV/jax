@@ -1,0 +1,429 @@
+import {
+  Download,
+  ExternalLink,
+  Eye,
+  Link2,
+  Loader2,
+  MessageSquare,
+  Package,
+  RefreshCw,
+  ThumbsUp,
+} from 'lucide-react'
+import clsx from 'clsx'
+import {useCallback, useEffect, useState} from 'react'
+import {
+  AnalyzeInspirationVideo,
+  GetInspirationVideo,
+  ProcessInspirationVideo,
+} from '../../wailsjs/go/main/App'
+import {main} from '../../wailsjs/go/models'
+import {Markdown} from '../components/markdown/Markdown'
+import {PageHeader} from '../components/PageHeader'
+import {openExternal} from '../lib/browser'
+import {useDataChanged} from '../lib/dataChanged'
+import {formatCompact, formatDate} from '../lib/format'
+import {clock, inspirationError} from './Inspiration'
+import {isWorking, StatusPill} from './InspirationChannelDetails'
+
+type VideoTab = 'outline' | 'manifest' | 'transcript' | 'description'
+
+/**
+ * One inspiration video in full: the local copy, the platform metadata, the
+ * AI-built outline and manifest (links, products, services), and the
+ * transcript it was all read from.
+ */
+export function InspirationVideoDetails({
+  video: initial,
+}: {
+  video: main.InspirationVideo
+}) {
+  const [video, setVideo] = useState(initial)
+  const [tab, setTab] = useState<VideoTab>('outline')
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+
+  const load = useCallback(() => {
+    GetInspirationVideo(initial.id)
+      .then(setVideo)
+      .catch(() => {})
+  }, [initial.id])
+
+  useEffect(load, [load])
+  // The pipeline persists each step, so an open page follows the run.
+  useDataChanged(['inspiration'], load)
+
+  const run = async (what: 'download' | 'analyze') => {
+    setBusy(what)
+    setError('')
+    try {
+      if (what === 'download') await ProcessInspirationVideo(video.id)
+      else await AnalyzeInspirationVideo(video.id)
+    } catch (err) {
+      setError(inspirationError(err, 'That did not work — try again.'))
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const working = isWorking(video.status)
+  const tabs: {id: VideoTab; label: string; count?: number}[] = [
+    {id: 'outline', label: 'Outline'},
+    {
+      id: 'manifest',
+      label: 'Manifest',
+      count: video.links.length + video.mentions.length,
+    },
+    {id: 'transcript', label: 'Transcript', count: video.transcript.length},
+    {id: 'description', label: 'Description'},
+  ]
+
+  return (
+    <div className="flex flex-1 flex-col">
+      <PageHeader
+        description={[
+          video.publishedAt ? formatDate(video.publishedAt) : '',
+          video.durationSecs > 0 ? clock(video.durationSecs) : '',
+        ]
+          .filter(Boolean)
+          .join(' · ')}
+        actions={
+          <div className="flex items-center gap-2">
+            {video.url && (
+              <button
+                type="button"
+                onClick={() => openExternal(video.url)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+              >
+                <ExternalLink size={14} aria-hidden />
+                YouTube
+              </button>
+            )}
+            {!working && (
+              <button
+                type="button"
+                onClick={() =>
+                  void run(video.videoFile ? 'analyze' : 'download')
+                }
+                disabled={busy !== ''}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {busy ? (
+                  <Loader2 size={14} aria-hidden className="animate-spin" />
+                ) : video.videoFile ? (
+                  <RefreshCw size={14} aria-hidden />
+                ) : (
+                  <Download size={14} aria-hidden />
+                )}
+                {video.videoFile ? 'Study again' : 'Download & study'}
+              </button>
+            )}
+          </div>
+        }
+      />
+
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+        {/* The local copy, with the numbers the platform reports. */}
+        <aside className="flex w-full shrink-0 flex-col gap-3 lg:w-96">
+          <div className="overflow-hidden rounded-xl border border-edge bg-surface">
+            {video.mediaUrl ? (
+              <video
+                src={video.mediaUrl}
+                poster={video.thumbUrl || video.thumbnailUrl || undefined}
+                controls
+                className="aspect-video w-full bg-black"
+              />
+            ) : video.thumbUrl || video.thumbnailUrl ? (
+              <img
+                src={video.thumbUrl || video.thumbnailUrl}
+                alt={`${video.title} thumbnail`}
+                className="aspect-video w-full object-cover"
+              />
+            ) : (
+              <div className="flex aspect-video w-full items-center justify-center bg-surface-hover text-sm text-fg-muted">
+                Not downloaded yet
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-2 p-3">
+              <StatusPill video={video} />
+              {video.views > 0 && (
+                <span className="inline-flex items-center gap-1 text-xs text-fg-muted">
+                  <Eye size={12} aria-hidden />
+                  {formatCompact(video.views)}
+                </span>
+              )}
+              {video.likes > 0 && (
+                <span className="inline-flex items-center gap-1 text-xs text-fg-muted">
+                  <ThumbsUp size={12} aria-hidden />
+                  {formatCompact(video.likes)}
+                </span>
+              )}
+              {video.comments > 0 && (
+                <span className="inline-flex items-center gap-1 text-xs text-fg-muted">
+                  <MessageSquare size={12} aria-hidden />
+                  {formatCompact(video.comments)}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {video.statusDetail && (
+            <p className="rounded-lg border border-edge bg-surface p-3 text-xs text-red-600 dark:text-red-400">
+              {video.statusDetail}
+            </p>
+          )}
+          {error && (
+            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+          )}
+
+          {video.summary && (
+            <div className="rounded-xl border border-edge bg-surface p-4">
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+                Summary
+              </p>
+              <p className="text-sm text-fg">{video.summary}</p>
+            </div>
+          )}
+
+          {video.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {video.tags.slice(0, 12).map((t) => (
+                <span
+                  key={t}
+                  className="rounded-full border border-edge bg-bg px-2 py-0.5 text-xs text-fg-muted"
+                >
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
+        </aside>
+
+        {/* Everything read out of the video. */}
+        <div className="flex min-w-0 flex-1 flex-col gap-4">
+          <div
+            role="tablist"
+            aria-label="Video detail sections"
+            className="flex w-fit items-center gap-1 rounded-lg border border-edge bg-surface p-1"
+          >
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => setTab(t.id)}
+                className={clsx(
+                  'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                  tab === t.id
+                    ? 'bg-accent text-accent-fg'
+                    : 'text-fg-muted hover:bg-surface-hover hover:text-fg',
+                )}
+              >
+                {t.label}
+                {Boolean(t.count) && (
+                  <span
+                    className={clsx(
+                      'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
+                      tab === t.id
+                        ? 'bg-accent-fg/20 text-accent-fg'
+                        : 'bg-surface-hover text-fg-muted',
+                    )}
+                  >
+                    {t.count}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {tab === 'outline' && (
+            <div className="flex flex-col gap-4">
+              {video.beats.length > 0 && (
+                <ol className="flex flex-col gap-2">
+                  {video.beats.map((b, i) => (
+                    <li
+                      key={`${b.atSecs}-${i}`}
+                      className="flex gap-3 rounded-lg border border-edge bg-surface p-3"
+                    >
+                      <span className="shrink-0 font-mono text-xs text-accent">
+                        {clock(b.atSecs)}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold text-fg">
+                          {b.title}
+                        </span>
+                        {b.summary && (
+                          <span className="mt-0.5 block text-sm text-fg-muted">
+                            {b.summary}
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {video.outline ? (
+                <div className="rounded-xl border border-edge bg-surface p-4 text-sm text-fg">
+                  <Markdown>{video.outline}</Markdown>
+                </div>
+              ) : (
+                video.beats.length === 0 && (
+                  <Empty
+                    text={
+                      working
+                        ? 'The outline appears once the video has been transcribed and studied.'
+                        : 'No outline yet — download and study this video to build one.'
+                    }
+                  />
+                )
+              )}
+            </div>
+          )}
+
+          {tab === 'manifest' && (
+            <div className="flex flex-col gap-4">
+              <section>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+                  Links
+                </p>
+                {video.links.length === 0 ? (
+                  <Empty text="No links found in the description or the video." />
+                ) : (
+                  <ul className="flex flex-col gap-1.5">
+                    {video.links.map((l, i) => (
+                      <li key={`${l.url}-${i}`}>
+                        <button
+                          type="button"
+                          onClick={() => openExternal(l.url)}
+                          className="flex w-full items-start gap-2 rounded-lg border border-edge bg-surface p-3 text-left transition-colors hover:bg-surface-hover"
+                        >
+                          <Link2
+                            size={14}
+                            aria-hidden
+                            className="mt-0.5 shrink-0 text-fg-muted"
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-sm font-medium text-fg">
+                              {l.label || l.url}
+                            </span>
+                            <span className="block truncate text-xs text-fg-muted">
+                              {l.url}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              <section>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+                  Products, services & tools
+                </p>
+                {video.mentions.length === 0 ? (
+                  <Empty text="Nothing named yet." />
+                ) : (
+                  <ul className="flex flex-col gap-1.5">
+                    {video.mentions.map((m, i) => (
+                      <li
+                        key={`${m.name}-${i}`}
+                        className="flex items-start gap-3 rounded-lg border border-edge bg-surface p-3"
+                      >
+                        <Package
+                          size={14}
+                          aria-hidden
+                          className="mt-0.5 shrink-0 text-fg-muted"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-medium text-fg">
+                            {m.name}
+                          </span>
+                          {m.detail && (
+                            <span className="block text-sm text-fg-muted">
+                              {m.detail}
+                            </span>
+                          )}
+                        </span>
+                        <span className="shrink-0 text-xs text-fg-muted">
+                          {m.kind}
+                          {m.atSecs >= 0 ? ` · ${clock(m.atSecs)}` : ''}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              {video.chapters.length > 0 && (
+                <section>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+                    Chapters (from YouTube)
+                  </p>
+                  <ul className="flex flex-col gap-1">
+                    {video.chapters.map((c, i) => (
+                      <li
+                        key={`${c.startSecs}-${i}`}
+                        className="flex gap-3 text-sm text-fg"
+                      >
+                        <span className="font-mono text-xs text-fg-muted">
+                          {clock(c.startSecs)}
+                        </span>
+                        {c.title}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </div>
+          )}
+
+          {tab === 'transcript' && (
+            <div className="max-h-[32rem] overflow-y-auto rounded-xl border border-edge bg-surface p-4">
+              {video.transcript.length === 0 ? (
+                <Empty
+                  text={
+                    working
+                      ? 'Transcribing — lines appear once the pass finishes.'
+                      : 'No transcript yet.'
+                  }
+                />
+              ) : (
+                <ul className="flex flex-col gap-1.5">
+                  {video.transcript.map((l, i) => (
+                    <li key={`${l.atSecs}-${i}`} className="flex gap-3 text-sm">
+                      <span className="shrink-0 font-mono text-xs text-fg-muted">
+                        {clock(l.atSecs)}
+                      </span>
+                      <span className="text-fg">{l.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {tab === 'description' && (
+            <div className="rounded-xl border border-edge bg-surface p-4">
+              {video.description ? (
+                <p className="whitespace-pre-wrap break-words text-sm text-fg">
+                  {video.description}
+                </p>
+              ) : (
+                <Empty text="This video has no description." />
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Empty({text}: {text: string}) {
+  return (
+    <p className="rounded-lg border border-dashed border-edge bg-surface p-4 text-sm text-fg-muted">
+      {text}
+    </p>
+  )
+}

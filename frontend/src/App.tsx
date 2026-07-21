@@ -26,6 +26,8 @@ import {DownloadVideo} from './views/DownloadVideo'
 import {EditRoutine} from './views/EditRoutine'
 import {EditSeries} from './views/EditSeries'
 import {Inspiration} from './views/Inspiration'
+import {InspirationChannelDetails} from './views/InspirationChannelDetails'
+import {InspirationVideoDetails} from './views/InspirationVideoDetails'
 import {LiveStreamDetails} from './views/LiveStreamDetails'
 import {Planning, type PlanningTab} from './views/Planning'
 import {PlanStream} from './views/PlanStream'
@@ -89,6 +91,10 @@ interface NavState {
   sponsor: main.Sponsor | null
   /** The campaign being viewed; null = creating a new one. */
   campaign: main.SponsorCampaign | null
+  /** The inspiration channel being browsed; null = none. */
+  inspirationChannel: main.InspirationChannel | null
+  /** The inspiration video being read; null = none. */
+  inspirationVideo: main.InspirationVideo | null
   /** Tab to land on when opening Settings; null = default. */
   settingsTab: SettingsTab | null
 }
@@ -113,6 +119,8 @@ const INITIAL_NAV: NavState = {
   project: null,
   sponsor: null,
   campaign: null,
+  inspirationChannel: null,
+  inspirationVideo: null,
   settingsTab: null,
 }
 
@@ -136,6 +144,8 @@ const sameNav = (a: NavState, b: NavState) =>
   a.project === b.project &&
   a.sponsor === b.sponsor &&
   a.campaign === b.campaign &&
+  a.inspirationChannel === b.inspirationChannel &&
+  a.inspirationVideo === b.inspirationVideo &&
   a.settingsTab === b.settingsTab
 
 function App() {
@@ -306,6 +316,20 @@ function App() {
       navigate({view: 'sponsor-details', sponsor, campaign: null}),
     [navigate],
   )
+  const openInspirationChannel = useCallback(
+    (channel: main.InspirationChannel) =>
+      navigate({
+        view: 'inspiration-channel',
+        inspirationChannel: channel,
+        inspirationVideo: null,
+      }),
+    [navigate],
+  )
+  const openInspirationVideo = useCallback(
+    (video: main.InspirationVideo) =>
+      navigate({view: 'inspiration-video', inspirationVideo: video}),
+    [navigate],
+  )
   const backToSponsors = useCallback(
     () => navigate({view: 'sponsors', sponsor: null, campaign: null}),
     [navigate],
@@ -404,6 +428,8 @@ function App() {
         'project-details': 'projects',
         'sponsor-details': 'sponsors',
         'campaign-details': 'sponsors',
+        'inspiration-channel': 'inspiration',
+        'inspiration-video': 'inspiration',
       }
       const topLevel: ViewId[] = [
         'dashboard',
@@ -614,6 +640,10 @@ function App() {
         return 'Sponsors'
       case 'inspiration':
         return 'Inspiration'
+      case 'inspiration-channel':
+        return cur.inspirationChannel?.name || 'Channel'
+      case 'inspiration-video':
+        return cur.inspirationVideo?.title || 'Inspiration video'
       case 'sponsor-details':
         return cur.sponsor ? cur.sponsor.name || 'Sponsor' : 'New sponsor'
       case 'campaign-details':
@@ -757,7 +787,18 @@ function App() {
               <ProjectDetails project={cur.project} onBack={backToProjects} />
             )}
             {view === 'sponsors' && <Sponsors onOpenSponsor={openSponsor} />}
-            {view === 'inspiration' && <Inspiration />}
+            {view === 'inspiration' && (
+              <Inspiration onOpenChannel={openInspirationChannel} />
+            )}
+            {view === 'inspiration-channel' && cur.inspirationChannel && (
+              <InspirationChannelDetails
+                channel={cur.inspirationChannel}
+                onOpenVideo={openInspirationVideo}
+              />
+            )}
+            {view === 'inspiration-video' && cur.inspirationVideo && (
+              <InspirationVideoDetails video={cur.inspirationVideo} />
+            )}
             {view === 'sponsor-details' && (
               <SponsorDetails
                 sponsor={cur.sponsor}

@@ -1571,6 +1571,194 @@ export class SponsorCampaign {
 	    return a;
 	}
 }
+export class InspirationChannel {
+    id: string;
+    name: string;
+    handle: string;
+    url: string;
+    description: string;
+    addedAt: string;
+
+    static createFrom(source: any = {}) {
+        return new InspirationChannel(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.id = source["id"];
+        this.name = source["name"];
+        this.handle = source["handle"];
+        this.url = source["url"];
+        this.description = source["description"];
+        this.addedAt = source["addedAt"];
+    }
+}
+export class InspirationChapter {
+    title: string;
+    startSecs: number;
+
+    static createFrom(source: any = {}) {
+        return new InspirationChapter(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.title = source["title"];
+        this.startSecs = source["startSecs"];
+    }
+}
+export class InspirationLine {
+    atSecs: number;
+    endSecs: number;
+    text: string;
+
+    static createFrom(source: any = {}) {
+        return new InspirationLine(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.atSecs = source["atSecs"];
+        this.endSecs = source["endSecs"];
+        this.text = source["text"];
+    }
+}
+export class InspirationBeat {
+    atSecs: number;
+    title: string;
+    summary: string;
+
+    static createFrom(source: any = {}) {
+        return new InspirationBeat(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.atSecs = source["atSecs"];
+        this.title = source["title"];
+        this.summary = source["summary"];
+    }
+}
+export class InspirationLink {
+    label: string;
+    url: string;
+
+    static createFrom(source: any = {}) {
+        return new InspirationLink(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.label = source["label"];
+        this.url = source["url"];
+    }
+}
+export class InspirationMention {
+    kind: string;
+    name: string;
+    detail: string;
+    atSecs: number;
+
+    static createFrom(source: any = {}) {
+        return new InspirationMention(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.kind = source["kind"];
+        this.name = source["name"];
+        this.detail = source["detail"];
+        this.atSecs = source["atSecs"];
+    }
+}
+export class InspirationVideo {
+    id: string;
+    channelId: string;
+    title: string;
+    url: string;
+    description: string;
+    publishedAt: string;
+    durationSecs: number;
+    views: number;
+    likes: number;
+    comments: number;
+    tags: string[];
+    categories: string[];
+    thumbnailUrl: string;
+    thumbnailFile: string;
+    folder: string;
+    videoFile: string;
+    mediaUrl: string;
+    thumbUrl: string;
+    status: string;
+    statusDetail: string;
+    progress: number;
+    chapters: InspirationChapter[];
+    transcript: InspirationLine[];
+    summary: string;
+    outline: string;
+    beats: InspirationBeat[];
+    links: InspirationLink[];
+    mentions: InspirationMention[];
+    addedAt: string;
+    analyzedAt: string;
+
+    static createFrom(source: any = {}) {
+        return new InspirationVideo(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.id = source["id"];
+        this.channelId = source["channelId"];
+        this.title = source["title"];
+        this.url = source["url"];
+        this.description = source["description"];
+        this.publishedAt = source["publishedAt"];
+        this.durationSecs = source["durationSecs"];
+        this.views = source["views"];
+        this.likes = source["likes"];
+        this.comments = source["comments"];
+        this.tags = source["tags"];
+        this.categories = source["categories"];
+        this.thumbnailUrl = source["thumbnailUrl"];
+        this.thumbnailFile = source["thumbnailFile"];
+        this.folder = source["folder"];
+        this.videoFile = source["videoFile"];
+        this.mediaUrl = source["mediaUrl"];
+        this.thumbUrl = source["thumbUrl"];
+        this.status = source["status"];
+        this.statusDetail = source["statusDetail"];
+        this.progress = source["progress"];
+        this.chapters = this.convertValues(source["chapters"], InspirationChapter);
+        this.transcript = this.convertValues(source["transcript"], InspirationLine);
+        this.summary = source["summary"];
+        this.outline = source["outline"];
+        this.beats = this.convertValues(source["beats"], InspirationBeat);
+        this.links = this.convertValues(source["links"], InspirationLink);
+        this.mentions = this.convertValues(source["mentions"], InspirationMention);
+        this.addedAt = source["addedAt"];
+        this.analyzedAt = source["analyzedAt"];
+    }
+
+	convertValues(a: any, classs: any, asMap: boolean = false): any {
+	    if (!a) {
+	        return a;
+	    }
+	    if (a.slice && a.map) {
+	        return (a as any[]).map(elem => this.convertValues(elem, classs));
+	    } else if ("object" === typeof a) {
+	        if (asMap) {
+	            for (const key of Object.keys(a)) {
+	                a[key] = new classs(a[key]);
+	            }
+	            return a;
+	        }
+	        return new classs(a);
+	    }
+	    return a;
+	}
+}
 export class Sponsor {
     id: string;
     name: string;

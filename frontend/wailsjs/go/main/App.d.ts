@@ -6,11 +6,17 @@ export function AddBrandAssets():Promise<Array<main.BrandAsset>>;
 
 export function AddCampaignAssets(arg1:string,arg2:string):Promise<main.Sponsor>;
 
+export function AddInspirationChannel(arg1:string):Promise<main.InspirationChannel>;
+
+export function AddInspirationVideo(arg1:string):Promise<main.InspirationVideo>;
+
 export function AddProjectAssets(arg1:string):Promise<main.Project>;
 
 export function AddSponsorBranding(arg1:string):Promise<main.Sponsor>;
 
 export function AddTranscriptLine(arg1:number,arg2:number,arg3:number,arg4:string):Promise<void>;
+
+export function AnalyzeInspirationVideo(arg1:string):Promise<void>;
 
 export function AddWidgetField(arg1:string,arg2:string,arg3:string):Promise<main.StreamWidget>;
 
@@ -85,6 +91,10 @@ export function DeleteContentSeries(arg1:string):Promise<void>;
 export function DeleteDebugReport(arg1:number):Promise<void>;
 
 export function DeleteLocalStream(arg1:string):Promise<void>;
+
+export function DeleteInspirationChannel(arg1:string):Promise<void>;
+
+export function DeleteInspirationVideo(arg1:string):Promise<void>;
 
 export function DeletePlannedStream(arg1:string):Promise<void>;
 
@@ -208,6 +218,12 @@ export function GetFacebookLiveChat():Promise<main.LiveChatPage>;
 
 export function GetGitHubConnection():Promise<main.GitHubConnection>;
 
+export function GetInspirationChannels():Promise<Array<main.InspirationChannel>>;
+
+export function GetInspirationVideo(arg1:string):Promise<main.InspirationVideo>;
+
+export function GetInspirationVideos(arg1:string):Promise<Array<main.InspirationVideo>>;
+
 export function GetInstagramLiveChat():Promise<main.LiveChatPage>;
 
 export function GetKickChatIDs():Promise<main.KickChatIDs>;
@@ -329,6 +345,8 @@ export function OpenScriptWindow(arg1:string):Promise<void>;
 export function OutlineInProgress(arg1:string):Promise<boolean>;
 
 export function PickFootageFiles():Promise<Array<string>>;
+
+export function ProcessInspirationVideo(arg1:string):Promise<void>;
 
 export function PollFacebookDeviceAuth(arg1:string,arg2:string,arg3:string):Promise<main.AuthPollResult>;
 
