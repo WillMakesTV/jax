@@ -322,6 +322,10 @@ export function GetAppAbout() {
   return window['go']['main']['App']['GetAppAbout']();
 }
 
+export function GetActiveProject() {
+  return window['go']['main']['App']['GetActiveProject']();
+}
+
 export function GetActiveStreamSession() {
   return window['go']['main']['App']['GetActiveStreamSession']();
 }
@@ -864,6 +868,10 @@ export function SetHideFromCapture(arg1) {
 
 export function SetPastStreamSeries(arg1, arg2) {
   return window['go']['main']['App']['SetPastStreamSeries'](arg1, arg2);
+}
+
+export function SetActiveProject(arg1) {
+  return window['go']['main']['App']['SetActiveProject'](arg1);
 }
 
 export function SetAppAbout(arg1) {

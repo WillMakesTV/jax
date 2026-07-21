@@ -58,11 +58,15 @@ type Project struct {
 	// ThumbnailFile is the project's cover image, stored as a bare file name
 	// in the shared plan-thumbs folder (uploaded or AI-generated);
 	// ThumbnailURL is derived per launch, never persisted.
-	ThumbnailFile string         `json:"thumbnailFile"`
-	ThumbnailURL  string         `json:"thumbnailUrl"`
-	CreatedAt     string         `json:"createdAt"`
-	Assets        []ProjectAsset `json:"assets"`
-	Docs          []ProjectDoc   `json:"docs"`
+	ThumbnailFile string `json:"thumbnailFile"`
+	ThumbnailURL  string `json:"thumbnailUrl"`
+	// Active marks the project currently being worked on. At most one project
+	// is active at a time; set it with SetActiveProject, which clears the flag
+	// everywhere else. SaveProject preserves the stored value.
+	Active    bool           `json:"active"`
+	CreatedAt string         `json:"createdAt"`
+	Assets    []ProjectAsset `json:"assets"`
+	Docs      []ProjectDoc   `json:"docs"`
 }
 
 // projectsDir returns the root directory holding per-project files
@@ -138,8 +142,8 @@ func (a *App) GetProjects() []Project {
 
 // SaveProject upserts a project's title and description (matched by ID),
 // assigning an ID and creation time on first save, and returns the stored
-// value. Assets and docs are managed by their own methods and are preserved
-// as stored — the supplied copies are ignored.
+// value. Assets, docs, and the active flag are managed by their own methods
+// and are preserved as stored — the supplied copies are ignored.
 func (a *App) SaveProject(p Project) (Project, error) {
 	if a.store == nil {
 		return p, fmt.Errorf("storage unavailable")
@@ -165,6 +169,7 @@ func (a *App) SaveProject(p Project) (Project, error) {
 		if existing.ID == p.ID {
 			p.Assets = existing.Assets
 			p.Docs = existing.Docs
+			p.Active = existing.Active
 			all[i] = p
 			replaced = true
 			break
@@ -173,6 +178,9 @@ func (a *App) SaveProject(p Project) (Project, error) {
 	if !replaced {
 		p.Assets = []ProjectAsset{}
 		p.Docs = []ProjectDoc{}
+		// A new project is only active once it is chosen, except when it is
+		// the first one — there is nothing else it could be.
+		p.Active = len(all) == 0
 		all = append([]Project{p}, all...)
 	}
 
@@ -190,10 +198,17 @@ func (a *App) DeleteProject(id string) error {
 	}
 	all := a.getProjects()
 	out := make([]Project, 0, len(all))
+	active := false
 	for _, p := range all {
 		if p.ID != id {
+			active = active || p.Active
 			out = append(out, p)
 		}
+	}
+	// Deleting the active project hands the flag to the newest survivor, so
+	// there is always an active project while any exist.
+	if !active && len(out) > 0 {
+		out[0].Active = true
 	}
 	if err := a.store.setJSON(keyProjects, out); err != nil {
 		return err
@@ -238,6 +253,45 @@ func (a *App) SetProjectThumbnail(projectID, file string) (Project, error) {
 		p.ThumbnailFile = sanitizeThumbFile(file)
 		return nil
 	})
+}
+
+// SetActiveProject marks one project as the active one and clears the flag on
+// every other project, so exactly one is ever active. An empty id leaves no
+// project active. Returns the projects as stored, newest first.
+func (a *App) SetActiveProject(id string) ([]Project, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("storage unavailable")
+	}
+	all := a.getProjects()
+	found := id == ""
+	for i := range all {
+		active := all[i].ID == id
+		if active {
+			found = true
+		}
+		all[i].Active = active
+	}
+	if !found {
+		return nil, fmt.Errorf("that project no longer exists")
+	}
+	if err := a.store.setJSON(keyProjects, all); err != nil {
+		return nil, err
+	}
+	for i := range all {
+		a.fillAssetURLs(&all[i])
+	}
+	return all, nil
+}
+
+// GetActiveProject returns the active project, or a zero Project when none is
+// active. Callers that need the whole set use GetProjects.
+func (a *App) GetActiveProject() Project {
+	for _, p := range a.GetProjects() {
+		if p.Active {
+			return p
+		}
+	}
+	return Project{}
 }
 
 // ---------------------------------------------------------------------------

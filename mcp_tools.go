@@ -589,12 +589,13 @@ func mcpToolCatalog() []mcpTool {
 		// --- Projects ------------------------------------------------------
 		{
 			name:        "list_projects",
-			description: "Project summaries (bodies of work: launches, builds, campaigns) — ids, titles, descriptions, and asset/doc counts. Use get_project for full docs.",
+			description: `Project summaries (bodies of work: launches, builds, campaigns) — ids, titles, descriptions, asset/doc counts, and which one is "active" (the project currently being worked on; at most one). Use get_project for full docs.`,
 			handler: func(a *App, _ json.RawMessage) (any, error) {
 				type summary struct {
 					ID          string `json:"id"`
 					Title       string `json:"title"`
 					Description string `json:"description"`
+					Active      bool   `json:"active"`
 					CreatedAt   string `json:"createdAt"`
 					AssetCount  int    `json:"assetCount"`
 					DocCount    int    `json:"docCount"`
@@ -603,7 +604,7 @@ func mcpToolCatalog() []mcpTool {
 				out := make([]summary, 0, len(projects))
 				for _, p := range projects {
 					out = append(out, summary{
-						ID: p.ID, Title: p.Title, Description: p.Description,
+						ID: p.ID, Title: p.Title, Description: p.Description, Active: p.Active,
 						CreatedAt: p.CreatedAt, AssetCount: len(p.Assets), DocCount: len(p.Docs),
 					})
 				}
@@ -633,7 +634,7 @@ func mcpToolCatalog() []mcpTool {
 		},
 		{
 			name:        "save_project",
-			description: `Create or update a project's title and markdown description. Omit "id" to create. Assets and docs are untouched (docs are edited with save_project_doc).`,
+			description: `Create or update a project's title and markdown description. Omit "id" to create. Assets, docs, and the active flag are untouched (docs are edited with save_project_doc, the active project with set_active_project).`,
 			inputSchema: objSchema(map[string]any{
 				"id":          prop("string", "Project id when updating; omit to create."),
 				"title":       prop("string", "Project title."),
@@ -645,6 +646,22 @@ func mcpToolCatalog() []mcpTool {
 					return nil, err
 				}
 				return a.SaveProject(p)
+			},
+		},
+		{
+			name:        "set_active_project",
+			description: `Make one project the active project — the one currently being worked on. Only one is active at a time, so this clears the flag on every other project. An empty "id" leaves none active. Returns the projects, newest first.`,
+			inputSchema: objSchema(map[string]any{
+				"id": prop("string", `The project id from list_projects, or "" for no active project.`),
+			}, "id"),
+			handler: func(a *App, args json.RawMessage) (any, error) {
+				var in struct {
+					ID string `json:"id"`
+				}
+				if err := decodeArgs(args, &in); err != nil {
+					return nil, err
+				}
+				return a.SetActiveProject(in.ID)
 			},
 		},
 		{

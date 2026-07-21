@@ -162,6 +162,8 @@ export function GenerateWidgetTestItem(arg1:string):Promise<void>;
 
 export function GetAppAbout():Promise<string>;
 
+export function GetActiveProject():Promise<main.Project>;
+
 export function GetActiveStreamSession():Promise<main.ActiveStreamSession>;
 
 export function GetBrandAssets():Promise<Array<main.BrandAsset>>;
@@ -433,6 +435,8 @@ export function SetDefaultSeriesType(arg1:string):Promise<void>;
 export function SetHideFromCapture(arg1:boolean):Promise<void>;
 
 export function SetPastStreamSeries(arg1:Array<string>,arg2:string):Promise<void>;
+
+export function SetActiveProject(arg1:string):Promise<Array<main.Project>>;
 
 export function SetAppAbout(arg1:string):Promise<void>;
 

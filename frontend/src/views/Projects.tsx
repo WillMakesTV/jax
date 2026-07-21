@@ -1,4 +1,4 @@
-import {FileText, FolderKanban, Paperclip, Plus} from 'lucide-react'
+import {CircleDot, FileText, FolderKanban, Paperclip, Plus} from 'lucide-react'
 import {useCallback, useEffect, useState} from 'react'
 import {GetProjects} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
@@ -129,6 +129,13 @@ function ProjectCard({
             <p className="min-w-0 flex-1 truncate text-sm font-semibold text-fg">
               {project.title}
             </p>
+            {/* Only ever one project carries this. */}
+            {project.active && (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent/15 px-2 py-0.5 text-xs font-semibold text-accent">
+                <CircleDot size={11} aria-hidden />
+                Active
+              </span>
+            )}
           </div>
 
           {project.description && (

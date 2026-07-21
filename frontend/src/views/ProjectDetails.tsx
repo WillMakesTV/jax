@@ -1,5 +1,7 @@
 import {
   Check,
+  Circle,
+  CircleDot,
   CornerDownRight,
   ExternalLink,
   File,
@@ -25,6 +27,7 @@ import {
   GetProjects,
   SaveProject,
   SaveProjectDoc,
+  SetActiveProject,
   UpdateProjectAsset,
   UploadPlanThumbnail,
 } from '../../wailsjs/go/main/App'
@@ -78,6 +81,24 @@ export function ProjectDetails({
 
   // Deleting lives behind the tab row's corner icon plus an "Are you sure?"
   // dialog — deliberate, and out of the way of everyday work.
+  // Exactly one project is the active one — the body of work currently being
+  // pushed on. Setting it here clears the flag everywhere else (see
+  // SetActiveProject), and the returned set carries this project's new state.
+  const [activating, setActivating] = useState(false)
+  const makeActive = async () => {
+    if (!proj || proj.active) return
+    setActivating(true)
+    try {
+      const all = await SetActiveProject(proj.id)
+      const fresh = (all ?? []).find((p) => p.id === proj.id)
+      if (fresh) setProj(fresh)
+    } catch {
+      // Non-fatal; the page reconciles on the next load.
+    } finally {
+      setActivating(false)
+    }
+  }
+
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
@@ -142,17 +163,43 @@ export function ProjectDetails({
               ))}
             </div>
 
-            {/* Deliberately obscure: an icon in the tab row's far corner,
-                asking "Are you sure?" before anything happens. */}
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(true)}
-              title="Delete this project…"
-              aria-label="Delete this project"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-hover hover:text-red-600 dark:hover:text-red-400"
-            >
-              <Trash2 size={15} aria-hidden />
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              {/* The active project reads as a state; every other project
+                  offers to take the flag. */}
+              {proj.active ? (
+                <span className="inline-flex items-center gap-1.5 rounded-lg bg-accent/15 px-3 py-1.5 text-sm font-semibold text-accent">
+                  <CircleDot size={14} aria-hidden />
+                  Active project
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void makeActive()}
+                  disabled={activating}
+                  title="Make this the active project — the one you're working on now"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+                >
+                  {activating ? (
+                    <Loader2 size={14} aria-hidden className="animate-spin" />
+                  ) : (
+                    <Circle size={14} aria-hidden />
+                  )}
+                  Set as active
+                </button>
+              )}
+
+              {/* Deliberately obscure: an icon in the tab row's far corner,
+                  asking "Are you sure?" before anything happens. */}
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                title="Delete this project…"
+                aria-label="Delete this project"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-hover hover:text-red-600 dark:hover:text-red-400"
+              >
+                <Trash2 size={15} aria-hidden />
+              </button>
+            </div>
           </div>
 
           {tab === 'overview' && (

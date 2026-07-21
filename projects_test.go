@@ -106,6 +106,65 @@ func TestProjectDocTree(t *testing.T) {
 	}
 }
 
+func TestActiveProjectIsExclusive(t *testing.T) {
+	a := newTestApp(t)
+
+	first, err := a.SaveProject(Project{Title: "First"})
+	if err != nil {
+		t.Fatalf("save first: %v", err)
+	}
+	if !first.Active {
+		t.Fatal("the first project should start active")
+	}
+	second, err := a.SaveProject(Project{Title: "Second"})
+	if err != nil {
+		t.Fatalf("save second: %v", err)
+	}
+	if second.Active {
+		t.Fatal("a later project should not steal the active flag")
+	}
+
+	all, err := a.SetActiveProject(second.ID)
+	if err != nil {
+		t.Fatalf("set active: %v", err)
+	}
+	for _, p := range all {
+		if want := p.ID == second.ID; p.Active != want {
+			t.Fatalf("active flag on %s = %v, want %v", p.Title, p.Active, want)
+		}
+	}
+	if got := a.GetActiveProject(); got.ID != second.ID {
+		t.Fatalf("active project = %+v, want %s", got, second.ID)
+	}
+
+	// An edit leaves the flag where SetActiveProject put it.
+	if edited, err := a.SaveProject(Project{ID: second.ID, Title: "Second v2"}); err != nil {
+		t.Fatalf("edit: %v", err)
+	} else if !edited.Active {
+		t.Fatal("editing dropped the active flag")
+	}
+
+	if _, err := a.SetActiveProject("nope"); err == nil {
+		t.Fatal("want error for a missing project")
+	}
+
+	// Deleting the active project promotes the newest survivor.
+	if err := a.DeleteProject(second.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if got := a.GetActiveProject(); got.ID != first.ID {
+		t.Fatalf("active project after delete = %+v, want %s", got, first.ID)
+	}
+
+	// Nothing has to be active.
+	if _, err := a.SetActiveProject(""); err != nil {
+		t.Fatalf("clear active: %v", err)
+	}
+	if got := a.GetActiveProject(); got.ID != "" {
+		t.Fatalf("want no active project, got %+v", got)
+	}
+}
+
 func TestProjectAssetMetadata(t *testing.T) {
 	a := newTestApp(t)
 	p, err := a.SaveProject(Project{Title: "Assets"})
