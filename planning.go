@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bp-temp/internal/httpx"
-	"bp-temp/internal/platforms/youtube"
 	"bytes"
 	"fmt"
 	"image"
@@ -408,14 +406,6 @@ func (a *App) applyPlanToKick(plan PlannedStream, series *ContentSeries) string 
 // youtubeVideosUpdateURL is the videos.update endpoint; part=snippet,status
 // scopes the write to the video's metadata plus its made-for-kids
 // self-declaration.
-const youtubeVideosUpdateURL = "https://www.googleapis.com/youtube/v3/videos?part=snippet,status"
-
-// youtubeUpcomingBroadcastsURL lists the channel's upcoming broadcasts: the
-// scheduled events plus the dashboard's persistent broadcast (what YouTube
-// Studio's offline stream settings edit). broadcastType=all is required to
-// include persistent broadcasts; broadcastStatus must not be combined with
-// mine= (see youtubeBroadcastsURL in live.go).
-const youtubeUpcomingBroadcastsURL = "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status,contentDetails&broadcastStatus=upcoming&broadcastType=all"
 
 // upcomingYTBroadcastID returns the id of the upcoming broadcast the next
 // stream will actually become, or "" when there is none. The upcoming list
@@ -427,30 +417,16 @@ const youtubeUpcomingBroadcastsURL = "https://www.googleapis.com/youtube/v3/live
 //     when the encoder starts;
 //  3. the soonest broadcast scheduled in the future;
 //  4. whatever is first.
-func (a *App) upcomingYTBroadcastID(headers map[string]string) string {
-	var broadcasts struct {
-		Items []struct {
-			ID      string `json:"id"`
-			Snippet struct {
-				IsDefaultBroadcast bool   `json:"isDefaultBroadcast"`
-				ScheduledStartTime string `json:"scheduledStartTime"`
-			} `json:"snippet"`
-			Status struct {
-				LifeCycleStatus string `json:"lifeCycleStatus"`
-			} `json:"status"`
-			ContentDetails struct {
-				BoundStreamID string `json:"boundStreamId"`
-			} `json:"contentDetails"`
-		} `json:"items"`
-	}
-	if _, err := httpx.GetJSON(youtubeUpcomingBroadcastsURL, headers, &broadcasts); err != nil {
+func (a *App) upcomingYTBroadcastID(conn serviceConn) string {
+	items, err := youtubeClient(conn).UpcomingBroadcasts()
+	if err != nil {
 		log.Printf("jax: youtube upcoming broadcasts: %v", err)
 		return ""
 	}
 	// RFC3339 UTC timestamps compare lexicographically.
 	now := time.Now().UTC().Format(time.RFC3339)
 	bound, future, futureTime, first := "", "", "", ""
-	for _, b := range broadcasts.Items {
+	for _, b := range items {
 		if b.Snippet.IsDefaultBroadcast {
 			return b.ID
 		}
@@ -478,24 +454,18 @@ func (a *App) upcomingYTBroadcastID(headers map[string]string) string {
 // like fetchYouTubeLive), otherwise the upcoming broadcast the next stream
 // becomes (see upcomingYTBroadcastID — what YouTube Studio edits while
 // offline). "" when there is neither.
-func (a *App) currentYTBroadcastID(headers map[string]string) string {
+func (a *App) currentYTBroadcastID(conn serviceConn) string {
 	if videoID := a.cachedYTVideoID(); videoID != "" {
 		return videoID
 	}
-	var broadcasts struct {
-		Items []struct {
-			ID string `json:"id"`
-		} `json:"items"`
-	}
-	if _, err := httpx.GetJSON(youtube.ActiveBroadcastURL, headers, &broadcasts); err != nil {
+	if videoID, err := youtubeClient(conn).ActiveBroadcastID(); err != nil {
 		log.Printf("jax: youtube active broadcasts: %v", err)
-	} else if len(broadcasts.Items) > 0 {
-		videoID := broadcasts.Items[0].ID
+	} else if videoID != "" {
 		a.setYTVideoID(videoID)
 		return videoID
 	}
 	// Not memoised: an upcoming broadcast is not "live".
-	return a.upcomingYTBroadcastID(headers)
+	return a.upcomingYTBroadcastID(conn)
 }
 
 // applyPlanToYouTube writes the plan's prefixed title, description, and tags
@@ -509,7 +479,7 @@ func (a *App) applyPlanToYouTube(plan PlannedStream, series *ContentSeries) stri
 		return "YouTube is not connected — its stream info was not updated."
 	}
 	headers := map[string]string{"Authorization": "Bearer " + conn.token}
-	videoID := a.currentYTBroadcastID(headers)
+	videoID := a.currentYTBroadcastID(conn)
 	if videoID == "" {
 		return "YouTube: no live or upcoming broadcast to update — schedule one in YouTube Studio, or run “Apply stream info” after the stream starts."
 	}
@@ -517,20 +487,12 @@ func (a *App) applyPlanToYouTube(plan PlannedStream, series *ContentSeries) stri
 	// videos.update replaces the whole snippet/status, so read the current
 	// ones and change only what the plan owns — the category, tags, language,
 	// and privacy set in YouTube Studio survive.
-	var videos struct {
-		Items []struct {
-			Snippet map[string]any `json:"snippet"`
-			Status  map[string]any `json:"status"`
-		} `json:"items"`
-	}
-	if _, err := httpx.GetJSON(
-		"https://www.googleapis.com/youtube/v3/videos?part=snippet,status&id="+videoID,
-		headers, &videos,
-	); err != nil || len(videos.Items) == 0 {
+	client := youtubeClient(conn)
+	snippet, videoStatus, err := client.VideoSnippet(videoID, true)
+	if err != nil {
 		log.Printf("jax: apply plan to youtube: read snippet: %v", err)
 		return "YouTube: the live video's details could not be read."
 	}
-	snippet := videos.Items[0].Snippet
 	snippet["title"] = a.youtubeLivePrefix() + broadcastBaseTitle(plan)
 	if strings.TrimSpace(plan.Description) != "" {
 		snippet["description"] = plan.Description
@@ -562,7 +524,7 @@ func (a *App) applyPlanToYouTube(plan PlannedStream, series *ContentSeries) stri
 	if series != nil {
 		// The made-for-kids declaration is the one content classification
 		// YouTube's API accepts; declaring "not made for kids" matters too.
-		vidStatus := videos.Items[0].Status
+		vidStatus := videoStatus
 		if vidStatus == nil {
 			vidStatus = map[string]any{}
 		}
@@ -570,8 +532,11 @@ func (a *App) applyPlanToYouTube(plan PlannedStream, series *ContentSeries) stri
 		payload["status"] = vidStatus
 	}
 
-	status, err := httpx.SendJSON(http.MethodPut, youtubeVideosUpdateURL, headers,
-		payload, nil)
+	var withStatus map[string]any
+	if raw, ok := payload["status"].(map[string]any); ok {
+		withStatus = raw
+	}
+	status, err := client.UpdateVideo(videoID, snippet, withStatus)
 	if err != nil {
 		log.Printf("jax: apply plan to youtube: update: %v", err)
 		if status == 401 || status == 403 {
@@ -799,28 +764,18 @@ func (a *App) youtubeInfoStatus(plan PlannedStream) PlanChannelInfo {
 		return info
 	}
 	info.Connected = true
-	headers := map[string]string{"Authorization": "Bearer " + conn.token}
-	videoID := a.currentYTBroadcastID(headers)
+	videoID := a.currentYTBroadcastID(conn)
 	if videoID == "" {
 		info.Detail = "No live or upcoming broadcast to check."
 		return info
 	}
-	var videos struct {
-		Items []struct {
-			Snippet struct {
-				Title string `json:"title"`
-			} `json:"snippet"`
-		} `json:"items"`
-	}
-	if _, err := httpx.GetJSON(
-		"https://www.googleapis.com/youtube/v3/videos?part=snippet&id="+videoID,
-		headers, &videos,
-	); err != nil || len(videos.Items) == 0 {
+	title, err := youtubeClient(conn).VideoTitle(videoID)
+	if err != nil {
 		log.Printf("jax: youtube info status: %v", err)
 		info.Detail = "Could not read the current stream info."
 		return info
 	}
-	info.CurrentTitle = videos.Items[0].Snippet.Title
+	info.CurrentTitle = title
 	info.Matches = info.CurrentTitle == info.WantTitle
 	// The thumbnail is compared against what the app last pushed to this
 	// broadcast (YouTube re-encodes uploads, so the remote bytes can't be

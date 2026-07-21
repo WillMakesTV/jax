@@ -9,6 +9,7 @@ package youtube
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -34,6 +35,16 @@ const (
 	VideoMetaURL       = "https://www.googleapis.com/youtube/v3/videos?part=statistics,contentDetails&id="
 	SubscribersURL     = "https://www.googleapis.com/youtube/v3/subscriptions" +
 		"?part=snippet,subscriberSnippet&myRecentSubscribers=true&maxResults=50"
+	MyChannelBasicURL = "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true"
+	VideoSnippetURL   = "https://www.googleapis.com/youtube/v3/videos?part=snippet&id="
+	VideoUpdateURL    = "https://www.googleapis.com/youtube/v3/videos?part=snippet"
+	// UpcomingBroadcastsURL lists the channel's upcoming broadcasts: the
+	// scheduled events plus the dashboard's persistent broadcast (what
+	// YouTube Studio's offline stream settings edit). broadcastType=all is
+	// required to include persistent broadcasts, and broadcastStatus must
+	// not be combined with mine=.
+	UpcomingBroadcastsURL = "https://www.googleapis.com/youtube/v3/liveBroadcasts" +
+		"?part=id,snippet,status,contentDetails&broadcastStatus=upcoming&broadcastType=all"
 )
 
 // Client is an authenticated YouTube caller.
@@ -600,4 +611,110 @@ func (c Client) RecentSubscribers() ([]Subscriber, error) {
 		return nil, err
 	}
 	return resp.Items, nil
+}
+
+// UpcomingBroadcast is one scheduled or persistent broadcast the channel has
+// not aired yet.
+type UpcomingBroadcast struct {
+	ID      string `json:"id"`
+	Snippet struct {
+		IsDefaultBroadcast bool   `json:"isDefaultBroadcast"`
+		ScheduledStartTime string `json:"scheduledStartTime"`
+	} `json:"snippet"`
+	Status struct {
+		LifeCycleStatus string `json:"lifeCycleStatus"`
+	} `json:"status"`
+	ContentDetails struct {
+		BoundStreamID string `json:"boundStreamId"`
+	} `json:"contentDetails"`
+}
+
+// UpcomingBroadcasts lists what the channel will air next. The list can hold
+// strays — a scheduled event from months ago bound to no stream key — so the
+// caller decides which one the next stream actually becomes.
+func (c Client) UpcomingBroadcasts() ([]UpcomingBroadcast, error) {
+	var broadcasts struct {
+		Items []UpcomingBroadcast `json:"items"`
+	}
+	if _, err := httpx.GetJSON(UpcomingBroadcastsURL, c.Headers(), &broadcasts); err != nil {
+		return nil, err
+	}
+	return broadcasts.Items, nil
+}
+
+// VideoSnippet reads a video's snippet as a raw map, and optionally its
+// status. videos.update replaces whichever parts it is given wholesale, so
+// callers read the current values, change only what they own, and send the
+// map back — anything set in YouTube Studio survives.
+func (c Client) VideoSnippet(videoID string, withStatus bool) (snippet, status map[string]any, err error) {
+	endpoint := VideoSnippetURL + url.QueryEscape(videoID)
+	if withStatus {
+		endpoint = "https://www.googleapis.com/youtube/v3/videos?part=snippet,status&id=" +
+			url.QueryEscape(videoID)
+	}
+	var videos struct {
+		Items []struct {
+			Snippet map[string]any `json:"snippet"`
+			Status  map[string]any `json:"status"`
+		} `json:"items"`
+	}
+	if _, err := httpx.GetJSON(endpoint, c.Headers(), &videos); err != nil {
+		return nil, nil, err
+	}
+	if len(videos.Items) == 0 {
+		return nil, nil, fmt.Errorf("the YouTube video was not found — it may have been deleted")
+	}
+	return videos.Items[0].Snippet, videos.Items[0].Status, nil
+}
+
+// VideoTitle reads just a video's current title.
+func (c Client) VideoTitle(videoID string) (string, error) {
+	var videos struct {
+		Items []struct {
+			Snippet struct {
+				Title string `json:"title"`
+			} `json:"snippet"`
+		} `json:"items"`
+	}
+	if _, err := httpx.GetJSON(VideoSnippetURL+url.QueryEscape(videoID),
+		c.Headers(), &videos); err != nil {
+		return "", err
+	}
+	if len(videos.Items) == 0 {
+		return "", fmt.Errorf("the YouTube video was not found")
+	}
+	return videos.Items[0].Snippet.Title, nil
+}
+
+// UpdateVideo writes a video's snippet back, with its status when one is
+// given. The parts sent are replaced wholesale, so pass what VideoSnippet
+// returned with only the fields you own changed.
+func (c Client) UpdateVideo(videoID string, snippet, status map[string]any) (int, error) {
+	endpoint := VideoUpdateURL
+	payload := map[string]any{"id": videoID, "snippet": snippet}
+	if status != nil {
+		endpoint += ",status"
+		payload["status"] = status
+	}
+	return httpx.SendJSON(http.MethodPut, endpoint, c.Headers(), payload, nil)
+}
+
+// MyChannelBasic reads the connected channel's id and title — what the
+// connect flow needs to name the account.
+func (c Client) MyChannelBasic() (id, title string, err error) {
+	var channels struct {
+		Items []struct {
+			ID      string `json:"id"`
+			Snippet struct {
+				Title string `json:"title"`
+			} `json:"snippet"`
+		} `json:"items"`
+	}
+	if _, err := httpx.GetJSON(MyChannelBasicURL, c.Headers(), &channels); err != nil {
+		return "", "", err
+	}
+	if len(channels.Items) == 0 {
+		return "", "", fmt.Errorf("YouTube returned no channel for this token")
+	}
+	return channels.Items[0].ID, channels.Items[0].Snippet.Title, nil
 }

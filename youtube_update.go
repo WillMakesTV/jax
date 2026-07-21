@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bp-temp/internal/httpx"
 	"fmt"
 	"log"
-	"net/http"
 	"strings"
 )
 
@@ -102,35 +100,21 @@ func (a *App) UpdateYouTubeStreamInfo(startedAt string, videoURLs []string) (You
 	if !ok {
 		return out, fmt.Errorf("connect YouTube in Settings → Services first")
 	}
-	headers := map[string]string{"Authorization": "Bearer " + conn.token}
-
 	for _, id := range ids {
 		// videos.update replaces the whole snippet, so read the current one
 		// and change only the title and description — the category and tags
 		// set elsewhere survive. One update carries both fields.
-		var videos struct {
-			Items []struct {
-				Snippet map[string]any `json:"snippet"`
-			} `json:"items"`
-		}
-		if _, err := httpx.GetJSON(
-			"https://www.googleapis.com/youtube/v3/videos?part=snippet&id="+id,
-			headers, &videos,
-		); err != nil {
+		client := youtubeClient(conn)
+		snippet, _, err := client.VideoSnippet(id, false)
+		if err != nil {
 			return out, fmt.Errorf("the YouTube video's details could not be read: %v", err)
 		}
-		if len(videos.Items) == 0 {
-			return out, fmt.Errorf("the YouTube video was not found — it may have been deleted")
-		}
-		snippet := videos.Items[0].Snippet
 		snippet["title"] = title
 		if description != "" {
 			snippet["description"] = description
 		}
 
-		status, err := httpx.SendJSON(http.MethodPut,
-			"https://www.googleapis.com/youtube/v3/videos?part=snippet",
-			headers, map[string]any{"id": id, "snippet": snippet}, nil)
+		status, err := client.UpdateVideo(id, snippet, nil)
 		if err != nil {
 			if status == 401 || status == 403 {
 				return out, fmt.Errorf("YouTube: reconnect in Settings → Services to grant the update permission")

@@ -3,6 +3,7 @@ package main
 import (
 	"bp-temp/internal/httpx"
 	"bp-temp/internal/platforms/twitch"
+	"bp-temp/internal/platforms/youtube"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -273,8 +274,7 @@ const (
 	// messages). It must be one of the scopes Google's limited-input device
 	// flow allows — youtube.force-ssl is NOT (the device-code request itself
 	// fails with invalid_scope), and youtube.readonly cannot send chat.
-	youtubeScope      = "https://www.googleapis.com/auth/youtube"
-	youtubeChannelURL = "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true"
+	youtubeScope = "https://www.googleapis.com/auth/youtube"
 )
 
 // StartYouTubeDeviceAuth requests a Google device code for the YouTube
@@ -366,30 +366,11 @@ func (a *App) PollYouTubeDeviceAuth(clientID, clientSecret, deviceCode string) (
 
 // fetchYouTubeChannel returns the token owner's channel ID and title.
 func (a *App) fetchYouTubeChannel(token string) (channelID, title string) {
-	fallbackTitle := "YouTube channel"
-	req, err := http.NewRequest(http.MethodGet, youtubeChannelURL, nil)
+	id, name, err := youtube.Client{Token: token}.MyChannelBasic()
 	if err != nil {
-		return "", fallbackTitle
+		return "", "YouTube channel"
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := httpx.Client.Do(req)
-	if err != nil {
-		return "", fallbackTitle
-	}
-	defer resp.Body.Close()
-
-	var r struct {
-		Items []struct {
-			ID      string `json:"id"`
-			Snippet struct {
-				Title string `json:"title"`
-			} `json:"snippet"`
-		} `json:"items"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil || len(r.Items) == 0 {
-		return "", fallbackTitle
-	}
-	return r.Items[0].ID, firstNonEmpty(r.Items[0].Snippet.Title, fallbackTitle)
+	return id, firstNonEmpty(name, "YouTube channel")
 }
 
 // ---------------------------------------------------------------------------
