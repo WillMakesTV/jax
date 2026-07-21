@@ -14,6 +14,7 @@ import {
   Sparkles,
   Trash2,
   Upload,
+  WandSparkles,
   X,
 } from 'lucide-react'
 import {useCallback, useEffect, useMemo, useState} from 'react'
@@ -446,12 +447,25 @@ function OverviewSection({
     }
   }
 
-  const generateThumb = async () => {
+  // With a cover image already in place, the ask is usually a revision
+  // rather than a fresh start: the current image and this note go to the
+  // model together (the same "Request changes" flow stream thumbnails have).
+  const [thumbFeedback, setThumbFeedback] = useState('')
+
+  const generateThumb = async (revise: boolean) => {
     setError('')
     try {
       // The provider persists the image itself; adopt the result when this
       // page is still around to hear it.
-      onChange(await projectThumbs.generate(project.id, project.title, '', ''))
+      onChange(
+        await projectThumbs.generate(
+          project.id,
+          project.title,
+          revise ? thumbFeedback.trim() : '',
+          revise ? project.thumbnailFile || '' : '',
+        ),
+      )
+      if (revise) setThumbFeedback('')
     } catch (err) {
       setError(
         err instanceof Error && err.message
@@ -629,6 +643,35 @@ function OverviewSection({
               <ImageIcon size={24} aria-hidden />
             )}
           </div>
+          {/* With an image in place, editing it beats starting over: the
+              note below rides along with the current image. */}
+          {project.thumbnailUrl && (
+            <div className="flex flex-col gap-2 px-2 pt-2">
+              <textarea
+                value={thumbFeedback}
+                onChange={(e) => setThumbFeedback(e.target.value)}
+                rows={2}
+                placeholder="What should change? e.g. warmer colors, drop the text"
+                className="w-full resize-y rounded-lg border border-edge bg-bg px-2 py-1.5 text-xs text-fg outline-none focus:border-accent"
+              />
+              <button
+                type="button"
+                onClick={() => void generateThumb(true)}
+                disabled={
+                  thumbBusy !== '' || generating || !thumbFeedback.trim()
+                }
+                title="Revise the current cover image with this note (OpenAI connection required) — it keeps going if you navigate away"
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-accent px-2 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {generating ? (
+                  <Loader2 size={12} aria-hidden className="animate-spin" />
+                ) : (
+                  <WandSparkles size={12} aria-hidden />
+                )}
+                Request edits
+              </button>
+            </div>
+          )}
           <div className="flex items-center gap-2 p-2">
             <button
               type="button"
@@ -646,9 +689,9 @@ function OverviewSection({
             </button>
             <button
               type="button"
-              onClick={() => void generateThumb()}
+              onClick={() => void generateThumb(false)}
               disabled={thumbBusy !== '' || generating}
-              title="Generate a cover image with AI from the title and description (OpenAI connection required) — it keeps going if you navigate away"
+              title="Generate a fresh cover image with AI from the title and description (OpenAI connection required) — it keeps going if you navigate away"
               className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-edge px-2 py-1.5 text-xs font-semibold text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
             >
               {generating ? (
@@ -656,7 +699,11 @@ function OverviewSection({
               ) : (
                 <Sparkles size={12} aria-hidden className="text-accent" />
               )}
-              {generating ? 'Generating…' : 'Generate'}
+              {generating
+                ? 'Generating…'
+                : project.thumbnailUrl
+                  ? 'Generate new'
+                  : 'Generate'}
             </button>
           </div>
         </div>
