@@ -336,7 +336,7 @@ func (a *App) fetchTwitchLive(conn serviceConn) LiveStream {
 				OfflineImageURL string `json:"offline_image_url"`
 			} `json:"data"`
 		}
-		if _, err := httpx.GetJSON(twitchUsersURL+"?id="+conn.userID, headers, &users); err == nil && len(users.Data) > 0 {
+		if _, err := httpx.GetJSON(twitch.UsersURL+"?id="+conn.userID, headers, &users); err == nil && len(users.Data) > 0 {
 			out.Avatar = users.Data[0].ProfileImageURL
 			out.Banner = users.Data[0].OfflineImageURL
 		}

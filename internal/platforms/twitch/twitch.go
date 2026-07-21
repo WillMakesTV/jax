@@ -11,6 +11,7 @@ package twitch
 import (
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"bp-temp/internal/httpx"
@@ -26,6 +27,9 @@ const (
 	FollowersURL        = "https://api.twitch.tv/helix/channels/followers"
 	SubscriptionsURL    = "https://api.twitch.tv/helix/subscriptions"
 	EventSubURL         = "https://api.twitch.tv/helix/eventsub/subscriptions"
+	StreamsURL          = "https://api.twitch.tv/helix/streams"
+	VideosURL           = "https://api.twitch.tv/helix/videos"
+	ClipsURL            = "https://api.twitch.tv/helix/clips"
 )
 
 // Client is an authenticated Twitch caller.
@@ -208,4 +212,93 @@ func (c Client) SubscribeEvent(eventType, version string, condition map[string]s
 			"session_id": sessionID,
 		},
 	}, nil)
+}
+
+// Self resolves the account the token belongs to — Helix answers /users with
+// no query from the token itself, which is how a fresh connection learns its
+// own broadcaster id.
+func (c Client) Self() (User, error) {
+	var users struct {
+		Data []User `json:"data"`
+	}
+	if _, err := httpx.GetJSON(UsersURL, c.Headers(), &users); err != nil {
+		return User{}, err
+	}
+	if len(users.Data) == 0 {
+		return User{}, fmt.Errorf("Twitch returned no account for this token")
+	}
+	return users.Data[0], nil
+}
+
+// LiveStreamID returns the id of the broadcaster's stream while it is live,
+// or "" when it is not.
+func (c Client) LiveStreamID() (string, error) {
+	var live struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	_, err := httpx.GetJSON(StreamsURL+"?user_id="+url.QueryEscape(c.UserID),
+		c.Headers(), &live)
+	if err != nil || len(live.Data) == 0 {
+		return "", err
+	}
+	return live.Data[0].ID, nil
+}
+
+// Archive is one past broadcast's VOD. Duration is Twitch's own compact form
+// ("3h8m33s"), and ThumbnailURL is a size template until it is filled in.
+type Archive struct {
+	Title        string `json:"title"`
+	URL          string `json:"url"`
+	StreamID     string `json:"stream_id"`
+	ThumbnailURL string `json:"thumbnail_url"`
+	CreatedAt    string `json:"created_at"`
+	Duration     string `json:"duration"`
+	ViewCount    int    `json:"view_count"`
+}
+
+// Archives lists the channel's archive VODs, newest first.
+func (c Client) Archives(first int) ([]Archive, error) {
+	var resp struct {
+		Data []Archive `json:"data"`
+	}
+	endpoint := VideosURL + "?user_id=" + url.QueryEscape(c.UserID) +
+		"&type=archive&first=" + strconv.Itoa(first)
+	if _, err := httpx.GetJSON(endpoint, c.Headers(), &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// Clip is one clip of the channel. Duration is in seconds.
+type Clip struct {
+	ID              string  `json:"id"`
+	URL             string  `json:"url"`
+	Title           string  `json:"title"`
+	ThumbnailURL    string  `json:"thumbnail_url"`
+	CreatedAt       string  `json:"created_at"`
+	Duration        float64 `json:"duration"`
+	ViewCount       int64   `json:"view_count"`
+	BroadcasterName string  `json:"broadcaster_name"`
+}
+
+// ClipsPage reads one page of the channel's clips and the cursor for the
+// next, which is "" on the last page.
+func (c Client) ClipsPage(cursor string, first int) ([]Clip, string, error) {
+	endpoint := ClipsURL + "?broadcaster_id=" + url.QueryEscape(c.UserID) +
+		"&first=" + strconv.Itoa(first)
+	if cursor != "" {
+		endpoint += "&after=" + url.QueryEscape(cursor)
+	}
+	var resp struct {
+		Data       []Clip `json:"data"`
+		Pagination struct {
+			Cursor string `json:"cursor"`
+		} `json:"pagination"`
+	}
+	if _, err := httpx.GetJSON(endpoint, c.Headers(), &resp); err != nil {
+		return nil, "", err
+	}
+	return resp.Data, resp.Pagination.Cursor, nil
 }

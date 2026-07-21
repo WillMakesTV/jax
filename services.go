@@ -2,6 +2,7 @@ package main
 
 import (
 	"bp-temp/internal/httpx"
+	"bp-temp/internal/platforms/twitch"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -146,7 +147,6 @@ func pendingResult(errCode string) (AuthPollResult, bool) {
 const (
 	twitchDeviceURL = "https://id.twitch.tv/oauth2/device"
 	twitchTokenURL  = "https://id.twitch.tv/oauth2/token"
-	twitchUsersURL  = "https://api.twitch.tv/helix/users"
 )
 
 // StartTwitchDeviceAuth requests a device code and opens the verification page
@@ -250,30 +250,10 @@ type twitchUser struct {
 }
 
 func (a *App) fetchTwitchUser(clientID, token string) twitchUser {
-	fallback := twitchUser{display: "Twitch account"}
-	req, err := http.NewRequest(http.MethodGet, twitchUsersURL, nil)
+	u, err := twitch.Client{Token: token, ClientID: clientID}.Self()
 	if err != nil {
-		return fallback
+		return twitchUser{display: "Twitch account"}
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Client-Id", clientID)
-	resp, err := httpx.Client.Do(req)
-	if err != nil {
-		return fallback
-	}
-	defer resp.Body.Close()
-
-	var r struct {
-		Data []struct {
-			ID          string `json:"id"`
-			DisplayName string `json:"display_name"`
-			Login       string `json:"login"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil || len(r.Data) == 0 {
-		return fallback
-	}
-	u := r.Data[0]
 	return twitchUser{
 		id:      u.ID,
 		login:   u.Login,

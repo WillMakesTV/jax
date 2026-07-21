@@ -2,6 +2,7 @@ package main
 
 import (
 	"bp-temp/internal/httpx"
+	"bp-temp/internal/platforms/twitch"
 	"fmt"
 	"log"
 	"net/http"
@@ -387,7 +388,7 @@ func fetchTwitchVideos(conn serviceConn) ([]Video, error) {
 	var out []Video
 	cursor := ""
 	for len(out) < maxVideosPerPlatform {
-		endpoint := twitchVideosURL + "?user_id=" + conn.userID + "&first=100"
+		endpoint := twitch.VideosURL + "?user_id=" + conn.userID + "&first=100"
 		if cursor != "" {
 			endpoint += "&after=" + url.QueryEscape(cursor)
 		}
@@ -429,18 +430,9 @@ func fetchTwitchVideos(conn serviceConn) ([]Video, error) {
 }
 
 // twitchClipItem is one entry from the Helix clips endpoint.
-type twitchClipItem struct {
-	ID              string  `json:"id"`
-	URL             string  `json:"url"`
-	Title           string  `json:"title"`
-	ThumbnailURL    string  `json:"thumbnail_url"`
-	CreatedAt       string  `json:"created_at"`
-	Duration        float64 `json:"duration"` // seconds
-	ViewCount       int64   `json:"view_count"`
-	BroadcasterName string  `json:"broadcaster_name"`
-}
-
-func (c twitchClipItem) toVideo() Video {
+// twitchClipVideo maps one of the channel's clips into the app's catalogue
+// entry (see internal/platforms/twitch for the API shape).
+func twitchClipVideo(c twitch.Clip) Video {
 	secs := int(c.Duration + 0.5)
 	return Video{
 		Platform:     "twitch",
@@ -463,34 +455,25 @@ func fetchTwitchClips(conn serviceConn) ([]Video, error) {
 	if conn.userID == "" {
 		return nil, fmt.Errorf("missing broadcaster id")
 	}
-	headers := twitchHeaders(conn)
+	client := twitchClient(conn)
 
 	var out []Video
 	cursor := ""
 	for len(out) < maxVideosPerPlatform {
-		endpoint := twitchClipsURL + "?broadcaster_id=" + conn.userID + "&first=100"
-		if cursor != "" {
-			endpoint += "&after=" + url.QueryEscape(cursor)
-		}
-		var resp struct {
-			Data       []twitchClipItem `json:"data"`
-			Pagination struct {
-				Cursor string `json:"cursor"`
-			} `json:"pagination"`
-		}
-		if _, err := httpx.GetJSON(endpoint, headers, &resp); err != nil {
+		clips, next, err := client.ClipsPage(cursor, 100)
+		if err != nil {
 			if len(out) > 0 {
 				break
 			}
 			return nil, err
 		}
-		if len(resp.Data) == 0 {
+		if len(clips) == 0 {
 			break
 		}
-		for _, c := range resp.Data {
-			out = append(out, c.toVideo())
+		for _, c := range clips {
+			out = append(out, twitchClipVideo(c))
 		}
-		cursor = resp.Pagination.Cursor
+		cursor = next
 		if cursor == "" {
 			break
 		}
@@ -519,7 +502,7 @@ func fetchTwitchVideoDetails(conn serviceConn, id string) (VideoDetails, error) 
 	var resp struct {
 		Data []twitchVideoItem `json:"data"`
 	}
-	if _, err := httpx.GetJSON(twitchVideosURL+"?id="+url.QueryEscape(id), twitchHeaders(conn), &resp); err != nil {
+	if _, err := httpx.GetJSON(twitch.VideosURL+"?id="+url.QueryEscape(id), twitchHeaders(conn), &resp); err != nil {
 		return VideoDetails{}, err
 	}
 	if len(resp.Data) == 0 {

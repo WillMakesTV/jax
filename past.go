@@ -661,46 +661,24 @@ func pickStreamTitle(broadcasts []PastBroadcast) string {
 // Twitch — archive VODs
 // ---------------------------------------------------------------------------
 
-const twitchVideosURL = "https://api.twitch.tv/helix/videos"
-const twitchClipsURL = "https://api.twitch.tv/helix/clips"
-
 func fetchTwitchArchives(conn serviceConn) ([]PastBroadcast, error) {
 	if conn.userID == "" {
 		return nil, fmt.Errorf("missing broadcaster id")
 	}
-	headers := twitchHeaders(conn)
+	client := twitchClient(conn)
 
 	// Twitch creates the archive VOD while the stream is still running, which
 	// would duplicate the live card as a "past" stream. Find the current live
 	// stream id (if any) so its in-progress VOD can be excluded.
-	liveStreamID := ""
-	var liveResp struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if _, err := httpx.GetJSON(twitchStreamsURL+"?user_id="+conn.userID, headers, &liveResp); err == nil && len(liveResp.Data) > 0 {
-		liveStreamID = liveResp.Data[0].ID
-	}
+	liveStreamID, _ := client.LiveStreamID()
 
-	var resp struct {
-		Data []struct {
-			Title        string `json:"title"`
-			URL          string `json:"url"`
-			StreamID     string `json:"stream_id"`
-			ThumbnailURL string `json:"thumbnail_url"`
-			CreatedAt    string `json:"created_at"`
-			Duration     string `json:"duration"`
-			ViewCount    int    `json:"view_count"`
-		} `json:"data"`
-	}
-	endpoint := twitchVideosURL + "?user_id=" + conn.userID + "&type=archive&first=20"
-	if _, err := httpx.GetJSON(endpoint, headers, &resp); err != nil {
+	archives, err := client.Archives(20)
+	if err != nil {
 		return nil, err
 	}
 
-	out := make([]PastBroadcast, 0, len(resp.Data))
-	for _, v := range resp.Data {
+	out := make([]PastBroadcast, 0, len(archives))
+	for _, v := range archives {
 		if liveStreamID != "" && v.StreamID == liveStreamID {
 			continue // the broadcast is still live; it belongs on the live card
 		}
