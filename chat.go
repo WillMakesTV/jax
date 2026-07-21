@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/platforms/youtube"
 	"bp-temp/internal/httpx"
 	"fmt"
 	"log"
@@ -72,7 +73,7 @@ func (a *App) resolveYouTubeChatID(headers map[string]string) string {
 			} `json:"snippet"`
 		} `json:"items"`
 	}
-	if _, err := httpx.GetJSON(youtubeBroadcastsURL, headers, &broadcasts); err != nil {
+	if _, err := httpx.GetJSON(youtube.ActiveBroadcastURL, headers, &broadcasts); err != nil {
 		log.Printf("jax: youtube chat broadcast lookup: %v", err)
 		return ""
 	}

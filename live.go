@@ -2,7 +2,6 @@ package main
 
 import (
 	"bp-temp/internal/platforms/twitch"
-	"bp-temp/internal/httpx"
 	"bp-temp/internal/platforms/youtube"
 	"fmt"
 	"log"
@@ -342,14 +341,11 @@ func (a *App) fetchTwitchLive(conn serviceConn) LiveStream {
 // ---------------------------------------------------------------------------
 
 const (
-	youtubeChannelsURL = "https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,brandingSettings&mine=true"
 	// liveBroadcasts.list: broadcastStatus is a filter and must NOT be combined
 	// with mine= (the API rejects two filters with incompatibleParameters); it
 	// already scopes to the authenticated user. broadcastType=all is required to
 	// include *persistent* broadcasts — streams started with the channel's
 	// default stream key (e.g. from OBS) — which the default (event) excludes.
-	youtubeBroadcastsURL = "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status&broadcastStatus=active&broadcastType=all"
-	youtubeVideosURL     = "https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,status,liveStreamingDetails&id="
 )
 
 // YouTube's default quota is only 10,000 units/day, so the live poll is
@@ -433,44 +429,19 @@ func (a *App) fetchYouTubeLive(conn serviceConn) LiveStream {
 	if conn.userID != "" {
 		ls.ChannelURL = "https://youtube.com/channel/" + conn.userID
 	}
-	headers := map[string]string{"Authorization": "Bearer " + conn.token}
+	client := youtubeClient(conn)
 
 	// Channel-level statistics: slow-moving, so served from the 1-hour cache.
 	// A cold fetch doubles as the reachability/auth probe.
 	var channelStatus int
 	info, _, _, err := cachedJSON(a, keyYTChannelInfo, apiCacheTTL, false, func() (ytChannelInfo, error) {
-		var channels struct {
-			Items []struct {
-				ID      string `json:"id"`
-				Snippet struct {
-					Title      string `json:"title"`
-					CustomURL  string `json:"customUrl"`
-					Thumbnails struct {
-						High   struct{ URL string } `json:"high"`
-						Medium struct{ URL string } `json:"medium"`
-						Default struct{ URL string } `json:"default"`
-					} `json:"thumbnails"`
-				} `json:"snippet"`
-				Statistics struct {
-					SubscriberCount string `json:"subscriberCount"`
-					ViewCount       string `json:"viewCount"`
-					VideoCount      string `json:"videoCount"`
-				} `json:"statistics"`
-				BrandingSettings struct {
-					Image struct {
-						BannerExternalURL string `json:"bannerExternalUrl"`
-					} `json:"image"`
-				} `json:"brandingSettings"`
-			} `json:"items"`
-		}
-		status, err := httpx.GetJSON(youtubeChannelsURL, headers, &channels)
+		ch, status, err := client.MyChannelInfo()
 		channelStatus = status
 		if err != nil {
 			return ytChannelInfo{}, err
 		}
 		out := ytChannelInfo{}
-		if len(channels.Items) > 0 {
-			ch := channels.Items[0]
+		if ch.ID != "" || ch.Snippet.Title != "" {
 			out.Name = ch.Snippet.Title
 			out.Avatar = firstNonEmpty(
 				ch.Snippet.Thumbnails.High.URL,
@@ -513,63 +484,31 @@ func (a *App) fetchYouTubeLive(conn serviceConn) LiveStream {
 	// offline; once live, the videos.list refresh below detects the end.
 	videoID := a.cachedYTVideoID()
 	if videoID == "" {
-		var broadcasts struct {
-			Items []struct {
-				ID string `json:"id"`
-			} `json:"items"`
-		}
-		if _, err := httpx.GetJSON(youtubeBroadcastsURL, headers, &broadcasts); err != nil {
+		found, err := client.ActiveBroadcastID()
+		if err != nil {
 			log.Printf("jax: youtube liveBroadcasts: %v", err)
 			ls.Error = "Could not check for an active YouTube broadcast."
 			return ls
 		}
-		if len(broadcasts.Items) == 0 {
+		if found == "" {
 			return ls // connected, not live
 		}
-		videoID = broadcasts.Items[0].ID
+		videoID = found
 		a.setYTVideoID(videoID)
 	}
 
 	// Real-time metrics for the live broadcast.
-	var videos struct {
-		Items []struct {
-			Snippet struct {
-				Title      string `json:"title"`
-				Thumbnails struct {
-					Medium struct {
-						URL string `json:"url"`
-					} `json:"medium"`
-					High struct {
-						URL string `json:"url"`
-					} `json:"high"`
-				} `json:"thumbnails"`
-			} `json:"snippet"`
-			Statistics struct {
-				ViewCount string `json:"viewCount"`
-				LikeCount string `json:"likeCount"`
-			} `json:"statistics"`
-			Status struct {
-				PrivacyStatus string `json:"privacyStatus"`
-			} `json:"status"`
-			LiveStreamingDetails struct {
-				ActualStartTime   string `json:"actualStartTime"`
-				ActualEndTime     string `json:"actualEndTime"`
-				ConcurrentViewers string `json:"concurrentViewers"`
-			} `json:"liveStreamingDetails"`
-		} `json:"items"`
-	}
-	if _, err := httpx.GetJSON(youtubeVideosURL+videoID, headers, &videos); err != nil {
+	v, found, err := client.LiveVideoByID(videoID)
+	if err != nil {
 		log.Printf("jax: youtube live video: %v", err)
 		a.setYTVideoID("") // re-probe on the next refresh
 		return ls
 	}
-	if len(videos.Items) == 0 ||
-		videos.Items[0].LiveStreamingDetails.ActualEndTime != "" {
+	if !found || v.LiveStreamingDetails.ActualEndTime != "" {
 		a.setYTVideoID("") // the broadcast ended
 		return ls
 	}
 
-	v := videos.Items[0]
 	ls.Live = true
 	ls.StreamURL = "https://youtube.com/watch?v=" + videoID
 	ls.Title = v.Snippet.Title

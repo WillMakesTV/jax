@@ -26,6 +26,12 @@ const (
 	PlaylistItemsURL   = "https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&maxResults=50"
 	VideosURL          = "https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails,status,liveStreamingDetails&id="
 	CommentThreadsURL  = "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&order=relevance&textFormat=plainText&maxResults=25&videoId="
+
+	MyChannelURL       = "https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,brandingSettings&mine=true"
+	ActiveBroadcastURL = "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status&broadcastStatus=active&broadcastType=all"
+	LiveVideoURL       = "https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,status,liveStreamingDetails&id="
+	CompletedURL       = "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet&broadcastStatus=completed&broadcastType=all&maxResults=20"
+	VideoMetaURL       = "https://www.googleapis.com/youtube/v3/videos?part=statistics,contentDetails&id="
 )
 
 // Client is an authenticated YouTube caller.
@@ -334,4 +340,158 @@ func (c Client) CommentThreads(videoID, apiKey string) ([]CommentThread, int, er
 		})
 	}
 	return out, status, nil
+}
+
+// MyChannel is the connected channel's own profile, counts and branding.
+type MyChannel struct {
+	ID      string `json:"id"`
+	Snippet struct {
+		Title      string `json:"title"`
+		CustomURL  string `json:"customUrl"`
+		Thumbnails struct {
+			High    struct{ URL string } `json:"high"`
+			Medium  struct{ URL string } `json:"medium"`
+			Default struct{ URL string } `json:"default"`
+		} `json:"thumbnails"`
+	} `json:"snippet"`
+	Statistics struct {
+		SubscriberCount string `json:"subscriberCount"`
+		ViewCount       string `json:"viewCount"`
+		VideoCount      string `json:"videoCount"`
+	} `json:"statistics"`
+	BrandingSettings struct {
+		Image struct {
+			BannerExternalURL string `json:"bannerExternalUrl"`
+		} `json:"image"`
+	} `json:"brandingSettings"`
+}
+
+// MyChannelInfo reads the connected channel. The status rides along so a
+// caller can tell an expired token from an unreachable API.
+func (c Client) MyChannelInfo() (MyChannel, int, error) {
+	var channels struct {
+		Items []MyChannel `json:"items"`
+	}
+	status, err := httpx.GetJSON(MyChannelURL, c.Headers(), &channels)
+	if err != nil {
+		return MyChannel{}, status, err
+	}
+	if len(channels.Items) == 0 {
+		return MyChannel{}, status, nil
+	}
+	return channels.Items[0], status, nil
+}
+
+// ActiveBroadcastID returns the id of the channel's live broadcast, or ""
+// when it is not broadcasting.
+func (c Client) ActiveBroadcastID() (string, error) {
+	var broadcasts struct {
+		Items []struct {
+			ID string `json:"id"`
+		} `json:"items"`
+	}
+	if _, err := httpx.GetJSON(ActiveBroadcastURL, c.Headers(), &broadcasts); err != nil {
+		return "", err
+	}
+	if len(broadcasts.Items) == 0 {
+		return "", nil
+	}
+	return broadcasts.Items[0].ID, nil
+}
+
+// LiveVideo is the real-time state of a broadcast: what it is called, how it
+// is doing, and — once ActualEndTime is set — that it has finished.
+type LiveVideo struct {
+	Snippet struct {
+		Title      string `json:"title"`
+		Thumbnails struct {
+			Medium struct {
+				URL string `json:"url"`
+			} `json:"medium"`
+			High struct {
+				URL string `json:"url"`
+			} `json:"high"`
+		} `json:"thumbnails"`
+	} `json:"snippet"`
+	Statistics struct {
+		ViewCount string `json:"viewCount"`
+		LikeCount string `json:"likeCount"`
+	} `json:"statistics"`
+	Status struct {
+		PrivacyStatus string `json:"privacyStatus"`
+	} `json:"status"`
+	LiveStreamingDetails struct {
+		ActualStartTime   string `json:"actualStartTime"`
+		ActualEndTime     string `json:"actualEndTime"`
+		ConcurrentViewers string `json:"concurrentViewers"`
+	} `json:"liveStreamingDetails"`
+}
+
+// LiveVideoByID reads a broadcast's live metrics. found is false when the
+// video is gone, which — like a set ActualEndTime — means the broadcast is
+// over.
+func (c Client) LiveVideoByID(videoID string) (v LiveVideo, found bool, err error) {
+	var videos struct {
+		Items []LiveVideo `json:"items"`
+	}
+	if _, err := httpx.GetJSON(LiveVideoURL+url.QueryEscape(videoID),
+		c.Headers(), &videos); err != nil {
+		return LiveVideo{}, false, err
+	}
+	if len(videos.Items) == 0 {
+		return LiveVideo{}, false, nil
+	}
+	return videos.Items[0], true, nil
+}
+
+// CompletedBroadcast is one finished live broadcast, as the archive lists it.
+type CompletedBroadcast struct {
+	ID      string `json:"id"`
+	Snippet struct {
+		Title           string `json:"title"`
+		ActualStartTime string `json:"actualStartTime"`
+		Thumbnails      struct {
+			Medium struct {
+				URL string `json:"url"`
+			} `json:"medium"`
+			High struct {
+				URL string `json:"url"`
+			} `json:"high"`
+		} `json:"thumbnails"`
+	} `json:"snippet"`
+}
+
+// CompletedBroadcasts lists the channel's finished broadcasts, newest first.
+func (c Client) CompletedBroadcasts() ([]CompletedBroadcast, error) {
+	var broadcasts struct {
+		Items []CompletedBroadcast `json:"items"`
+	}
+	if _, err := httpx.GetJSON(CompletedURL, c.Headers(), &broadcasts); err != nil {
+		return nil, err
+	}
+	return broadcasts.Items, nil
+}
+
+// VideoMeta is a video's view count and duration — the two things the past
+// broadcast list enriches itself with in one call.
+type VideoMeta struct {
+	ID         string `json:"id"`
+	Statistics struct {
+		ViewCount string `json:"viewCount"`
+	} `json:"statistics"`
+	ContentDetails struct {
+		Duration string `json:"duration"` // ISO 8601, e.g. "PT3H8M33S"
+	} `json:"contentDetails"`
+}
+
+// VideoMetaByIDs reads view counts and durations for several videos at once.
+func (c Client) VideoMetaByIDs(ids []string) ([]VideoMeta, error) {
+	var videos struct {
+		Items []VideoMeta `json:"items"`
+	}
+	if _, err := httpx.GetJSON(VideoMetaURL+strings.Join(ids, ","),
+		c.Headers(), &videos); err != nil {
+		return nil, err
+	}
+	return videos.Items, nil
 }

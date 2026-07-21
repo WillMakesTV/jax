@@ -2,6 +2,7 @@ package main
 
 import (
 	"bp-temp/internal/httpx"
+	"bp-temp/internal/platforms/youtube"
 	"bytes"
 	"fmt"
 	"image"
@@ -486,7 +487,7 @@ func (a *App) currentYTBroadcastID(headers map[string]string) string {
 			ID string `json:"id"`
 		} `json:"items"`
 	}
-	if _, err := httpx.GetJSON(youtubeBroadcastsURL, headers, &broadcasts); err != nil {
+	if _, err := httpx.GetJSON(youtube.ActiveBroadcastURL, headers, &broadcasts); err != nil {
 		log.Printf("jax: youtube active broadcasts: %v", err)
 	} else if len(broadcasts.Items) > 0 {
 		videoID := broadcasts.Items[0].ID

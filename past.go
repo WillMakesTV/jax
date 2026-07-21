@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bp-temp/internal/httpx"
 	"fmt"
 	"log"
 	"regexp"
@@ -707,44 +706,20 @@ func fetchTwitchArchives(conn serviceConn) ([]PastBroadcast, error) {
 // YouTube — completed live broadcasts
 // ---------------------------------------------------------------------------
 
-const (
-	// broadcastStatus is a filter and must not be combined with mine=; it
-	// already scopes to the authenticated user. broadcastType=all includes
-	// default-stream-key (persistent) broadcasts.
-	youtubeCompletedURL = "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet&broadcastStatus=completed&broadcastType=all&maxResults=20"
-	youtubeVideoMetaURL = "https://www.googleapis.com/youtube/v3/videos?part=statistics,contentDetails&id="
-)
-
 func fetchYouTubeCompleted(conn serviceConn) ([]PastBroadcast, error) {
-	headers := map[string]string{"Authorization": "Bearer " + conn.token}
+	client := youtubeClient(conn)
 
-	var broadcasts struct {
-		Items []struct {
-			ID      string `json:"id"`
-			Snippet struct {
-				Title           string `json:"title"`
-				ActualStartTime string `json:"actualStartTime"`
-				Thumbnails      struct {
-					Medium struct {
-						URL string `json:"url"`
-					} `json:"medium"`
-					High struct {
-						URL string `json:"url"`
-					} `json:"high"`
-				} `json:"thumbnails"`
-			} `json:"snippet"`
-		} `json:"items"`
-	}
-	if _, err := httpx.GetJSON(youtubeCompletedURL, headers, &broadcasts); err != nil {
+	items, err := client.CompletedBroadcasts()
+	if err != nil {
 		return nil, err
 	}
-	if len(broadcasts.Items) == 0 {
+	if len(items) == 0 {
 		return nil, nil
 	}
 
 	// Enrich with view counts and durations in one videos.list call.
-	ids := make([]string, 0, len(broadcasts.Items))
-	for _, b := range broadcasts.Items {
+	ids := make([]string, 0, len(items))
+	for _, b := range items {
 		ids = append(ids, b.ID)
 	}
 	type videoMeta struct {
@@ -753,19 +728,8 @@ func fetchYouTubeCompleted(conn serviceConn) ([]PastBroadcast, error) {
 		secs     int
 	}
 	meta := map[string]videoMeta{}
-	var videos struct {
-		Items []struct {
-			ID         string `json:"id"`
-			Statistics struct {
-				ViewCount string `json:"viewCount"`
-			} `json:"statistics"`
-			ContentDetails struct {
-				Duration string `json:"duration"` // ISO 8601, e.g. "PT3H8M33S"
-			} `json:"contentDetails"`
-		} `json:"items"`
-	}
-	if _, err := httpx.GetJSON(youtubeVideoMetaURL+strings.Join(ids, ","), headers, &videos); err == nil {
-		for _, v := range videos.Items {
+	if found, err := client.VideoMetaByIDs(ids); err == nil {
+		for _, v := range found {
 			compact := formatISODuration(v.ContentDetails.Duration)
 			meta[v.ID] = videoMeta{
 				views:    int(atoi64(v.Statistics.ViewCount)),
@@ -775,8 +739,8 @@ func fetchYouTubeCompleted(conn serviceConn) ([]PastBroadcast, error) {
 		}
 	}
 
-	out := make([]PastBroadcast, 0, len(broadcasts.Items))
-	for _, b := range broadcasts.Items {
+	out := make([]PastBroadcast, 0, len(items))
+	for _, b := range items {
 		m := meta[b.ID]
 		out = append(out, PastBroadcast{
 			Platform: "youtube",
