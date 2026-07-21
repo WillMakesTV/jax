@@ -171,9 +171,12 @@ export function StatusBar({
         </span>
       )}
 
-      {/* Mic state across OBS's audio input capture devices. */}
+      {/* Mic state across OBS's audio input capture devices. The label only
+          appears at full width; narrower windows keep the icon (and the
+          title) so the row stays readable. */}
       {obsConnected && mics.length > 0 && (
         <span
+          title={micOn ? 'Mic on' : 'Mic off'}
           className={
             micOn
               ? 'inline-flex items-center gap-1.5 font-semibold text-green-600 dark:text-green-400'
@@ -185,7 +188,9 @@ export function StatusBar({
           ) : (
             <MicOff size={12} aria-hidden />
           )}
-          {micOn ? 'Mic on' : 'Mic off'}
+          <span className="hidden xl:inline">
+            {micOn ? 'Mic on' : 'Mic off'}
+          </span>
         </span>
       )}
 
@@ -193,7 +198,7 @@ export function StatusBar({
           Primary Sources. Hidden until one is designated. */}
       {obsConnected && music && (
         <span
-          title={music.name}
+          title={`${music.name} · ${music.muted ? 'Music off' : 'Music on'}`}
           className={
             music.muted
               ? 'inline-flex items-center gap-1.5 font-semibold text-red-500 dark:text-red-400'
@@ -205,7 +210,9 @@ export function StatusBar({
           ) : (
             <Music size={12} aria-hidden />
           )}
-          {music.muted ? 'Music off' : 'Music on'}
+          <span className="hidden xl:inline">
+            {music.muted ? 'Music off' : 'Music on'}
+          </span>
         </span>
       )}
 
@@ -213,7 +220,9 @@ export function StatusBar({
           camera is designated for the active scene. */}
       {obsConnected && camera && (
         <span
-          title={`${camera.name} · ${camera.sceneName}`}
+          title={`${camera.name} · ${camera.sceneName} · ${
+            camera.enabled ? 'Camera on' : 'Camera off'
+          }`}
           className={
             camera.enabled
               ? 'inline-flex items-center gap-1.5 font-semibold text-green-600 dark:text-green-400'
@@ -225,7 +234,9 @@ export function StatusBar({
           ) : (
             <VideoOff size={12} aria-hidden />
           )}
-          {camera.enabled ? 'Camera on' : 'Camera off'}
+          <span className="hidden xl:inline">
+            {camera.enabled ? 'Camera on' : 'Camera off'}
+          </span>
         </span>
       )}
 
