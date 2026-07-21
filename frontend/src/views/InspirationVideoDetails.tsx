@@ -25,7 +25,7 @@ import {formatCompact, formatDate} from '../lib/format'
 import {clock, inspirationError} from './Inspiration'
 import {isWorking, StatusPill} from './InspirationChannelDetails'
 
-type VideoTab = 'outline' | 'manifest' | 'transcript' | 'description'
+type VideoTab = 'outline' | 'manifest' | 'transcript'
 
 /**
  * One inspiration video in full: the local copy, the platform metadata, the
@@ -74,7 +74,6 @@ export function InspirationVideoDetails({
       count: video.links.length + video.mentions.length,
     },
     {id: 'transcript', label: 'Transcript', count: video.transcript.length},
-    {id: 'description', label: 'Description'},
   ]
 
   return (
@@ -121,10 +120,49 @@ export function InspirationVideoDetails({
         }
       />
 
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-        {/* The local copy, with the numbers the platform reports. */}
-        <aside className="flex w-full shrink-0 flex-col gap-3 lg:w-96">
-          <div className="overflow-hidden rounded-xl border border-edge bg-surface">
+      <div className="flex flex-col gap-6">
+        {/* Sections first: the tabs sit above the hero so the page reads
+            tabs → video → whatever was read out of it. */}
+        <div
+          role="tablist"
+          aria-label="Video detail sections"
+          className="flex w-fit items-center gap-1 rounded-lg border border-edge bg-surface p-1"
+        >
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.id}
+              onClick={() => setTab(t.id)}
+              className={clsx(
+                'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                tab === t.id
+                  ? 'bg-accent text-accent-fg'
+                  : 'text-fg-muted hover:bg-surface-hover hover:text-fg',
+              )}
+            >
+              {t.label}
+              {Boolean(t.count) && (
+                <span
+                  className={clsx(
+                    'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
+                    tab === t.id
+                      ? 'bg-accent-fg/20 text-accent-fg'
+                      : 'bg-surface-hover text-fg-muted',
+                  )}
+                >
+                  {t.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Hero: the local copy on the left, what the platform says about it
+            on the right. */}
+        <section className="flex flex-col gap-4 lg:flex-row lg:items-start">
+          <div className="w-full shrink-0 overflow-hidden rounded-xl border border-edge bg-surface lg:w-[30rem] xl:w-[38rem]">
             {video.mediaUrl ? (
               <video
                 src={video.mediaUrl}
@@ -166,76 +204,57 @@ export function InspirationVideoDetails({
             </div>
           </div>
 
-          {video.statusDetail && (
-            <p className="rounded-lg border border-edge bg-surface p-3 text-xs text-red-600 dark:text-red-400">
-              {video.statusDetail}
-            </p>
-          )}
-          {error && (
-            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-          )}
+          <div className="flex min-w-0 flex-1 flex-col gap-3">
+            {video.statusDetail && (
+              <p className="rounded-lg border border-edge bg-surface p-3 text-xs text-red-600 dark:text-red-400">
+                {video.statusDetail}
+              </p>
+            )}
+            {error && (
+              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            )}
 
-          {video.summary && (
+            {video.summary && (
+              <div className="rounded-xl border border-edge bg-surface p-4">
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+                  Summary
+                </p>
+                <p className="text-sm text-fg">{video.summary}</p>
+              </div>
+            )}
+
             <div className="rounded-xl border border-edge bg-surface p-4">
               <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg-muted">
-                Summary
+                Description
               </p>
-              <p className="text-sm text-fg">{video.summary}</p>
+              {video.description ? (
+                <p className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words text-sm text-fg">
+                  {video.description}
+                </p>
+              ) : (
+                <p className="text-sm text-fg-muted">
+                  This video has no description.
+                </p>
+              )}
             </div>
-          )}
 
-          {video.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {video.tags.slice(0, 12).map((t) => (
-                <span
-                  key={t}
-                  className="rounded-full border border-edge bg-bg px-2 py-0.5 text-xs text-fg-muted"
-                >
-                  {t}
-                </span>
-              ))}
-            </div>
-          )}
-        </aside>
-
-        {/* Everything read out of the video. */}
-        <div className="flex min-w-0 flex-1 flex-col gap-4">
-          <div
-            role="tablist"
-            aria-label="Video detail sections"
-            className="flex w-fit items-center gap-1 rounded-lg border border-edge bg-surface p-1"
-          >
-            {tabs.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                role="tab"
-                aria-selected={tab === t.id}
-                onClick={() => setTab(t.id)}
-                className={clsx(
-                  'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                  tab === t.id
-                    ? 'bg-accent text-accent-fg'
-                    : 'text-fg-muted hover:bg-surface-hover hover:text-fg',
-                )}
-              >
-                {t.label}
-                {Boolean(t.count) && (
+            {video.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {video.tags.slice(0, 12).map((t) => (
                   <span
-                    className={clsx(
-                      'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
-                      tab === t.id
-                        ? 'bg-accent-fg/20 text-accent-fg'
-                        : 'bg-surface-hover text-fg-muted',
-                    )}
+                    key={t}
+                    className="rounded-full border border-edge bg-bg px-2 py-0.5 text-xs text-fg-muted"
                   >
-                    {t.count}
+                    {t}
                   </span>
-                )}
-              </button>
-            ))}
+                ))}
+              </div>
+            )}
           </div>
+        </section>
 
+        {/* The selected section, across the full width of the page. */}
+        <div className="flex min-w-0 flex-col gap-4">
           {tab === 'outline' && (
             <div className="flex flex-col gap-4">
               {video.beats.length > 0 && (
@@ -399,18 +418,6 @@ export function InspirationVideoDetails({
                     </li>
                   ))}
                 </ul>
-              )}
-            </div>
-          )}
-
-          {tab === 'description' && (
-            <div className="rounded-xl border border-edge bg-surface p-4">
-              {video.description ? (
-                <p className="whitespace-pre-wrap break-words text-sm text-fg">
-                  {video.description}
-                </p>
-              ) : (
-                <Empty text="This video has no description." />
               )}
             </div>
           )}
