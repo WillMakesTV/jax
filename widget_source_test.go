@@ -238,3 +238,66 @@ func TestWidgetSourceEndpoints(t *testing.T) {
 		t.Fatalf("clear should keep file-backed values: %+v", raw[0].Fields[1])
 	}
 }
+
+// Any widget display can poll the app's own state under /widget/app/. The
+// active-project feed carries the project's name and cover image, and reads
+// empty rather than 404 when nothing is active.
+func TestWidgetAppDataActiveProject(t *testing.T) {
+	a := newTestApp(t)
+	a.mediaBaseURL = "http://127.0.0.1:9999"
+	h := mediaHandler{app: a}
+
+	get := func() map[string]string {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET",
+			widgetSourcePrefix+widgetAppDataPrefix+"active-project", nil))
+		if rec.Code != 200 {
+			t.Fatalf("active-project: code %d", rec.Code)
+		}
+		var got map[string]string
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return got
+	}
+
+	if got := get(); got["id"] != "" || got["title"] != "" {
+		t.Fatalf("no project yet, got %+v", got)
+	}
+
+	p, err := a.SaveProject(Project{Title: "Chatter Bot v2"})
+	if err != nil {
+		t.Fatalf("save project: %v", err)
+	}
+	if _, err := a.SetProjectThumbnail(p.ID, "cover.png"); err != nil {
+		t.Fatalf("set thumbnail: %v", err)
+	}
+	got := get()
+	if got["id"] != p.ID || got["title"] != "Chatter Bot v2" {
+		t.Fatalf("active project: %+v", got)
+	}
+	if want := "http://127.0.0.1:9999" + planThumbsPrefix + "cover.png"; got["imageUrl"] != want {
+		t.Fatalf("image url: got %q want %q", got["imageUrl"], want)
+	}
+
+	// A second project only shows up once it takes the flag.
+	other, err := a.SaveProject(Project{Title: "Launch"})
+	if err != nil {
+		t.Fatalf("save second: %v", err)
+	}
+	if _, err := a.SetActiveProject(other.ID); err != nil {
+		t.Fatalf("set active: %v", err)
+	}
+	if got := get(); got["title"] != "Launch" {
+		t.Fatalf("after switch: %+v", got)
+	}
+
+	// An unknown feed name 404s so a typo fails loudly.
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET",
+		widgetSourcePrefix+widgetAppDataPrefix+"nope", nil))
+	if rec.Code != 404 {
+		t.Fatalf("unknown feed: code %d", rec.Code)
+	}
+}

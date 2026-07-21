@@ -27,6 +27,11 @@ import (
 // widgetSourcePrefix serves the widget Browser Source pages and their data.
 const widgetSourcePrefix = "/widget/"
 
+// widgetAppDataPrefix (under widgetSourcePrefix) serves read-only app state
+// to any widget display — content that belongs to the app rather than to one
+// widget's fields, so a display can follow it live from the Browser Source.
+const widgetAppDataPrefix = "app/"
+
 // browserSourceAssets are the page's vendored runtime: React and ReactDOM
 // UMD builds plus Babel standalone for the in-page JSX transform.
 //
@@ -359,6 +364,13 @@ func (a *App) serveWidgetSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// App state a display may want but the widget's own fields do not carry
+	// (the active project, …) — shared by every widget page.
+	if name, ok := strings.CutPrefix(rest, widgetAppDataPrefix); ok {
+		a.serveWidgetAppData(w, r, name)
+		return
+	}
+
 	id, isData := strings.CutSuffix(rest, "/data")
 	var widget *StreamWidget
 	for _, sw := range a.getStreamWidgets() {
@@ -430,6 +442,27 @@ func (a *App) serveWidgetSource(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = widgetSourcePage.Execute(w, map[string]string{"Name": widget.Name})
+}
+
+// serveWidgetAppData answers /widget/app/<name>: read-only app state a
+// display can poll for content its own fields do not carry. Unknown names
+// 404 so a typo in a template fails loudly rather than rendering blank.
+func (a *App) serveWidgetAppData(w http.ResponseWriter, r *http.Request, name string) {
+	switch name {
+	case "active-project":
+		// The project currently being worked on (see SetActiveProject);
+		// every field is empty when none is active.
+		p := a.GetActiveProject()
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"id":          p.ID,
+			"title":       p.Title,
+			"description": p.Description,
+			"imageUrl":    p.ThumbnailURL,
+		})
+	default:
+		http.NotFound(w, r)
+	}
 }
 
 // widgetSourcePage is the Browser Source shell. The body is transparent (OBS
