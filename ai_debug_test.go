@@ -111,7 +111,7 @@ func TestDebugReportSearch(t *testing.T) {
 	}
 }
 
-func TestResolveDebugReportLeavesFixNotice(t *testing.T) {
+func TestResolveDebugReportLeavesHistoryEntry(t *testing.T) {
 	a := newTestApp(t)
 
 	r, _ := a.SaveDebugReport(DebugReport{
@@ -150,40 +150,25 @@ func TestResolveDebugReportLeavesFixNotice(t *testing.T) {
 		t.Fatal("want error resolving a missing report")
 	}
 
-	notices := a.ListFixNotices()
-	if len(notices) != 1 {
-		t.Fatalf("notices = %+v, want 1", notices)
+	history := a.ListResolvedReports()
+	if len(history) != 1 {
+		t.Fatalf("history = %+v, want 1", history)
 	}
-	n := notices[0]
+	n := history[0]
 	if n.Title != r.Title || n.Route != "planning" || n.ResolvedAt == "" {
-		t.Fatalf("notice mismatch: %+v", n)
+		t.Fatalf("history entry mismatch: %+v", n)
 	}
 	if n.ReportID != r.ID || n.IssueURL == "" || n.IssueNumber != 7 {
-		t.Fatalf("notice should carry the issue reference: %+v", n)
+		t.Fatalf("history should carry the issue reference: %+v", n)
 	}
 
-	// Reading clears the notification but keeps the history entry.
-	if err := a.DismissFixNotice(n.ID); err != nil {
-		t.Fatalf("dismiss: %v", err)
-	}
-	if err := a.DismissFixNotice(n.ID); err != nil {
-		t.Fatalf("dismissing again should be harmless: %v", err)
-	}
-	if got := a.ListFixNotices(); len(got) != 0 {
-		t.Fatalf("notices after dismiss = %+v, want none", got)
-	}
-	history := a.ListResolvedReports()
-	if len(history) != 1 || !history[0].Read || history[0].IssueNumber != 7 {
-		t.Fatalf("history should keep the read entry: %+v", history)
-	}
-
-	// A withdrawal (plain delete) must not leave a notice behind.
+	// A withdrawal (plain delete) must not leave a history entry behind.
 	r2, _ := a.SaveDebugReport(DebugReport{Description: "withdrawn", Route: "videos"})
 	if err := a.DeleteDebugReport(r2.ID); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if got := a.ListFixNotices(); len(got) != 0 {
-		t.Fatalf("withdrawal left a notice: %+v", got)
+	if got := a.ListResolvedReports(); len(got) != 1 {
+		t.Fatalf("withdrawal left a history entry: %+v", got)
 	}
 }
 

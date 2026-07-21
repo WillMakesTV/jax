@@ -250,10 +250,6 @@ export function DisconnectService(arg1) {
   return window['go']['main']['App']['DisconnectService'](arg1);
 }
 
-export function DismissFixNotice(arg1) {
-  return window['go']['main']['App']['DismissFixNotice'](arg1);
-}
-
 export function EditPlanDescription(arg1, arg2, arg3) {
   return window['go']['main']['App']['EditPlanDescription'](arg1, arg2, arg3);
 }
@@ -644,10 +640,6 @@ export function ListDebugReports() {
 
 export function ListFacebookPages() {
   return window['go']['main']['App']['ListFacebookPages']();
-}
-
-export function ListFixNotices() {
-  return window['go']['main']['App']['ListFixNotices']();
 }
 
 export function ImportVideoPlanFootage(arg1, arg2) {

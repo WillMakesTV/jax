@@ -5,8 +5,6 @@ import (
 	"log"
 	"strings"
 	"time"
-
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // ---------------------------------------------------------------------------
@@ -35,10 +33,9 @@ type DebugReport struct {
 	UpdatedAt   string `json:"updatedAt"` // RFC3339
 }
 
-// FixNotice is one resolved debug report: a permanent history entry that,
-// while unread, doubles as the "your bug was fixed" notification the status
-// bar shows. Clicking the notice marks it read; the row stays as history
-// (Settings → Development) with its GitHub issue reference.
+// FixNotice is one resolved debug report: a permanent history entry kept in
+// the resolution history (Settings → Development) with its GitHub issue
+// reference and the time the fix landed.
 type FixNotice struct {
 	ID          int64  `json:"id"`
 	ReportID    int64  `json:"reportId"`    // the resolved report's id
@@ -47,7 +44,6 @@ type FixNotice struct {
 	Route       string `json:"route"`       // app view id the report was filed on
 	IssueURL    string `json:"issueUrl"`    // GitHub issue the fix landed under
 	IssueNumber int64  `json:"issueNumber"`
-	Read        bool   `json:"read"`       // the notice has been seen
 	ResolvedAt  string `json:"resolvedAt"` // RFC3339
 }
 
@@ -194,14 +190,12 @@ func (s *Store) searchDebugReports(q string) ([]DebugReport, error) {
 	return out, rows.Err()
 }
 
-const fixNoticeColumns = `id, report_id, title, description, route, issue_url, issue_number, read, resolved_at`
+const fixNoticeColumns = `id, report_id, title, description, route, issue_url, issue_number, resolved_at`
 
 func scanFixNotice(row interface{ Scan(...any) error }) (FixNotice, error) {
 	var n FixNotice
-	var read int
 	err := row.Scan(&n.ID, &n.ReportID, &n.Title, &n.Description, &n.Route,
-		&n.IssueURL, &n.IssueNumber, &read, &n.ResolvedAt)
-	n.Read = read != 0
+		&n.IssueURL, &n.IssueNumber, &n.ResolvedAt)
 	return n, err
 }
 
@@ -222,26 +216,6 @@ func (s *Store) insertFixNotice(n FixNotice) (FixNotice, error) {
 	return n, err
 }
 
-// listFixNotices returns every unread fix notice, oldest first — the order
-// they were resolved in is the order they should be read in.
-func (s *Store) listFixNotices() ([]FixNotice, error) {
-	rows, err := s.db.Query(
-		`SELECT ` + fixNoticeColumns + ` FROM dev_ai_debug_fixed WHERE read = 0 ORDER BY id`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []FixNotice{}
-	for rows.Next() {
-		n, err := scanFixNotice(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, n)
-	}
-	return out, rows.Err()
-}
-
 // listResolvedReports returns the whole resolution history, newest first.
 func (s *Store) listResolvedReports() ([]FixNotice, error) {
 	rows, err := s.db.Query(
@@ -259,20 +233,6 @@ func (s *Store) listResolvedReports() ([]FixNotice, error) {
 		out = append(out, n)
 	}
 	return out, rows.Err()
-}
-
-// markFixNoticeRead flags a notice as seen. The row stays: it is the
-// resolution history entry for its report.
-func (s *Store) markFixNoticeRead(id int64) error {
-	res, err := s.db.Exec(`UPDATE dev_ai_debug_fixed SET read = 1 WHERE id = ?`, id)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return fmt.Errorf("no fix notice with id %d", id)
-	}
-	s.changed("dev_ai_debug_fixed")
-	return nil
 }
 
 // --- Bound App methods -------------------------------------------------------
@@ -375,10 +335,10 @@ func (a *App) DeleteDebugReport(id int64) error {
 }
 
 // ResolveDebugReport removes a fixed report and leaves its history entry
-// behind — unread, it doubles as the notice so the person who filed it hears
-// the bug is resolved; read, it stays as the record of when and under which
-// GitHub issue the fix landed. This is the MCP delete path; a withdrawal
-// from the Development tab uses DeleteDebugReport and stays silent.
+// behind: the record of when the fix landed and under which GitHub issue,
+// shown in Settings → Development. This is the MCP delete path; a withdrawal
+// from the Development tab uses DeleteDebugReport and drops the report
+// without a history entry.
 func (a *App) ResolveDebugReport(id int64) error {
 	if a.store == nil {
 		return fmt.Errorf("store is not open")
@@ -390,7 +350,7 @@ func (a *App) ResolveDebugReport(id int64) error {
 	if err := a.store.deleteDebugReport(id); err != nil {
 		return err
 	}
-	notice, err := a.store.insertFixNotice(FixNotice{
+	_, err = a.store.insertFixNotice(FixNotice{
 		ReportID:    report.ID,
 		Title:       report.Title,
 		Description: report.Description,
@@ -400,37 +360,11 @@ func (a *App) ResolveDebugReport(id int64) error {
 		ResolvedAt:  time.Now().UTC().Format(time.RFC3339),
 	})
 	if err != nil {
-		// The resolve itself succeeded; a lost notice is worth a log line,
-		// not a failed tool call.
-		log.Printf("jax: ResolveDebugReport notice: %v", err)
-		return nil
-	}
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "debugfix:new", notice)
+		// The resolve itself succeeded; a lost history entry is worth a log
+		// line, not a failed tool call.
+		log.Printf("jax: ResolveDebugReport history: %v", err)
 	}
 	return nil
-}
-
-// ListFixNotices returns the unread bug-fixed notices, oldest first.
-func (a *App) ListFixNotices() []FixNotice {
-	if a.store == nil {
-		return []FixNotice{}
-	}
-	notices, err := a.store.listFixNotices()
-	if err != nil {
-		log.Printf("jax: ListFixNotices: %v", err)
-		return []FixNotice{}
-	}
-	return notices
-}
-
-// DismissFixNotice marks a notice read. The entry stays in the resolution
-// history (see ListResolvedReports); only the status-bar notification goes.
-func (a *App) DismissFixNotice(id int64) error {
-	if a.store == nil {
-		return fmt.Errorf("store is not open")
-	}
-	return a.store.markFixNoticeRead(id)
 }
 
 // ListResolvedReports returns the full resolution history, newest first —

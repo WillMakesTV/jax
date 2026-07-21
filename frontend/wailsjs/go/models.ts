@@ -411,7 +411,6 @@ export namespace main {
 	    route: string;
 	    issueUrl: string;
 	    issueNumber: number;
-	    read: boolean;
 	    resolvedAt: string;
 
 	    static createFrom(source: any = {}) {
@@ -427,7 +426,6 @@ export namespace main {
 	        this.route = source["route"];
 	        this.issueUrl = source["issueUrl"];
 	        this.issueNumber = source["issueNumber"];
-	        this.read = source["read"];
 	        this.resolvedAt = source["resolvedAt"];
 	    }
 	}

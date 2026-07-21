@@ -1,6 +1,5 @@
 import {
   Bell,
-  BugOff,
   Captions,
   Clapperboard,
   Clock,
@@ -24,11 +23,7 @@ import {
   WandSparkles,
 } from 'lucide-react'
 import {useEffect, useRef, useState} from 'react'
-import {
-  DismissFixNotice,
-  GetPostStreamStatus,
-  ListFixNotices,
-} from '../../wailsjs/go/main/App'
+import {GetPostStreamStatus} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {EventsOn} from '../../wailsjs/runtime/runtime'
 import {
@@ -86,8 +81,6 @@ interface StatusBarProps {
   onOpenPostStream: (startedAt: string, tab: StreamTab | null) => void
   /** Open the inspiration video being downloaded/transcribed/studied. */
   onOpenInspiration: (videoId: string) => void
-  /** Open the page a resolved bug report was filed on. */
-  onOpenFixNotice: (notice: main.FixNotice) => void
 }
 
 /**
@@ -105,7 +98,6 @@ export function StatusBar({
   onOpenEditSession,
   onOpenPostStream,
   onOpenInspiration,
-  onOpenFixNotice,
 }: StatusBarProps) {
   const {platforms, obs, mics, music, camera, micSourceName, obsConnected} =
     useLiveData()
@@ -335,10 +327,6 @@ export function StatusBar({
         notice={editSession.notice}
         onOpen={onOpenEditSession}
       />
-
-      {/* A filed bug report was resolved; click through to its page (the
-          notice is read-once and clears on click). */}
-      <FixNoticeChip onOpen={onOpenFixNotice} />
 
       {/* Unread events notification; click through to the Live Events tab. */}
       {unreadEvents > 0 && (
@@ -743,53 +731,6 @@ function EditSessionStatus({
         {notice.state === 'done' ? '✓ ' : ''}
         {notice.detail}
       </span>
-    </button>
-  )
-}
-
-/**
- * Bug-fixed chip: the read-once notices a resolved debug report leaves behind
- * (see ai_debug.go). One at a time, oldest first — clicking opens the page the
- * report was filed on so the fix is easy to review, and dismisses the notice
- * for good; any further notices take its place.
- */
-function FixNoticeChip({onOpen}: {onOpen: (notice: main.FixNotice) => void}) {
-  const [notices, setNotices] = useState<main.FixNotice[]>([])
-
-  useEffect(() => {
-    ListFixNotices()
-      .then((n) => setNotices(n ?? []))
-      .catch(() => {})
-    return EventsOn('debugfix:new', (n: main.FixNotice) => {
-      setNotices((prev) =>
-        prev.some((x) => x.id === n.id) ? prev : [...prev, n],
-      )
-    })
-  }, [])
-
-  if (notices.length === 0) return null
-  const first = notices[0]
-  const read = () => {
-    setNotices((prev) => prev.filter((n) => n.id !== first.id))
-    DismissFixNotice(first.id).catch(() => {})
-    onOpen(first)
-  }
-  return (
-    <button
-      type="button"
-      onClick={read}
-      title={`“${first.title || 'Your bug report'}” was resolved — click to open the report history and clear this notice`}
-      className="inline-flex min-w-0 items-center gap-1.5 font-medium text-green-600 transition-colors hover:text-accent dark:text-green-400"
-    >
-      <BugOff size={12} aria-hidden />
-      <span className="max-w-[22rem] truncate">
-        ✓ Bug fixed — {first.title || 'your report'}
-      </span>
-      {notices.length > 1 && (
-        <span className="rounded-full bg-green-600/15 px-1.5 text-[11px] font-semibold">
-          +{notices.length - 1}
-        </span>
-      )}
     </button>
   )
 }

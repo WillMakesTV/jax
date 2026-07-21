@@ -126,8 +126,6 @@ export function DisconnectGitHub():Promise<void>;
 
 export function DisconnectService(arg1:string):Promise<void>;
 
-export function DismissFixNotice(arg1:number):Promise<void>;
-
 export function EditPlanDescription(arg1:string,arg2:string,arg3:string):Promise<string>;
 
 export function EndStreamSession():Promise<void>;
@@ -323,8 +321,6 @@ export function ListAppSkills():Promise<Array<main.AppSkill>>;
 export function ListDebugReports():Promise<Array<main.DebugReport>>;
 
 export function ListFacebookPages():Promise<Array<main.FBPageInfo>>;
-
-export function ListFixNotices():Promise<Array<main.FixNotice>>;
 
 export function ImportVideoPlanFootage(arg1:string,arg2:Array<string>):Promise<main.VideoPlan>;
 

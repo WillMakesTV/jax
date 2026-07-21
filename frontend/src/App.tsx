@@ -416,70 +416,6 @@ function App() {
     [navigate],
   )
 
-  // A bug-fixed notice links back to the view its report was filed on.
-  // Detail views need a subject the notice doesn't carry, so each falls back
-  // to the section that leads to it.
-  const openFixedRoute = useCallback(
-    (route: string) => {
-      const fallbacks: Record<string, ViewId> = {
-        'stream-details': 'broadcasting',
-        'live-details': 'broadcasting',
-        'channel-details': 'dashboard',
-        'video-details': 'videos',
-        'download-video': 'videos',
-        'video-plan': 'videos',
-        'plan-video': 'videos',
-        'plan-stream': 'broadcasting',
-        'edit-series': 'broadcasting',
-        'edit-routine': 'obs',
-        'widget-details': 'obs',
-        'edit-smart-source': 'obs',
-        'custom-tokens': 'settings',
-        'broadcast-plan': 'broadcasting',
-        // Routes retired by the Broadcasting merge/rename: reports filed on
-        // the old Broadcast section or the pre-rename planning route.
-        live: 'broadcasting',
-        planning: 'broadcasting',
-        'project-details': 'projects',
-        'sponsor-details': 'sponsors',
-        'campaign-details': 'sponsors',
-        'inspiration-channel': 'inspiration',
-        'inspiration-video': 'inspiration',
-      }
-      const topLevel: ViewId[] = [
-        'dashboard',
-        'broadcasting',
-        'projects',
-        'sponsors',
-        'inspiration',
-        'obs',
-        'videos',
-        'settings',
-        'profile',
-      ]
-      const target =
-        fallbacks[route] ??
-        (topLevel.includes(route as ViewId) ? (route as ViewId) : 'dashboard')
-      setView(target)
-    },
-    [setView],
-  )
-
-  // A bug-fixed notice that carries its GitHub issue reference opens the
-  // report history (Settings → Development), where the resolution details
-  // live; older notices without one fall back to the view the report was
-  // filed on.
-  const openFixNotice = useCallback(
-    (notice: main.FixNotice) => {
-      if (notice.issueUrl || notice.issueNumber) {
-        navigate({view: 'settings', settingsTab: 'development'})
-        return
-      }
-      openFixedRoute(notice.route)
-    },
-    [navigate, openFixedRoute],
-  )
-
   // Status-bar chips that reference a video plan by id (edit session on the
   // Editor tab, AI thumbnail/listing on the Publish tab) resolve it and open
   // its page on the right tab.
@@ -924,7 +860,6 @@ function App() {
           void openStreamByStart(startedAt, streamTab)
         }
         onOpenInspiration={(videoId) => void openInspirationVideoById(videoId)}
-        onOpenFixNotice={openFixNotice}
       />
     </div>
   )
