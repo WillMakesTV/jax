@@ -5,6 +5,7 @@ Two modes, both driven by yt-dlp:
   --url <video>            fetch one video's metadata and download it into
                            <dir>/<channel-slug>/<video-id>/, writing video.json
                            alongside the media file.
+  --url <video> --meta     read one video's metadata only, downloading nothing.
   --url <channel> --index  resolve a channel and list its recent uploads —
                            videos, then shorts, then past live streams
                            (metadata only, nothing downloaded).
@@ -305,6 +306,17 @@ def index_channel(url: str, limit: int, kinds: str = "all") -> None:
                       "video": entry_video(entry, channel, "video")})
 
 
+def read_video(url: str) -> None:
+    """Read one video's metadata without downloading it."""
+    with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True}) as ydl:
+        info = ydl.extract_info(url, download=False)
+    video = video_of(info)
+    if not video["id"]:
+        emit({"error": "yt-dlp returned no video id for that URL"})
+        sys.exit(1)
+    emit({"status": "meta", "video": video})
+
+
 def download_video(url: str, root: str) -> None:
     """Download one video into <root>/<channel>/<video-id>/ with video.json."""
     with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True}) as ydl:
@@ -390,6 +402,8 @@ def main() -> None:
                         help="list a channel's videos instead of downloading")
     parser.add_argument("--channel", action="store_true",
                         help="resolve the channel only (branding and metrics)")
+    parser.add_argument("--meta", action="store_true",
+                        help="read one video's metadata without downloading it")
     parser.add_argument("--limit", type=int, default=30,
                         help="how many videos to list per tab in index mode")
     parser.add_argument("--kinds", default="all",
@@ -397,7 +411,9 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        if args.channel:
+        if args.meta:
+            read_video(args.url)
+        elif args.channel:
             index_channel_only(args.url)
         elif args.index:
             index_channel(args.url, max(1, args.limit), args.kinds)

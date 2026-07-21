@@ -859,10 +859,10 @@ func (a *App) AddInspirationChannelVideos(channelID string, picks []InspirationC
 	return len(queue), nil
 }
 
-// AddInspirationVideo indexes one video: it is stored immediately (so the
-// library shows it right away) and the download → transcribe → analyse
-// pipeline runs in the background, reporting through "inspiration:status".
-// The video's channel is indexed alongside it.
+// AddInspirationVideo indexes one video: its metadata is read straight away
+// so the library shows the real title and thumbnail, then it joins the
+// processing queue (download → transcribe → study → takeaways), reporting
+// through "inspiration:status". The video's channel is indexed alongside it.
 func (a *App) AddInspirationVideo(videoURL string) (InspirationVideo, error) {
 	videoURL = strings.TrimSpace(videoURL)
 	if videoURL == "" {
@@ -872,21 +872,75 @@ func (a *App) AddInspirationVideo(videoURL string) (InspirationVideo, error) {
 		return InspirationVideo{}, fmt.Errorf("storage unavailable")
 	}
 
-	stub := InspirationVideo{
-		ID:      "pending_" + strconv.FormatInt(time.Now().UnixNano(), 10),
-		URL:     videoURL,
-		Title:   videoURL,
-		Status:  inspirationQueued,
-		AddedAt: time.Now().UTC().Format(time.RFC3339),
+	// Read the video's metadata first — it costs a couple of seconds and no
+	// disk — so the card shows the real title, thumbnail and channel while it
+	// waits its turn, rather than a URL that only fills in once the download
+	// starts.
+	var meta sidecarLine
+	err := a.runInspirationSidecar(func(line sidecarLine) {
+		if line.Status == "meta" {
+			meta = line
+		}
+	}, "--url", videoURL, "--meta")
+	if err != nil {
+		return InspirationVideo{}, err
 	}
+	if meta.Video.ID == "" {
+		return InspirationVideo{}, fmt.Errorf("that URL did not resolve to a video")
+	}
+
 	lib := a.getInspiration()
-	lib.Videos = append(lib.Videos, stub)
+	channelID := a.upsertInspirationChannel(&lib, inspirationChannelOf(meta.Video.Channel))
+	video := InspirationVideo{
+		ID:           meta.Video.ID,
+		ChannelID:    channelID,
+		Title:        meta.Video.Title,
+		URL:          firstNonEmpty(meta.Video.URL, videoURL),
+		Description:  meta.Video.Description,
+		PublishedAt:  meta.Video.PublishedAt,
+		DurationSecs: meta.Video.DurationSecs,
+		Views:        meta.Video.Views,
+		Likes:        meta.Video.Likes,
+		Comments:     meta.Video.Comments,
+		Tags:         meta.Video.Tags,
+		Categories:   meta.Video.Categories,
+		Kind:         firstNonEmpty(meta.Video.Kind, "video"),
+		ThumbnailURL: meta.Video.ThumbnailURL,
+		Chapters:     meta.Video.Chapters,
+		Status:       inspirationQueued,
+		AddedAt:      time.Now().UTC().Format(time.RFC3339),
+	}
+	// Adding the same video twice re-queues the entry already stored.
+	replaced := false
+	for i := range lib.Videos {
+		if lib.Videos[i].ID == video.ID {
+			video.AddedAt = lib.Videos[i].AddedAt
+			video.Transcript = lib.Videos[i].Transcript
+			video.Summary = lib.Videos[i].Summary
+			video.Outline = lib.Videos[i].Outline
+			video.Beats = lib.Videos[i].Beats
+			video.Links = lib.Videos[i].Links
+			video.Mentions = lib.Videos[i].Mentions
+			video.Takeaways = lib.Videos[i].Takeaways
+			video.Folder = lib.Videos[i].Folder
+			video.ThumbnailFile = lib.Videos[i].ThumbnailFile
+			lib.Videos[i] = video
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		lib.Videos = append(lib.Videos, video)
+	}
 	if err := a.saveInspiration(lib); err != nil {
 		return InspirationVideo{}, err
 	}
 
-	a.enqueueInspirationVideo(stub.ID)
-	return stub, nil
+	// The channel's own page carries branding the video's metadata does not.
+	go a.refreshInspirationChannel(firstNonEmpty(meta.Video.Channel.URL, meta.Video.Channel.Handle))
+	a.enqueueInspirationVideo(video.ID)
+	a.fillInspirationURLs(&video)
+	return video, nil
 }
 
 // ProcessInspirationVideo queues (or re-queues) the whole pipeline for a
