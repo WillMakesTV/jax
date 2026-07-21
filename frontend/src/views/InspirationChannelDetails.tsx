@@ -31,12 +31,8 @@ import {PageHeader} from '../components/PageHeader'
 import {openExternal} from '../lib/browser'
 import {useDataChanged} from '../lib/dataChanged'
 import {formatCompact, formatDate} from '../lib/format'
-import {
-  AddInspirationModal,
-  clock,
-  inspirationError,
-  videoMeta,
-} from './Inspiration'
+import {clock, inspirationError, videoMeta} from './Inspiration'
+import {InspirationPicker} from './InspirationPicker'
 
 /** How each pipeline state reads on a card. */
 const STATUS_LABELS: Record<string, string> = {
@@ -135,7 +131,7 @@ export function InspirationChannelDetails({
               className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90"
             >
               <Plus size={14} aria-hidden />
-              Add video
+              Add videos
             </button>
           </div>
         }
@@ -192,8 +188,8 @@ export function InspirationChannelDetails({
       {tab === 'videos' &&
         (videos.length === 0 ? (
           <p className="rounded-xl border border-dashed border-edge bg-surface p-6 text-sm text-fg-muted">
-            Nothing indexed from this channel yet. Add a video to download,
-            transcribe, and break it down.
+            Nothing indexed from this channel yet. Add videos to download,
+            transcribe, and break them down.
           </p>
         ) : (
           <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
@@ -218,7 +214,11 @@ export function InspirationChannelDetails({
         </div>
       )}
 
-      <AddInspirationModal open={addOpen} onClose={() => setAddOpen(false)} />
+      <InspirationPicker
+        open={addOpen}
+        channel={channel}
+        onClose={() => setAddOpen(false)}
+      />
     </div>
   )
 }

@@ -8,6 +8,8 @@ export function AddCampaignAssets(arg1:string,arg2:string):Promise<main.Sponsor>
 
 export function AddInspirationChannel(arg1:string):Promise<main.InspirationChannel>;
 
+export function AddInspirationChannelVideos(arg1:string,arg2:Array<main.InspirationCandidate>):Promise<number>;
+
 export function AddInspirationVideo(arg1:string):Promise<main.InspirationVideo>;
 
 export function AddProjectAssets(arg1:string):Promise<main.Project>;
@@ -31,6 +33,8 @@ export function ApplyStreamInfo():Promise<Array<string>>;
 export function ApplyStreamInfoForPlan(arg1:string):Promise<Array<string>>;
 
 export function BeginTranscriptSession(arg1:string,arg2:string):Promise<number>;
+
+export function BrowseInspirationChannel(arg1:string,arg2:number):Promise<Array<main.InspirationCandidate>>;
 
 export function CancelDownload():Promise<void>;
 

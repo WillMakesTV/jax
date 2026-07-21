@@ -147,6 +147,10 @@ type InspirationVideo struct {
 	Comments     int      `json:"comments"`
 	Tags         []string `json:"tags"`
 	Categories   []string `json:"categories"`
+	// Kind is what the upload is: "video", "short", or "live" (a past live
+	// stream). They are worth studying differently, and the queue works
+	// through them in that order.
+	Kind string `json:"kind"`
 	// ThumbnailURL is the platform's thumbnail; ThumbnailFile is the copy
 	// yt-dlp saved beside the video, served through MediaURL's folder.
 	ThumbnailURL  string `json:"thumbnailUrl"`
@@ -529,6 +533,7 @@ type sidecarLine struct {
 		Tags         []string             `json:"tags"`
 		Categories   []string             `json:"categories"`
 		ThumbnailURL string               `json:"thumbnailUrl"`
+		Kind         string               `json:"kind"`
 		Chapters     []InspirationChapter `json:"chapters"`
 		Channel      sidecarChannel       `json:"channel"`
 	} `json:"video"`
@@ -679,6 +684,7 @@ func (a *App) AddInspirationChannel(channelURL string) (InspirationChannel, erro
 				DurationSecs: line.Video.DurationSecs,
 				Views:        line.Video.Views,
 				ThumbnailURL: line.Video.ThumbnailURL,
+				Kind:         line.Video.Kind,
 				Status:       inspirationTracked,
 			})
 		}
@@ -722,6 +728,135 @@ func (a *App) AddInspirationChannel(channelURL string) (InspirationChannel, erro
 		}
 	}
 	return channel, nil
+}
+
+// inspirationKindOrder ranks what the queue works through first: full videos,
+// then shorts, then past live streams.
+var inspirationKindOrder = map[string]int{"video": 0, "short": 1, "live": 2}
+
+// InspirationCandidate is one of a channel's uploads as offered for indexing,
+// with whether the library already holds it.
+type InspirationCandidate struct {
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	URL          string `json:"url"`
+	Kind         string `json:"kind"`
+	PublishedAt  string `json:"publishedAt"`
+	DurationSecs int    `json:"durationSecs"`
+	Views        int    `json:"views"`
+	ThumbnailURL string `json:"thumbnailUrl"`
+	Indexed      bool   `json:"indexed"`
+}
+
+// BrowseInspirationChannel lists what an indexed channel has published —
+// videos, then shorts, then past live streams — without storing anything, so
+// the producer can pick from its own page rather than pasting URLs. limit
+// bounds each kind (default 30, max 200).
+func (a *App) BrowseInspirationChannel(channelID string, limit int) ([]InspirationCandidate, error) {
+	channelURL := ""
+	for _, c := range a.getInspiration().Channels {
+		if c.ID == channelID {
+			channelURL = firstNonEmpty(c.URL, c.Handle)
+			break
+		}
+	}
+	if channelURL == "" {
+		return nil, fmt.Errorf("that channel is no longer indexed")
+	}
+	if limit <= 0 {
+		limit = 30
+	}
+	if limit > 200 {
+		limit = 200
+	}
+
+	known := map[string]bool{}
+	for _, v := range a.getInspiration().Videos {
+		known[v.ID] = true
+	}
+
+	out := []InspirationCandidate{}
+	err := a.runInspirationSidecar(func(line sidecarLine) {
+		if line.Status != "video" || line.Video.ID == "" {
+			return
+		}
+		out = append(out, InspirationCandidate{
+			ID:           line.Video.ID,
+			Title:        line.Video.Title,
+			URL:          line.Video.URL,
+			Kind:         firstNonEmpty(line.Video.Kind, "video"),
+			PublishedAt:  line.Video.PublishedAt,
+			DurationSecs: line.Video.DurationSecs,
+			Views:        line.Video.Views,
+			ThumbnailURL: line.Video.ThumbnailURL,
+			Indexed:      known[line.Video.ID],
+		})
+	}, "--url", channelURL, "--index", "--limit", strconv.Itoa(limit))
+	if err != nil {
+		return nil, err
+	}
+	sortInspirationCandidates(out)
+	return out, nil
+}
+
+// sortInspirationCandidates puts full videos first, then shorts, then past
+// live streams, each newest published first.
+func sortInspirationCandidates(in []InspirationCandidate) {
+	sort.SliceStable(in, func(i, j int) bool {
+		ki, kj := inspirationKindOrder[in[i].Kind], inspirationKindOrder[in[j].Kind]
+		if ki != kj {
+			return ki < kj
+		}
+		return in[i].PublishedAt > in[j].PublishedAt
+	})
+}
+
+// AddInspirationChannelVideos indexes the picked uploads of a channel already
+// in the library and queues them in that order — videos, then shorts, then
+// past live streams, newest first. Returns how many were queued.
+func (a *App) AddInspirationChannelVideos(channelID string, picks []InspirationCandidate) (int, error) {
+	if len(picks) == 0 {
+		return 0, fmt.Errorf("pick at least one video first")
+	}
+	sortInspirationCandidates(picks)
+
+	lib := a.getInspiration()
+	known := map[string]bool{}
+	for _, v := range lib.Videos {
+		known[v.ID] = true
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	queue := []string{}
+	for _, p := range picks {
+		if p.ID == "" {
+			continue
+		}
+		queue = append(queue, p.ID)
+		if known[p.ID] {
+			continue // already indexed; re-queueing is enough
+		}
+		known[p.ID] = true
+		lib.Videos = append(lib.Videos, InspirationVideo{
+			ID:           p.ID,
+			ChannelID:    channelID,
+			Title:        p.Title,
+			URL:          firstNonEmpty(p.URL, "https://www.youtube.com/watch?v="+p.ID),
+			PublishedAt:  p.PublishedAt,
+			DurationSecs: p.DurationSecs,
+			Views:        p.Views,
+			ThumbnailURL: p.ThumbnailURL,
+			Kind:         firstNonEmpty(p.Kind, "video"),
+			Status:       inspirationQueued,
+			AddedAt:      now,
+		})
+	}
+	if err := a.saveInspiration(lib); err != nil {
+		return 0, err
+	}
+	for _, id := range queue {
+		a.enqueueInspirationVideo(id)
+	}
+	return len(queue), nil
 }
 
 // AddInspirationVideo indexes one video: it is stored immediately (so the
@@ -833,6 +968,7 @@ func (a *App) processInspirationVideo(id, videoURL string) {
 		v.Tags = meta.Video.Tags
 		v.Categories = meta.Video.Categories
 		v.ThumbnailURL = meta.Video.ThumbnailURL
+		v.Kind = firstNonEmpty(meta.Video.Kind, v.Kind)
 		v.Chapters = meta.Video.Chapters
 		v.Folder = folder
 		v.VideoFile = file

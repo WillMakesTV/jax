@@ -5,7 +5,8 @@ Two modes, both driven by yt-dlp:
   --url <video>            fetch one video's metadata and download it into
                            <dir>/<channel-slug>/<video-id>/, writing video.json
                            alongside the media file.
-  --url <channel> --index  resolve a channel and list its recent videos
+  --url <channel> --index  resolve a channel and list its recent uploads —
+                           videos, then shorts, then past live streams
                            (metadata only, nothing downloaded).
   --url <channel> --channel
                            resolve a channel only: its branding, metrics, and
@@ -210,35 +211,98 @@ def video_of(info: dict) -> dict:
         "categories": [c for c in (info.get("categories") or []) if c],
         "thumbnailUrl": info.get("thumbnail") or "",
         "chapters": chapters,
+        "kind": video_kind(info),
         "channel": channel_of(info),
     }
 
 
-def index_channel(url: str, limit: int) -> None:
-    """List a channel's recent videos without downloading anything."""
-    top, tab, entries = resolve_channel(url, limit)
-    channel = channel_full(top, tab, url)
-    emit({"status": "channel", "channel": channel})
+def video_kind(info: dict) -> str:
+    """Full video, short, or past live stream."""
+    if info.get("was_live") or info.get("is_live") or info.get("live_status") in (
+            "is_live", "was_live", "post_live"):
+        return "live"
+    duration = int(info.get("duration") or 0)
+    url = (info.get("webpage_url") or "") + (info.get("original_url") or "")
+    if "/shorts/" in url or (0 < duration <= 60):
+        return "short"
+    return "video"
 
-    for entry in entries[:limit]:
-        if not entry or not entry.get("id"):
+
+# A channel publishes three kinds of content, and they are worth studying
+# differently: full videos first, then shorts, then past live streams.
+CHANNEL_TABS = (("video", "videos"), ("short", "shorts"), ("live", "streams"))
+
+
+def tab_url(base: str, tab: str) -> str:
+    """The channel's <tab> page, from whatever channel URL we were given."""
+    base = base.rstrip("/")
+    for suffix in ("/videos", "/shorts", "/streams", "/featured", "/about"):
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    return f"{base}/{tab}"
+
+
+def entry_video(entry: dict, channel: dict, kind: str) -> dict:
+    """One listed video, in the shape Jax stores."""
+    return {
+        "id": entry.get("id"),
+        "title": entry.get("title") or "",
+        "url": entry.get("url") or f"https://www.youtube.com/watch?v={entry['id']}",
+        "description": entry.get("description") or "",
+        "publishedAt": iso_date(entry.get("upload_date") or ""),
+        "durationSecs": int(entry.get("duration") or 0),
+        "views": int(entry.get("view_count") or 0),
+        "likes": 0,
+        "comments": 0,
+        "tags": [],
+        "categories": [],
+        "thumbnailUrl": (entry.get("thumbnails") or [{}])[-1].get("url", ""),
+        "chapters": [],
+        "kind": kind,
+        "channel": channel,
+    }
+
+
+def index_channel(url: str, limit: int, kinds: str = "all") -> None:
+    """List a channel's recent uploads without downloading anything.
+
+    kinds: "all" walks videos, then shorts, then past live streams; otherwise
+    a comma-separated subset of video/short/live."""
+    wanted = (
+        [k for k, _ in CHANNEL_TABS]
+        if kinds in ("", "all")
+        else [k.strip() for k in kinds.split(",") if k.strip()]
+    )
+
+    channel = None
+    seen = set()
+    for kind, tab in CHANNEL_TABS:
+        if kind not in wanted:
             continue
-        emit({"status": "video", "video": {
-            "id": entry.get("id"),
-            "title": entry.get("title") or "",
-            "url": entry.get("url") or f"https://www.youtube.com/watch?v={entry['id']}",
-            "description": entry.get("description") or "",
-            "publishedAt": iso_date(entry.get("upload_date") or ""),
-            "durationSecs": int(entry.get("duration") or 0),
-            "views": int(entry.get("view_count") or 0),
-            "likes": 0,
-            "comments": 0,
-            "tags": [],
-            "categories": [],
-            "thumbnailUrl": (entry.get("thumbnails") or [{}])[-1].get("url", ""),
-            "chapters": [],
-            "channel": channel,
-        }})
+        try:
+            top, tab_info, entries = resolve_channel(tab_url(url, tab), limit)
+        except Exception:
+            # A channel with no shorts (or no streams) has no such tab.
+            continue
+        if channel is None:
+            channel = channel_full(top, tab_info, url)
+            emit({"status": "channel", "channel": channel})
+        for entry in entries[:limit]:
+            if not entry or not entry.get("id") or entry["id"] in seen:
+                continue
+            seen.add(entry["id"])
+            emit({"status": "video", "video": entry_video(entry, channel, kind)})
+
+    if channel is None:
+        # Nothing resolved through the tabs; fall back to the URL as given.
+        top, tab_info, entries = resolve_channel(url, limit)
+        channel = channel_full(top, tab_info, url)
+        emit({"status": "channel", "channel": channel})
+        for entry in entries[:limit]:
+            if entry and entry.get("id"):
+                emit({"status": "video",
+                      "video": entry_video(entry, channel, "video")})
 
 
 def download_video(url: str, root: str) -> None:
@@ -327,14 +391,16 @@ def main() -> None:
     parser.add_argument("--channel", action="store_true",
                         help="resolve the channel only (branding and metrics)")
     parser.add_argument("--limit", type=int, default=30,
-                        help="how many videos to list in index mode")
+                        help="how many videos to list per tab in index mode")
+    parser.add_argument("--kinds", default="all",
+                        help="which tabs to list: all, or video/short/live")
     args = parser.parse_args()
 
     try:
         if args.channel:
             index_channel_only(args.url)
         elif args.index:
-            index_channel(args.url, max(1, args.limit))
+            index_channel(args.url, max(1, args.limit), args.kinds)
         else:
             if not args.dir:
                 emit({"error": "no download directory given"})

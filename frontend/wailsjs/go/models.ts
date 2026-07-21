@@ -1569,6 +1569,34 @@ export class SponsorCampaign {
 	    return a;
 	}
 }
+export class InspirationCandidate {
+    id: string;
+    title: string;
+    url: string;
+    kind: string;
+    publishedAt: string;
+    durationSecs: number;
+    views: number;
+    thumbnailUrl: string;
+    indexed: boolean;
+
+    static createFrom(source: any = {}) {
+        return new InspirationCandidate(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.id = source["id"];
+        this.title = source["title"];
+        this.url = source["url"];
+        this.kind = source["kind"];
+        this.publishedAt = source["publishedAt"];
+        this.durationSecs = source["durationSecs"];
+        this.views = source["views"];
+        this.thumbnailUrl = source["thumbnailUrl"];
+        this.indexed = source["indexed"];
+    }
+}
 export class InspirationChannel {
     id: string;
     name: string;
@@ -1816,6 +1844,7 @@ export class InspirationVideo {
     comments: number;
     tags: string[];
     categories: string[];
+    kind: string;
     thumbnailUrl: string;
     thumbnailFile: string;
     folder: string;
@@ -1855,6 +1884,7 @@ export class InspirationVideo {
         this.comments = source["comments"];
         this.tags = source["tags"];
         this.categories = source["categories"];
+        this.kind = source["kind"];
         this.thumbnailUrl = source["thumbnailUrl"];
         this.thumbnailFile = source["thumbnailFile"];
         this.folder = source["folder"];

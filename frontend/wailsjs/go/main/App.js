@@ -14,6 +14,10 @@ export function AddInspirationChannel(arg1) {
   return window['go']['main']['App']['AddInspirationChannel'](arg1);
 }
 
+export function AddInspirationChannelVideos(arg1, arg2) {
+  return window['go']['main']['App']['AddInspirationChannelVideos'](arg1, arg2);
+}
+
 export function AddInspirationVideo(arg1) {
   return window['go']['main']['App']['AddInspirationVideo'](arg1);
 }
@@ -60,6 +64,10 @@ export function ApplyStreamInfoForPlan(arg1) {
 
 export function BeginTranscriptSession(arg1, arg2) {
   return window['go']['main']['App']['BeginTranscriptSession'](arg1, arg2);
+}
+
+export function BrowseInspirationChannel(arg1, arg2) {
+  return window['go']['main']['App']['BrowseInspirationChannel'](arg1, arg2);
 }
 
 export function CancelDownload() {
