@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bp-temp/internal/httpx"
 	"bp-temp/internal/platforms/youtube"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -38,12 +36,12 @@ const (
 	keyVideoPublish       = "video_plan_publish"
 	keyVideoPublishDrafts = "video_plan_publish_drafts"
 
-	youtubeVideosInsertURL = "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status"
-	youtubeWatchURL        = "https://www.youtube.com/watch?v="
+	youtubeWatchURL = "https://www.youtube.com/watch?v="
 )
 
-// videoUploadHTTP carries the video upload itself: no timeout — a long video
-// on a slow link can legitimately take an hour.
+// videoUploadHTTP carries a video upload: no timeout — a long video on a slow
+// link can legitimately take an hour. TikTok's chunked upload uses it (see
+// tiktok_publish.go); YouTube's lives in internal/platforms/youtube.
 var videoUploadHTTP = &http.Client{}
 
 // VideoPublishDraft is the publish form's in-progress state, persisted per
@@ -230,50 +228,22 @@ func (a *App) PublishPlanVideo(planID, output, title, description string, tags [
 		a.mu.Unlock()
 	}()
 
-	// Start a resumable session: metadata goes in the opening request, the
-	// session URL comes back in the Location header.
-	snippet := map[string]any{"title": title, "description": description}
-	if len(tags) > 0 {
-		snippet["tags"] = tags
-	}
-	if categoryID != "" {
-		snippet["categoryId"] = categoryID
-	}
-	body, err := json.Marshal(map[string]any{
-		"snippet": snippet,
-		"status": map[string]any{
-			"privacyStatus":           privacy,
-			"selfDeclaredMadeForKids": false,
-		},
-	})
-	if err != nil {
-		return rec, err
-	}
+	// Start a resumable session: the metadata goes up first, then the file
+	// itself streams to the session URL that comes back.
+	client := youtubeClient(conn)
 	a.emitPublishProgress(planID, "Starting the upload…")
-	initReq, err := http.NewRequest(http.MethodPost, youtubeVideosInsertURL, bytes.NewReader(body))
+	uploadURL, status, err := client.StartUpload(youtube.VideoUpload{
+		Title:       title,
+		Description: description,
+		Tags:        tags,
+		CategoryID:  categoryID,
+		Privacy:     privacy,
+	}, "video/mp4", fi.Size())
 	if err != nil {
-		return rec, err
-	}
-	initReq.Header.Set("Authorization", "Bearer "+conn.token)
-	initReq.Header.Set("Content-Type", "application/json")
-	initReq.Header.Set("X-Upload-Content-Type", "video/mp4")
-	initReq.Header.Set("X-Upload-Content-Length", fmt.Sprint(fi.Size()))
-	initResp, err := httpx.Client.Do(initReq)
-	if err != nil {
-		return rec, fmt.Errorf("the upload could not be started: %v", err)
-	}
-	initBody, _ := io.ReadAll(initResp.Body)
-	initResp.Body.Close()
-	if initResp.StatusCode < 200 || initResp.StatusCode > 299 {
-		if initResp.StatusCode == 401 || initResp.StatusCode == 403 {
+		if status == 401 || status == 403 {
 			return rec, fmt.Errorf("YouTube: reconnect in Settings → Services to grant the upload permission")
 		}
-		return rec, fmt.Errorf("YouTube rejected the upload request (%d): %s",
-			initResp.StatusCode, truncateErr(string(initBody)))
-	}
-	uploadURL := initResp.Header.Get("Location")
-	if uploadURL == "" {
-		return rec, fmt.Errorf("YouTube did not open an upload session — try again")
+		return rec, err
 	}
 
 	// Stream the file up, reporting whole-percent progress.
@@ -288,33 +258,14 @@ func (a *App) PublishPlanVideo(planID, output, title, description string, tags [
 			a.emitPublishProgress(planID, fmt.Sprintf("Uploading %s — %d%%", output, pct))
 		},
 	}
-	upReq, err := http.NewRequest(http.MethodPut, uploadURL, pr)
+	videoID, _, err := client.FinishUpload(uploadURL, pr, fi.Size(), "video/mp4")
 	if err != nil {
 		return rec, err
 	}
-	upReq.ContentLength = fi.Size()
-	upReq.Header.Set("Authorization", "Bearer "+conn.token)
-	upReq.Header.Set("Content-Type", "video/mp4")
-	upResp, err := videoUploadHTTP.Do(upReq)
-	if err != nil {
-		return rec, fmt.Errorf("the upload failed: %v", err)
-	}
-	upBody, _ := io.ReadAll(upResp.Body)
-	upResp.Body.Close()
-	if upResp.StatusCode < 200 || upResp.StatusCode > 299 {
-		return rec, fmt.Errorf("YouTube rejected the video (%d): %s",
-			upResp.StatusCode, truncateErr(string(upBody)))
-	}
-	var uploaded struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(upBody, &uploaded); err != nil || uploaded.ID == "" {
-		return rec, fmt.Errorf("YouTube accepted the upload but returned no video id — check YouTube Studio")
-	}
 
 	rec = VideoPublishRecord{
-		VideoID:     uploaded.ID,
-		URL:         youtubeWatchURL + uploaded.ID,
+		VideoID:     videoID,
+		URL:         youtubeWatchURL + videoID,
 		Title:       title,
 		File:        output,
 		PublishedAt: time.Now().UTC().Format(time.RFC3339),
@@ -324,7 +275,7 @@ func (a *App) PublishPlanVideo(planID, output, title, description string, tags [
 	// warning, not a failed publish — the video is already up.
 	if plan.ThumbnailFile != "" {
 		a.emitPublishProgress(planID, "Setting the thumbnail…")
-		if err := a.pushThumbToVideo(conn.token, uploaded.ID, plan.ThumbnailFile); err != nil {
+		if err := a.pushThumbToVideo(conn.token, videoID, plan.ThumbnailFile); err != nil {
 			rec.Warning = fmt.Sprintf("The video is published, but the thumbnail could not be set: %v", err)
 		} else {
 			rec.ThumbPushed = true

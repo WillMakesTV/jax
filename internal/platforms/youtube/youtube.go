@@ -9,10 +9,12 @@ package youtube
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"bp-temp/internal/httpx"
@@ -50,6 +52,9 @@ const (
 	// ThumbnailSetURL is an upload endpoint: the image is the request body,
 	// not JSON, so it does not go through httpx's helpers.
 	ThumbnailSetURL = "https://www.googleapis.com/upload/youtube/v3/thumbnails/set?uploadType=media&videoId="
+	// VideosInsertURL opens a resumable upload session; the video itself is
+	// then PUT to the session URL the response points at.
+	VideosInsertURL = "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status"
 )
 
 // MaxThumbnailBytes is YouTube's thumbnail upload limit.
@@ -754,4 +759,99 @@ func (c Client) SetThumbnail(videoID string, image []byte, contentType string) (
 			resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return resp.StatusCode, nil
+}
+
+// uploadHTTP carries the video upload itself: no timeout — a long video on a
+// slow link can legitimately take an hour.
+var uploadHTTP = &http.Client{}
+
+// VideoUpload is the metadata a new video is created with.
+type VideoUpload struct {
+	Title       string
+	Description string
+	Tags        []string
+	CategoryID  string
+	// Privacy is "public", "unlisted" or "private".
+	Privacy string
+}
+
+// StartUpload opens a resumable upload session and returns the URL the file
+// is then streamed to. The status rides along so a caller can tell a missing
+// upload permission from a rejected request.
+func (c Client) StartUpload(meta VideoUpload, contentType string, size int64) (string, int, error) {
+	snippet := map[string]any{"title": meta.Title, "description": meta.Description}
+	if len(meta.Tags) > 0 {
+		snippet["tags"] = meta.Tags
+	}
+	if meta.CategoryID != "" {
+		snippet["categoryId"] = meta.CategoryID
+	}
+	body, err := json.Marshal(map[string]any{
+		"snippet": snippet,
+		"status": map[string]any{
+			"privacyStatus":           meta.Privacy,
+			"selfDeclaredMadeForKids": false,
+		},
+	})
+	if err != nil {
+		return "", 0, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, VideosInsertURL, bytes.NewReader(body))
+	if err != nil {
+		return "", 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Upload-Content-Type", contentType)
+	req.Header.Set("X-Upload-Content-Length", strconv.FormatInt(size, 10))
+	resp, err := httpx.Client.Do(req)
+	if err != nil {
+		return "", 0, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return "", resp.StatusCode, fmt.Errorf("YouTube rejected the upload request (%d): %s",
+			resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	location := resp.Header.Get("Location")
+	if location == "" {
+		return "", resp.StatusCode, fmt.Errorf("YouTube did not open an upload session")
+	}
+	return location, resp.StatusCode, nil
+}
+
+// FinishUpload streams the video to an open session and returns the new
+// video's id. The reader is passed through untouched, so a caller can wrap it
+// to report progress.
+func (c Client) FinishUpload(uploadURL string, body io.Reader, size int64, contentType string) (string, int, error) {
+	req, err := http.NewRequest(http.MethodPut, uploadURL, body)
+	if err != nil {
+		return "", 0, err
+	}
+	req.ContentLength = size
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("Content-Type", contentType)
+	resp, err := uploadHTTP.Do(req)
+	if err != nil {
+		return "", 0, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		msg := strings.TrimSpace(string(raw))
+		if len(msg) > 300 {
+			msg = msg[:300]
+		}
+		return "", resp.StatusCode, fmt.Errorf("YouTube rejected the video (%d): %s",
+			resp.StatusCode, msg)
+	}
+	var uploaded struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &uploaded); err != nil || uploaded.ID == "" {
+		return "", resp.StatusCode, fmt.Errorf("YouTube accepted the upload but returned no video id")
+	}
+	return uploaded.ID, resp.StatusCode, nil
 }
