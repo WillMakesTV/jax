@@ -117,6 +117,7 @@ type InspirationTakeaway struct {
 // Inspiration video statuses, in pipeline order.
 const (
 	inspirationTracked      = "tracked"
+	inspirationQueued       = "queued"
 	inspirationDownloading  = "downloading"
 	inspirationTranscribing = "transcribing"
 	inspirationAnalyzing    = "analyzing"
@@ -566,6 +567,79 @@ func (a *App) runInspirationSidecar(onLine func(sidecarLine), args ...string) er
 	return nil
 }
 
+// ---------------------------------------------------------------------------
+// The processing queue
+//
+// One video is processed at a time: each run downloads gigabytes, pins a
+// whisper pass to the CPU, and asks the AI runner for two answers, so running
+// two at once would starve both (and the live capture beside them). Adding a
+// channel therefore queues its videos newest-first and works backwards, one
+// by one.
+// ---------------------------------------------------------------------------
+
+var inspirationQueue struct {
+	sync.Mutex
+	ids     []string
+	running bool
+}
+
+// enqueueInspirationVideo puts a video in line to be processed and starts the
+// worker if it is idle. Already-queued videos are left where they are.
+func (a *App) enqueueInspirationVideo(id string) {
+	inspirationQueue.Lock()
+	for _, queued := range inspirationQueue.ids {
+		if queued == id {
+			inspirationQueue.Unlock()
+			return
+		}
+	}
+	inspirationQueue.ids = append(inspirationQueue.ids, id)
+	start := !inspirationQueue.running
+	if start {
+		inspirationQueue.running = true
+	}
+	inspirationQueue.Unlock()
+
+	a.inspirationStatus(id, inspirationQueued, "", 0)
+	if start {
+		go a.runInspirationQueue()
+	}
+}
+
+// runInspirationQueue works the queue to exhaustion, then stops.
+func (a *App) runInspirationQueue() {
+	for {
+		inspirationQueue.Lock()
+		if len(inspirationQueue.ids) == 0 {
+			inspirationQueue.running = false
+			inspirationQueue.Unlock()
+			return
+		}
+		id := inspirationQueue.ids[0]
+		inspirationQueue.ids = inspirationQueue.ids[1:]
+		inspirationQueue.Unlock()
+
+		video, err := a.GetInspirationVideo(id)
+		if err != nil {
+			// Deleted while it waited; nothing to process.
+			continue
+		}
+		if video.URL == "" {
+			a.inspirationStatus(id, inspirationError, "that video has no URL to fetch", 0)
+			continue
+		}
+		a.processInspirationVideo(id, video.URL)
+	}
+}
+
+// InspirationQueueLength reports how many videos are waiting to be processed,
+// excluding the one being worked on.
+func (a *App) InspirationQueueLength() int {
+	inspirationQueue.Lock()
+	defer inspirationQueue.Unlock()
+	return len(inspirationQueue.ids)
+}
+
 // AddInspirationChannel indexes a YouTube channel: the channel itself plus
 // its most recent videos, tracked but not downloaded (download one from its
 // page when it is worth studying). Returns the stored channel.
@@ -610,16 +684,24 @@ func (a *App) AddInspirationChannel(channelURL string) (InspirationChannel, erro
 		known[v.ID] = true
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
+	fresh := []string{}
 	for _, v := range found {
 		if v.ID == "" || known[v.ID] {
 			continue
 		}
 		v.ChannelID = id
 		v.AddedAt = now
+		v.Status = inspirationQueued
 		lib.Videos = append(lib.Videos, v)
+		fresh = append(fresh, v.ID)
 	}
 	if err := a.saveInspiration(lib); err != nil {
 		return InspirationChannel{}, err
+	}
+	// The indexer lists a channel newest-first, so queueing in that order
+	// works backwards through its catalogue.
+	for _, videoID := range fresh {
+		a.enqueueInspirationVideo(videoID)
 	}
 	for _, ch := range lib.Channels {
 		if ch.ID == id {
@@ -646,7 +728,7 @@ func (a *App) AddInspirationVideo(videoURL string) (InspirationVideo, error) {
 		ID:      "pending_" + strconv.FormatInt(time.Now().UnixNano(), 10),
 		URL:     videoURL,
 		Title:   videoURL,
-		Status:  inspirationDownloading,
+		Status:  inspirationQueued,
 		AddedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 	lib := a.getInspiration()
@@ -655,12 +737,14 @@ func (a *App) AddInspirationVideo(videoURL string) (InspirationVideo, error) {
 		return InspirationVideo{}, err
 	}
 
-	go a.processInspirationVideo(stub.ID, videoURL)
+	a.enqueueInspirationVideo(stub.ID)
 	return stub, nil
 }
 
-// ProcessInspirationVideo runs (or re-runs) the pipeline for a video already
-// in the library — how a channel-tracked video gets downloaded and studied.
+// ProcessInspirationVideo queues (or re-queues) the whole pipeline for a
+// video already in the library — download, transcribe, study, extract the
+// takeaways, then drop the local copy. This is the single "Process" action
+// the video page offers.
 func (a *App) ProcessInspirationVideo(id string) error {
 	video, err := a.GetInspirationVideo(id)
 	if err != nil {
@@ -669,8 +753,7 @@ func (a *App) ProcessInspirationVideo(id string) error {
 	if video.URL == "" {
 		return fmt.Errorf("that video has no URL to fetch")
 	}
-	a.inspirationStatus(id, inspirationDownloading, "", 0)
-	go a.processInspirationVideo(id, video.URL)
+	a.enqueueInspirationVideo(id)
 	return nil
 }
 
@@ -796,7 +879,34 @@ func (a *App) processInspirationVideo(id, videoURL string) {
 	if err := a.extractInspirationTakeaways(id); err != nil {
 		log.Printf("jax: inspiration takeaways: %v", err)
 	}
+
+	// Everything worth keeping is now in the library, and every timestamp
+	// resolves against the video on YouTube, so the local copy — by far the
+	// largest thing the run produced — is no longer needed.
+	a.dropInspirationDownload(id)
 	a.inspirationStatus(id, inspirationReady, "", 0)
+}
+
+// dropInspirationDownload deletes a studied video's media file and forgets
+// it, keeping the thumbnail and the notes. Processing the video again
+// re-downloads it.
+func (a *App) dropInspirationDownload(id string) {
+	video, err := a.GetInspirationVideo(id)
+	if err != nil || video.VideoFile == "" || video.Folder == "" {
+		return
+	}
+	root, err := a.inspirationRoot()
+	if err != nil {
+		return
+	}
+	path := filepath.Join(root, filepath.FromSlash(video.Folder), video.VideoFile)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		log.Printf("jax: inspiration cleanup %s: %v", path, err)
+		return
+	}
+	a.mutateInspirationVideo(id, func(v *InspirationVideo) {
+		v.VideoFile = ""
+	})
 }
 
 // transcribeInspirationVideo runs the faster-whisper sidecar over the local

@@ -1,5 +1,4 @@
 import {
-  Download,
   ExternalLink,
   Eye,
   Lightbulb,
@@ -7,14 +6,13 @@ import {
   Loader2,
   MessageSquare,
   Package,
+  Play,
   RefreshCw,
   ThumbsUp,
 } from 'lucide-react'
 import clsx from 'clsx'
 import {useCallback, useEffect, useRef, useState} from 'react'
 import {
-  AnalyzeInspirationVideo,
-  ExtractInspirationTakeaways,
   GetInspirationVideo,
   ProcessInspirationVideo,
 } from '../../wailsjs/go/main/App'
@@ -54,24 +52,37 @@ export function InspirationVideoDetails({
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const player = useRef<HTMLVideoElement>(null)
+  const frame = useRef<HTMLDivElement>(null)
+  // Where the YouTube embed should start. The nonce reloads the player, so
+  // clicking the same timestamp twice replays it.
+  const [embed, setEmbed] = useState({atSecs: 0, nonce: 0})
 
-  // Every timestamp on the page is a cue: jump the local copy there and play
-  // it. Without a local copy the moment opens on YouTube instead.
+  const youtubeID = youtubeIDOf(video)
+
+  // Every timestamp on the page is a cue. A local copy is seeked directly;
+  // once it has been cleaned up the YouTube embed reloads at that second
+  // instead, so the notes stay playable with nothing left on disk.
   const seek = useCallback(
     (atSecs: number) => {
+      const at = Math.max(0, Math.floor(atSecs))
       const el = player.current
-      if (!el) {
-        if (video.url) {
-          const sep = video.url.includes('?') ? '&' : '?'
-          openExternal(`${video.url}${sep}t=${Math.max(0, atSecs)}s`)
-        }
+      if (el) {
+        el.currentTime = at
+        void el.play().catch(() => {})
+        el.scrollIntoView({behavior: 'smooth', block: 'center'})
         return
       }
-      el.currentTime = Math.max(0, atSecs)
-      void el.play().catch(() => {})
-      el.scrollIntoView({behavior: 'smooth', block: 'center'})
+      if (youtubeID) {
+        setEmbed((prev) => ({atSecs: at, nonce: prev.nonce + 1}))
+        frame.current?.scrollIntoView({behavior: 'smooth', block: 'center'})
+        return
+      }
+      if (video.url) {
+        const sep = video.url.includes('?') ? '&' : '?'
+        openExternal(`${video.url}${sep}t=${at}s`)
+      }
     },
-    [video.url],
+    [video.url, youtubeID],
   )
 
   const load = useCallback(() => {
@@ -84,13 +95,13 @@ export function InspirationVideoDetails({
   // The pipeline persists each step, so an open page follows the run.
   useDataChanged(['inspiration'], load)
 
-  const run = async (what: 'download' | 'analyze' | 'takeaways') => {
-    setBusy(what)
+  // One action covers the whole workflow: download, transcribe, study,
+  // extract the takeaways, then drop the local copy (see inspiration.go).
+  const process = async () => {
+    setBusy('process')
     setError('')
     try {
-      if (what === 'download') await ProcessInspirationVideo(video.id)
-      else if (what === 'takeaways') await ExtractInspirationTakeaways(video.id)
-      else await AnalyzeInspirationVideo(video.id)
+      await ProcessInspirationVideo(video.id)
     } catch (err) {
       setError(inspirationError(err, 'That did not work — try again.'))
     } finally {
@@ -99,13 +110,12 @@ export function InspirationVideoDetails({
   }
 
   const working = isWorking(video.status)
-  // Takeaways are lifted out of the study, so extracting them only makes
-  // sense once the whole pipeline has landed: the local copy, its transcript,
-  // and the manifest the outline comes from.
+  // A fully processed video: transcribed, studied, and with the manifest the
+  // takeaways are lifted out of. The local copy is deleted once that lands,
+  // so its absence says nothing about whether the run finished.
   const studied =
     !working &&
     video.status === 'ready' &&
-    Boolean(video.videoFile) &&
     video.transcript.length > 0 &&
     Boolean(video.outline)
   const tabs: {id: VideoTab; label: string; count?: number}[] = [
@@ -143,20 +153,19 @@ export function InspirationVideoDetails({
             {!working && (
               <button
                 type="button"
-                onClick={() =>
-                  void run(video.videoFile ? 'analyze' : 'download')
-                }
+                onClick={() => void process()}
                 disabled={busy !== ''}
+                title="Download, transcribe, study, and extract the takeaways"
                 className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 {busy ? (
                   <Loader2 size={14} aria-hidden className="animate-spin" />
-                ) : video.videoFile ? (
+                ) : studied ? (
                   <RefreshCw size={14} aria-hidden />
                 ) : (
-                  <Download size={14} aria-hidden />
+                  <Play size={14} aria-hidden />
                 )}
-                {video.videoFile ? 'Study again' : 'Download & study'}
+                {studied ? 'Process again' : 'Process'}
               </button>
             )}
           </div>
@@ -205,7 +214,10 @@ export function InspirationVideoDetails({
         {/* Hero: the local copy on the left, what the study made of it on
             the right. */}
         <section className="flex flex-col gap-4 lg:flex-row lg:items-start">
-          <div className="w-full shrink-0 overflow-hidden rounded-xl border border-edge bg-surface lg:w-[30rem] xl:w-[38rem]">
+          <div
+            ref={frame}
+            className="flex w-full shrink-0 flex-col overflow-hidden rounded-xl border border-edge bg-surface lg:w-[30rem] xl:w-[38rem]"
+          >
             {video.mediaUrl ? (
               <video
                 ref={player}
@@ -213,6 +225,15 @@ export function InspirationVideoDetails({
                 poster={video.thumbUrl || video.thumbnailUrl || undefined}
                 controls
                 className="aspect-video w-full bg-black"
+              />
+            ) : youtubeID ? (
+              <iframe
+                key={embed.nonce}
+                src={embedURL(youtubeID, embed.atSecs, embed.nonce > 0)}
+                title={video.title}
+                allow="accelerometer; autoplay; encrypted-media; picture-in-picture"
+                allowFullScreen
+                className="aspect-video w-full border-0 bg-black"
               />
             ) : video.thumbUrl || video.thumbnailUrl ? (
               <img
@@ -222,7 +243,7 @@ export function InspirationVideoDetails({
               />
             ) : (
               <div className="flex aspect-video w-full items-center justify-center bg-surface-hover text-sm text-fg-muted">
-                Not downloaded yet
+                Not processed yet
               </div>
             )}
             <div className="flex flex-wrap items-center gap-2 p-3">
@@ -246,6 +267,22 @@ export function InspirationVideoDetails({
                 </span>
               )}
             </div>
+
+            {/* The video's own words, right under it. */}
+            <div className="border-t border-edge p-4">
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+                Description
+              </p>
+              {video.description ? (
+                <p className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words text-sm text-fg">
+                  {video.description}
+                </p>
+              ) : (
+                <p className="text-sm text-fg-muted">
+                  This video has no description.
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="flex min-w-0 flex-1 flex-col gap-3">
@@ -266,37 +303,22 @@ export function InspirationVideoDetails({
                 <p className="text-sm text-fg">{video.summary}</p>
               </div>
             )}
-
-            {video.tags.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {video.tags.slice(0, 12).map((t) => (
-                  <span
-                    key={t}
-                    className="rounded-full border border-edge bg-bg px-2 py-0.5 text-xs text-fg-muted"
-                  >
-                    {t}
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
         </section>
 
-        {/* The description reads as prose, so it gets the full width. */}
-        <section className="rounded-xl border border-edge bg-surface p-4">
-          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg-muted">
-            Description
-          </p>
-          {video.description ? (
-            <p className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words text-sm text-fg">
-              {video.description}
-            </p>
-          ) : (
-            <p className="text-sm text-fg-muted">
-              This video has no description.
-            </p>
-          )}
-        </section>
+        {/* Topics span the page rather than crowding the hero's column. */}
+        {video.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {video.tags.map((t) => (
+              <span
+                key={t}
+                className="rounded-full border border-edge bg-bg px-2 py-0.5 text-xs text-fg-muted"
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* The selected section, across the full width of the page. */}
         <div className="flex min-w-0 flex-col gap-4">
@@ -308,7 +330,7 @@ export function InspirationVideoDetails({
                     working
                       ? 'Takeaways are lifted out of the outline once the video has been studied.'
                       : studied
-                        ? 'No takeaways yet — they are extracted in the background, or run it now below.'
+                        ? 'No takeaways yet — they are extracted in the background; Process again to retry.'
                         : 'No takeaways yet — this video needs to be downloaded, transcribed and studied first.'
                   }
                 />
@@ -344,23 +366,6 @@ export function InspirationVideoDetails({
                     </li>
                   ))}
                 </ul>
-              )}
-              {studied && (
-                <button
-                  type="button"
-                  onClick={() => void run('takeaways')}
-                  disabled={busy !== ''}
-                  className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
-                >
-                  {busy === 'takeaways' ? (
-                    <Loader2 size={14} aria-hidden className="animate-spin" />
-                  ) : (
-                    <RefreshCw size={14} aria-hidden />
-                  )}
-                  {video.takeaways.length > 0
-                    ? 'Extract again'
-                    : 'Extract takeaways'}
-                </button>
               )}
             </div>
           )}
@@ -531,6 +536,21 @@ export function InspirationVideoDetails({
       </div>
     </div>
   )
+}
+
+/** The YouTube video id behind an indexed video, or '' when it is not one. */
+function youtubeIDOf(video: main.InspirationVideo): string {
+  const fromURL = video.url.match(
+    /(?:v=|youtu\.be\/|\/embed\/|\/shorts\/)([A-Za-z0-9_-]{11})/,
+  )
+  if (fromURL) return fromURL[1]
+  return /^[A-Za-z0-9_-]{11}$/.test(video.id) ? video.id : ''
+}
+
+/** The embed address for a moment in a YouTube video. */
+function embedURL(id: string, atSecs: number, autoplay: boolean): string {
+  const play = autoplay ? '&autoplay=1' : ''
+  return `https://www.youtube-nocookie.com/embed/${id}?start=${atSecs}${play}`
 }
 
 /**

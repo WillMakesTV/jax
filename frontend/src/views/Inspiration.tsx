@@ -297,11 +297,11 @@ export function AddInspirationModal({
     try {
       if (mode === 'video') {
         await AddInspirationVideo(value)
-        setNote('Downloading — the video appears in its channel as it lands.')
+        setNote('Queued — the video appears in its channel as it processes.')
       } else {
         const channel = await AddInspirationChannel(value)
         setNote(
-          `Indexed ${channel.name || 'the channel'} — open it to download a video.`,
+          `Indexed ${channel.name || 'the channel'} — its videos are queued, newest first.`,
         )
       }
       setUrl('')
@@ -382,8 +382,8 @@ export function AddInspirationModal({
           />
           <p className="mt-1.5 text-xs text-fg-muted">
             {mode === 'video'
-              ? 'The video downloads into the Videos workspace under inspiration/<channel>, then is transcribed and broken down. Its channel is indexed alongside it.'
-              : "The channel's recent videos are tracked without downloading; open one from the channel's page to study it."}
+              ? 'The video is queued, then downloaded, transcribed, and broken down. Its channel is indexed alongside it.'
+              : "The channel's recent videos are queued newest-first and processed one at a time."}
           </p>
         </div>
 

@@ -838,6 +838,7 @@ function PostStreamStatusChip({
  */
 /** How each pipeline step reads in the status bar. */
 const INSPIRATION_LABELS: Record<string, string> = {
+  queued: 'Queued',
   downloading: 'Downloading',
   transcribing: 'Transcribing',
   analyzing: 'Studying',

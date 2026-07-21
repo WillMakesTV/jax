@@ -316,6 +316,8 @@ export function GetYouTubeLiveChat(arg1:string):Promise<main.LiveChatPage>;
 
 export function GroupPastStreams(arg1:Array<string>):Promise<void>;
 
+export function InspirationQueueLength():Promise<number>;
+
 export function InstallEditorTools():Promise<main.EditorTools>;
 
 export function KickRedirectURI():Promise<string>;

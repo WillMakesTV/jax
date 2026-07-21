@@ -2,9 +2,11 @@ The Inspiration library is the producer's reference shelf: YouTube channels and 
 
 ## The pipeline
 
-Adding a video downloads it under the Videos workspace and runs it through: `downloading` → `transcribing` → `analyzing` (the manifest: summary, outline, beats, links, mentions) → `extracting` (the takeaways) → `ready`. A channel can be indexed on its own, in which case its recent videos are listed as `tracked` — known, but not downloaded and not studied. Only `ready` videos have notes worth reading.
+Adding a video queues it. One video is processed at a time — `queued` → `downloading` → `transcribing` → `analyzing` (the manifest: summary, outline, beats, links, mentions) → `extracting` (the takeaways) → `ready` — because each run downloads gigabytes, pins a whisper pass to the CPU, and asks the AI runner for two answers. Adding a channel queues its recent videos newest-first and works backwards through them.
 
-The pipeline is driven from the app (Inspiration → Add, or a tracked video's Download button); it is not exposed over MCP because it downloads gigabytes and runs the machine's AI runner.
+Once a video reaches `ready` its downloaded copy is deleted: the notes are what the library keeps, and every timestamp in them resolves against the video on YouTube. Only `ready` videos have notes worth reading; a video indexed from a channel but never processed sits at `tracked`.
+
+The pipeline is driven from the app (Inspiration → Add, or a video's Process button); it is not exposed over MCP because it downloads gigabytes and runs the machine's AI runner.
 
 ## Reading the library
 

@@ -1,9 +1,57 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// A studied video's local copy is dropped once its notes are complete; the
+// entry, its thumbnail, and its folder stay put.
+func TestDropInspirationDownload(t *testing.T) {
+	a := newTestApp(t)
+	root, err := a.inspirationRoot()
+	if err != nil {
+		t.Fatalf("root: %v", err)
+	}
+	dir := filepath.Join(root, "Maker", "v1")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	media := filepath.Join(dir, "v1.mp4")
+	if err := os.WriteFile(media, []byte("video"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	lib := a.getInspiration()
+	lib.Videos = append(lib.Videos, InspirationVideo{
+		ID: "v1", Title: "Studied", Status: inspirationReady,
+		Folder: "Maker/v1", VideoFile: "v1.mp4", ThumbnailFile: "v1.jpg",
+	})
+	if err := a.saveInspiration(lib); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	a.dropInspirationDownload("v1")
+	if _, err := os.Stat(media); !os.IsNotExist(err) {
+		t.Fatalf("the media file should be gone, stat = %v", err)
+	}
+	got, err := a.GetInspirationVideo("v1")
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if got.VideoFile != "" || got.MediaURL != "" {
+		t.Fatalf("the local copy should be forgotten: %+v", got)
+	}
+	if got.Folder == "" || got.ThumbnailFile == "" || got.Status != inspirationReady {
+		t.Fatalf("the rest of the entry should survive: %+v", got)
+	}
+
+	// Running it again on a video with nothing to drop is harmless.
+	a.dropInspirationDownload("v1")
+	a.dropInspirationDownload("missing")
+}
 
 func TestFormatClock(t *testing.T) {
 	cases := map[int]string{

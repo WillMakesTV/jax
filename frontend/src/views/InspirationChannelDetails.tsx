@@ -1,11 +1,11 @@
 import {
   AlertTriangle,
   Clapperboard,
-  Download,
   ExternalLink,
   Eye,
   Link2,
   Loader2,
+  Play,
   Plus,
   Sparkles,
   Trash2,
@@ -33,7 +33,8 @@ import {
 
 /** How each pipeline state reads on a card. */
 const STATUS_LABELS: Record<string, string> = {
-  tracked: 'Not downloaded',
+  tracked: 'Not processed',
+  queued: 'Queued',
   downloading: 'Downloading',
   transcribing: 'Transcribing',
   analyzing: 'Studying',
@@ -45,6 +46,7 @@ const STATUS_LABELS: Record<string, string> = {
 /** True while the pipeline is working on this video. */
 export function isWorking(status: string): boolean {
   return (
+    status === 'queued' ||
     status === 'downloading' ||
     status === 'transcribing' ||
     status === 'analyzing' ||
@@ -54,8 +56,8 @@ export function isWorking(status: string): boolean {
 
 /**
  * One inspiration channel: the videos indexed from it, in the same card
- * language the Videos section uses. Tracked videos carry a Download CTA that
- * runs the download → transcribe → study pipeline.
+ * language the Videos section uses. Tracked videos carry a Process CTA that
+ * runs the whole pipeline: download, transcribe, study, extract takeaways.
  */
 export function InspirationChannelDetails({
   channel: initial,
@@ -241,13 +243,13 @@ function VideoCard({
   const working = isWorking(video.status)
   const thumb = video.thumbUrl || video.thumbnailUrl
 
-  const download = async () => {
+  const process = async () => {
     setBusy(true)
     setError('')
     try {
       await ProcessInspirationVideo(video.id)
     } catch (err) {
-      setError(inspirationError(err, 'That video could not be downloaded.'))
+      setError(inspirationError(err, 'That video could not be processed.'))
     } finally {
       setBusy(false)
     }
@@ -324,7 +326,7 @@ function VideoCard({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation()
-                  void download()
+                  void process()
                 }}
                 disabled={busy}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-semibold text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
@@ -332,9 +334,9 @@ function VideoCard({
                 {busy ? (
                   <Loader2 size={12} aria-hidden className="animate-spin" />
                 ) : (
-                  <Download size={12} aria-hidden />
+                  <Play size={12} aria-hidden />
                 )}
-                {video.status === 'error' ? 'Try again' : 'Download & study'}
+                {video.status === 'error' ? 'Try again' : 'Process'}
               </button>
             )}
             <button

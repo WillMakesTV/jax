@@ -630,6 +630,10 @@ export function GroupPastStreams(arg1) {
   return window['go']['main']['App']['GroupPastStreams'](arg1);
 }
 
+export function InspirationQueueLength() {
+  return window['go']['main']['App']['InspirationQueueLength']();
+}
+
 export function InstallEditorTools() {
   return window['go']['main']['App']['InstallEditorTools']();
 }
