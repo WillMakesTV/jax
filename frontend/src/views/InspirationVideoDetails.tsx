@@ -174,8 +174,8 @@ export function InspirationVideoDetails({
           ))}
         </div>
 
-        {/* Hero: the local copy on the left, what the platform says about it
-            on the right. */}
+        {/* Hero: the local copy on the left, what the study made of it on
+            the right. */}
         <section className="flex flex-col gap-4 lg:flex-row lg:items-start">
           <div className="w-full shrink-0 overflow-hidden rounded-xl border border-edge bg-surface lg:w-[30rem] xl:w-[38rem]">
             {video.mediaUrl ? (
@@ -238,21 +238,6 @@ export function InspirationVideoDetails({
               </div>
             )}
 
-            <div className="rounded-xl border border-edge bg-surface p-4">
-              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg-muted">
-                Description
-              </p>
-              {video.description ? (
-                <p className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words text-sm text-fg">
-                  {video.description}
-                </p>
-              ) : (
-                <p className="text-sm text-fg-muted">
-                  This video has no description.
-                </p>
-              )}
-            </div>
-
             {video.tags.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {video.tags.slice(0, 12).map((t) => (
@@ -266,6 +251,22 @@ export function InspirationVideoDetails({
               </div>
             )}
           </div>
+        </section>
+
+        {/* The description reads as prose, so it gets the full width. */}
+        <section className="rounded-xl border border-edge bg-surface p-4">
+          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+            Description
+          </p>
+          {video.description ? (
+            <p className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words text-sm text-fg">
+              {video.description}
+            </p>
+          ) : (
+            <p className="text-sm text-fg-muted">
+              This video has no description.
+            </p>
+          )}
         </section>
 
         {/* The selected section, across the full width of the page. */}
