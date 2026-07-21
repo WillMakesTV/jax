@@ -117,10 +117,16 @@ func (a *App) askAI(ctx context.Context, system, input string, claudeArgs ...str
 	}
 }
 
-// askAIText is askAI with the common trim/empty handling and a default
-// 3-minute deadline, for callers that only want the text.
+// aiRunTimeout bounds one prompt. Account-mode runs go through a CLI that
+// reads, thinks, and writes whole files (a widget's display, an outline), and
+// those routinely run past the few minutes a plain API answer takes — cutting
+// them off looked like a crash rather than a deadline (see askClaudeCode).
+const aiRunTimeout = 10 * time.Minute
+
+// askAIText is askAI with the common trim/empty handling and the default
+// deadline, for callers that only want the text.
 func (a *App) askAIText(system, input string, claudeArgs ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), aiRunTimeout)
 	defer cancel()
 	text, _, err := a.askAI(ctx, system, input, claudeArgs...)
 	if err != nil {
@@ -150,13 +156,27 @@ func askClaudeCode(ctx context.Context, system, input string, extraArgs ...strin
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		msg := firstNonEmpty(strings.TrimSpace(stderr.String()), err.Error())
-		if len(msg) > 300 {
-			msg = msg[:300]
-		}
-		return "", fmt.Errorf("Claude Code could not respond: %s", msg)
+		// Claude Code reports refusals and account limits on stdout, so it is
+		// worth reading when stderr is silent.
+		return "", aiRunError(ctx, "Claude Code", err, stderr.String(), stdout.String())
 	}
 	return stdout.String(), nil
+}
+
+// aiRunError explains a failed AI CLI run. A run killed by its deadline comes
+// back as a plain exit status — on Windows exit code 1, with nothing on
+// either stream — which reads as a crash, so it is named for what it is.
+// Otherwise the most useful thing the process said wins, with the exit status
+// as the last resort.
+func aiRunError(ctx context.Context, name string, err error, details ...string) error {
+	if ctx.Err() != nil {
+		return fmt.Errorf("%s ran out of time — it did not answer before the deadline; try again, or ask for something smaller", name)
+	}
+	msg := strings.TrimSpace(firstNonEmpty(append(details, err.Error())...))
+	if len(msg) > 300 {
+		msg = msg[:300]
+	}
+	return fmt.Errorf("%s could not respond: %s", name, msg)
 }
 
 // askClaudeAPI runs the prompt against the Messages API with the stored key.
@@ -233,7 +253,7 @@ func askCodex(ctx context.Context, system, input string) (string, error) {
 	cmd.Stdout = &output
 	cmd.Stderr = &output
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("Codex could not respond: %s", codexErrorDetail(output.String(), err.Error()))
+		return "", aiRunError(ctx, "Codex", err, codexErrorDetail(output.String(), err.Error()))
 	}
 	raw, err := os.ReadFile(outPath)
 	if err != nil {
