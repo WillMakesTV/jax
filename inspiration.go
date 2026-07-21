@@ -46,14 +46,25 @@ const keyInspiration = "inspiration"
 // workspace root (see resolveEditRoot).
 const inspirationDirName = "inspiration"
 
-// InspirationChannel is one indexed source channel.
+// InspirationChannel is one indexed source channel, with whatever branding
+// and metrics the platform exposes about it.
 type InspirationChannel struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Handle      string `json:"handle"`
 	URL         string `json:"url"`
 	Description string `json:"description"`
-	AddedAt     string `json:"addedAt"`
+	// AvatarURL and BannerURL are the platform's own images, used as-is.
+	AvatarURL   string            `json:"avatarUrl"`
+	BannerURL   string            `json:"bannerUrl"`
+	Subscribers int               `json:"subscribers"`
+	VideoCount  int               `json:"videoCount"`
+	Tags        []string          `json:"tags"`
+	Links       []InspirationLink `json:"links"`
+	AddedAt     string            `json:"addedAt"`
+	// IndexedAt is when the channel's own metadata was last refreshed —
+	// every video indexed from it brings this up to date.
+	IndexedAt string `json:"indexedAt"`
 }
 
 // InspirationChapter is one chapter marker from the video's own metadata.
@@ -257,7 +268,32 @@ func (a *App) GetInspirationChannels() []InspirationChannel {
 	sort.SliceStable(lib.Channels, func(i, j int) bool {
 		return lib.Channels[i].AddedAt > lib.Channels[j].AddedAt
 	})
+	for i := range lib.Channels {
+		fillInspirationChannel(&lib.Channels[i])
+	}
 	return lib.Channels
+}
+
+// GetInspirationChannel returns one channel by id, or an error when it is
+// gone — how the channel page reloads itself as the index refreshes.
+func (a *App) GetInspirationChannel(id string) (InspirationChannel, error) {
+	for _, c := range a.getInspiration().Channels {
+		if c.ID == id {
+			fillInspirationChannel(&c)
+			return c, nil
+		}
+	}
+	return InspirationChannel{}, fmt.Errorf("that channel is no longer indexed")
+}
+
+// fillInspirationChannel keeps a channel's slices non-nil for the frontend.
+func fillInspirationChannel(c *InspirationChannel) {
+	if c.Tags == nil {
+		c.Tags = []string{}
+	}
+	if c.Links == nil {
+		c.Links = []InspirationLink{}
+	}
 }
 
 // GetInspirationVideos returns a channel's videos (all of them when channelID
@@ -294,7 +330,9 @@ func (a *App) GetInspirationVideo(id string) (InspirationVideo, error) {
 }
 
 // upsertInspirationChannel stores a channel (matched by id), keeping the
-// original AddedAt, and returns its id.
+// original AddedAt, and returns its id. A partial report — the identifying
+// fields that ride along with a video, say — never blanks branding or
+// metrics an earlier full index already found.
 func (a *App) upsertInspirationChannel(lib *inspirationLibrary, ch InspirationChannel) string {
 	if ch.ID == "" {
 		ch.ID = "chan_" + strconv.FormatInt(time.Now().UnixNano(), 10)
@@ -303,17 +341,62 @@ func (a *App) upsertInspirationChannel(lib *inspirationLibrary, ch InspirationCh
 		if lib.Channels[i].ID != ch.ID {
 			continue
 		}
-		added := lib.Channels[i].AddedAt
-		if ch.Description == "" {
-			ch.Description = lib.Channels[i].Description
+		old := lib.Channels[i]
+		ch.Description = firstNonEmpty(ch.Description, old.Description)
+		ch.AvatarURL = firstNonEmpty(ch.AvatarURL, old.AvatarURL)
+		ch.BannerURL = firstNonEmpty(ch.BannerURL, old.BannerURL)
+		ch.Handle = firstNonEmpty(ch.Handle, old.Handle)
+		ch.URL = firstNonEmpty(ch.URL, old.URL)
+		if ch.Subscribers == 0 {
+			ch.Subscribers = old.Subscribers
 		}
-		ch.AddedAt = added
+		if ch.VideoCount == 0 {
+			ch.VideoCount = old.VideoCount
+		}
+		if len(ch.Tags) == 0 {
+			ch.Tags = old.Tags
+		}
+		if len(ch.Links) == 0 {
+			ch.Links = old.Links
+		}
+		ch.AddedAt = old.AddedAt
+		ch.IndexedAt = firstNonEmpty(ch.IndexedAt, old.IndexedAt)
 		lib.Channels[i] = ch
 		return ch.ID
 	}
 	ch.AddedAt = time.Now().UTC().Format(time.RFC3339)
 	lib.Channels = append(lib.Channels, ch)
 	return ch.ID
+}
+
+// refreshInspirationChannel re-reads a channel's own page — its branding,
+// metrics, and published links — and stores what comes back. Indexing a
+// video runs it in the background, so the channel behind a studied video is
+// never left as a bare name.
+func (a *App) refreshInspirationChannel(channelURL string) {
+	channelURL = strings.TrimSpace(channelURL)
+	if channelURL == "" {
+		return
+	}
+	var found InspirationChannel
+	err := a.runInspirationSidecar(func(line sidecarLine) {
+		if line.Status == "channel" {
+			found = inspirationChannelOf(line.Channel)
+		}
+	}, "--url", channelURL, "--channel")
+	if err != nil {
+		log.Printf("jax: inspiration channel %s: %v", channelURL, err)
+		return
+	}
+	if found.ID == "" && found.Name == "" {
+		return
+	}
+	found.IndexedAt = time.Now().UTC().Format(time.RFC3339)
+	lib := a.getInspiration()
+	a.upsertInspirationChannel(&lib, found)
+	if err := a.saveInspiration(lib); err != nil {
+		log.Printf("jax: save inspiration: %v", err)
+	}
 }
 
 // mutateInspirationVideo applies fn to the stored video with the given id and
@@ -375,23 +458,51 @@ func (a *App) inspirationSidecar(args ...string) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
+// sidecarChannel is the channel the fetcher reports, alone or alongside a
+// video. Branding and metrics only come back from the channel modes; a
+// video's copy carries the identifying fields and its follower count.
+type sidecarChannel struct {
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Handle      string            `json:"handle"`
+	URL         string            `json:"url"`
+	Description string            `json:"description"`
+	Subscribers int               `json:"subscribers"`
+	VideoCount  int               `json:"videoCount"`
+	AvatarURL   string            `json:"avatarUrl"`
+	BannerURL   string            `json:"bannerUrl"`
+	Tags        []string          `json:"tags"`
+	Links       []InspirationLink `json:"links"`
+}
+
+// inspirationChannelOf converts a reported channel into the stored shape.
+func inspirationChannelOf(c sidecarChannel) InspirationChannel {
+	return InspirationChannel{
+		ID:          c.ID,
+		Name:        c.Name,
+		Handle:      c.Handle,
+		URL:         c.URL,
+		Description: c.Description,
+		AvatarURL:   c.AvatarURL,
+		BannerURL:   c.BannerURL,
+		Subscribers: c.Subscribers,
+		VideoCount:  c.VideoCount,
+		Tags:        c.Tags,
+		Links:       c.Links,
+	}
+}
+
 // sidecarLine is one JSON line from the fetcher.
 type sidecarLine struct {
-	Status  string `json:"status"`
-	Percent int    `json:"percent"`
-	Dir     string `json:"dir"`
-	Rel     string `json:"rel"`
-	File    string `json:"file"`
-	Thumb   string `json:"thumbnail"`
-	Error   string `json:"error"`
-	Channel struct {
-		ID          string `json:"id"`
-		Name        string `json:"name"`
-		Handle      string `json:"handle"`
-		URL         string `json:"url"`
-		Description string `json:"description"`
-	} `json:"channel"`
-	Video struct {
+	Status  string         `json:"status"`
+	Percent int            `json:"percent"`
+	Dir     string         `json:"dir"`
+	Rel     string         `json:"rel"`
+	File    string         `json:"file"`
+	Thumb   string         `json:"thumbnail"`
+	Error   string         `json:"error"`
+	Channel sidecarChannel `json:"channel"`
+	Video   struct {
 		ID           string               `json:"id"`
 		Title        string               `json:"title"`
 		URL          string               `json:"url"`
@@ -405,13 +516,7 @@ type sidecarLine struct {
 		Categories   []string             `json:"categories"`
 		ThumbnailURL string               `json:"thumbnailUrl"`
 		Chapters     []InspirationChapter `json:"chapters"`
-		Channel      struct {
-			ID          string `json:"id"`
-			Name        string `json:"name"`
-			Handle      string `json:"handle"`
-			URL         string `json:"url"`
-			Description string `json:"description"`
-		} `json:"channel"`
+		Channel      sidecarChannel       `json:"channel"`
 	} `json:"video"`
 }
 
@@ -475,13 +580,8 @@ func (a *App) AddInspirationChannel(channelURL string) (InspirationChannel, erro
 	err := a.runInspirationSidecar(func(line sidecarLine) {
 		switch line.Status {
 		case "channel":
-			channel = InspirationChannel{
-				ID:          line.Channel.ID,
-				Name:        line.Channel.Name,
-				Handle:      line.Channel.Handle,
-				URL:         line.Channel.URL,
-				Description: line.Channel.Description,
-			}
+			channel = inspirationChannelOf(line.Channel)
+			channel.IndexedAt = time.Now().UTC().Format(time.RFC3339)
 		case "video":
 			found = append(found, InspirationVideo{
 				ID:           line.Video.ID,
@@ -615,13 +715,7 @@ func (a *App) processInspirationVideo(id, videoURL string) {
 	// The platform's own id replaces the pending one, and the channel is
 	// indexed alongside the video.
 	lib := a.getInspiration()
-	channelID := a.upsertInspirationChannel(&lib, InspirationChannel{
-		ID:          meta.Video.Channel.ID,
-		Name:        meta.Video.Channel.Name,
-		Handle:      meta.Video.Channel.Handle,
-		URL:         meta.Video.Channel.URL,
-		Description: meta.Video.Channel.Description,
-	})
+	channelID := a.upsertInspirationChannel(&lib, inspirationChannelOf(meta.Video.Channel))
 	realID := meta.Video.ID
 	for i := range lib.Videos {
 		if lib.Videos[i].ID != id {
@@ -671,6 +765,9 @@ func (a *App) processInspirationVideo(id, videoURL string) {
 	if err := a.saveInspiration(lib); err != nil {
 		log.Printf("jax: save inspiration: %v", err)
 	}
+	// The video's own metadata only names its channel; read the channel's
+	// page for the branding, metrics, and links while the transcript runs.
+	go a.refreshInspirationChannel(firstNonEmpty(meta.Video.Channel.URL, meta.Video.Channel.Handle))
 	a.emitInspirationStatus(id, meta.Video.Title, inspirationTranscribing, "", 100)
 
 	// --- Transcribe ---------------------------------------------------

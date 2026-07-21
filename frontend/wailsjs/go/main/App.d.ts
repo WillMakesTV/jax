@@ -218,6 +218,8 @@ export function GetFacebookLiveChat():Promise<main.LiveChatPage>;
 
 export function GetGitHubConnection():Promise<main.GitHubConnection>;
 
+export function GetInspirationChannel(arg1:string):Promise<main.InspirationChannel>;
+
 export function GetInspirationChannels():Promise<Array<main.InspirationChannel>>;
 
 export function GetInspirationVideo(arg1:string):Promise<main.InspirationVideo>;

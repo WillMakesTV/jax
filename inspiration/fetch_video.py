@@ -7,6 +7,9 @@ Two modes, both driven by yt-dlp:
                            alongside the media file.
   --url <channel> --index  resolve a channel and list its recent videos
                            (metadata only, nothing downloaded).
+  --url <channel> --channel
+                           resolve a channel only: its branding, metrics, and
+                           the links it publishes.
 
 Emits one JSON object per line on stdout:
   {"status": "channel", "channel": {...}}          the source channel
@@ -62,7 +65,127 @@ def channel_of(info: dict) -> dict:
         "handle": info.get("uploader_id") or "",
         "url": info.get("channel_url") or info.get("uploader_url") or "",
         "description": (info.get("description") or "") if info.get("_type") else "",
+        "subscribers": int(info.get("channel_follower_count") or 0),
     }
+
+
+LINK_RE = re.compile(r'https?://[^\s<>"\')\]]+')
+
+# Hosts worth naming when a channel links to them.
+SOCIAL_NAMES = {
+    "twitter.com": "X",
+    "x.com": "X",
+    "instagram.com": "Instagram",
+    "tiktok.com": "TikTok",
+    "twitch.tv": "Twitch",
+    "discord.gg": "Discord",
+    "discord.com": "Discord",
+    "facebook.com": "Facebook",
+    "patreon.com": "Patreon",
+    "github.com": "GitHub",
+    "linkedin.com": "LinkedIn",
+    "reddit.com": "Reddit",
+    "threads.net": "Threads",
+    "bsky.app": "Bluesky",
+    "youtube.com": "YouTube",
+    "kick.com": "Kick",
+}
+
+
+def link_label(url: str) -> str:
+    """A readable name for a link, from its host."""
+    host = re.sub(r"^https?://", "", url).split("/")[0].lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return SOCIAL_NAMES.get(host, host)
+
+
+def channel_links(info: dict) -> list:
+    """The links a channel publishes: its About-page entries when yt-dlp
+    exposes them, otherwise whatever its description points at."""
+    found, seen = [], set()
+
+    def add(url: str, label: str = "") -> None:
+        url = (url or "").strip().rstrip(".,)")
+        if not url or url in seen:
+            return
+        seen.add(url)
+        found.append({"label": label or link_label(url), "url": url})
+
+    for entry in info.get("channel_urls") or []:
+        if isinstance(entry, dict):
+            add(entry.get("url") or "", entry.get("title") or "")
+        elif isinstance(entry, str):
+            add(entry)
+    for url in LINK_RE.findall(info.get("description") or ""):
+        add(url)
+    return found[:20]
+
+
+def pick_thumb(info: dict, *wanted: str) -> str:
+    """The largest channel image whose id names one of the wanted kinds."""
+    best, best_area = "", -1
+    for t in info.get("thumbnails") or []:
+        tid = str(t.get("id") or "").lower()
+        if not any(w in tid for w in wanted):
+            continue
+        area = int(t.get("width") or 0) * int(t.get("height") or 0)
+        if area > best_area:
+            best, best_area = t.get("url") or "", area
+    return best
+
+
+def channel_full(top: dict, tab: dict, fallback_url: str = "") -> dict:
+    """Everything Jax stores about a channel. A channel URL resolves to the
+    channel itself (which carries the branding) wrapping the tab that holds
+    its videos (which carries the video count), so both are read."""
+
+    def pick(key: str, default=""):
+        return top.get(key) or tab.get(key) or default
+
+    return {
+        "id": pick("channel_id") or pick("id"),
+        "name": pick("channel") or pick("uploader") or pick("title"),
+        "handle": pick("uploader_id"),
+        "url": pick("channel_url") or pick("webpage_url") or fallback_url,
+        "description": pick("description"),
+        "subscribers": int(pick("channel_follower_count", 0) or 0),
+        "videoCount": int(tab.get("playlist_count") or 0),
+        "avatarUrl": pick_thumb(top, "avatar") or pick_thumb(tab, "avatar"),
+        "bannerUrl": pick_thumb(top, "banner") or pick_thumb(tab, "banner"),
+        "tags": [t for t in (top.get("tags") or tab.get("tags") or []) if t][:20],
+        "links": channel_links(top) or channel_links(tab),
+    }
+
+
+def resolve_channel(url: str, limit: int = 1) -> tuple:
+    """Extract a channel URL, drilling into the tab that holds its videos.
+    Returns (the channel's own info, the tab's info, the tab's entries)."""
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "extract_flat": "in_playlist",
+        "playlistend": limit,
+    }
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        top = ydl.extract_info(url, download=False)
+
+    tab, entries = top, top.get("entries") or []
+    while entries and (entries[0].get("_type") == "playlist"):
+        tab = entries[0]
+        entries = tab.get("entries") or []
+    return top, tab, entries
+
+
+def index_channel_only(url: str) -> None:
+    """Resolve a channel's branding and metrics, nothing else."""
+    top, tab, _ = resolve_channel(url)
+    channel = channel_full(top, tab, url)
+    if not channel["id"] and not channel["name"]:
+        emit({"error": "that URL did not resolve to a channel"})
+        sys.exit(1)
+    emit({"status": "channel", "channel": channel})
 
 
 def video_of(info: dict) -> dict:
@@ -93,29 +216,8 @@ def video_of(info: dict) -> dict:
 
 def index_channel(url: str, limit: int) -> None:
     """List a channel's recent videos without downloading anything."""
-    opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        "extract_flat": "in_playlist",
-        "playlistend": limit,
-    }
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-
-    entries = info.get("entries") or []
-    # A channel URL resolves to a set of tabs; drill into the first playlist.
-    while entries and (entries[0].get("_type") == "playlist"):
-        info = entries[0]
-        entries = info.get("entries") or []
-
-    channel = {
-        "id": info.get("channel_id") or info.get("id") or "",
-        "name": info.get("channel") or info.get("uploader") or info.get("title") or "",
-        "handle": info.get("uploader_id") or "",
-        "url": info.get("channel_url") or info.get("webpage_url") or url,
-        "description": info.get("description") or "",
-    }
+    top, tab, entries = resolve_channel(url, limit)
+    channel = channel_full(top, tab, url)
     emit({"status": "channel", "channel": channel})
 
     for entry in entries[:limit]:
@@ -222,12 +324,16 @@ def main() -> None:
     parser.add_argument("--dir", default="", help="inspiration root (download mode)")
     parser.add_argument("--index", action="store_true",
                         help="list a channel's videos instead of downloading")
+    parser.add_argument("--channel", action="store_true",
+                        help="resolve the channel only (branding and metrics)")
     parser.add_argument("--limit", type=int, default=30,
                         help="how many videos to list in index mode")
     args = parser.parse_args()
 
     try:
-        if args.index:
+        if args.channel:
+            index_channel_only(args.url)
+        elif args.index:
             index_channel(args.url, max(1, args.limit))
         else:
             if not args.dir:

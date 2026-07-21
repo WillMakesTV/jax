@@ -59,6 +59,23 @@ func TestInspirationLibrary(t *testing.T) {
 		t.Fatalf("re-index should update in place: %+v", lib.Channels)
 	}
 
+	// A full index brings in the branding; the thinner report that rides
+	// along with a video must not blank it again.
+	a.upsertInspirationChannel(&lib, InspirationChannel{
+		ID: "UC1", Name: "Maker", Description: "Builds things",
+		AvatarURL: "https://img/avatar.jpg", BannerURL: "https://img/banner.jpg",
+		Subscribers: 4200, VideoCount: 91,
+		Tags:  []string{"diy"},
+		Links: []InspirationLink{{Label: "X", URL: "https://x.com/maker"}},
+	})
+	a.upsertInspirationChannel(&lib, InspirationChannel{ID: "UC1", Name: "Maker"})
+	ch := lib.Channels[0]
+	if ch.AvatarURL == "" || ch.BannerURL == "" || ch.Subscribers != 4200 ||
+		ch.VideoCount != 91 || len(ch.Tags) != 1 || len(ch.Links) != 1 ||
+		ch.Description != "Builds things" {
+		t.Fatalf("a partial re-index should keep the branding: %+v", ch)
+	}
+
 	lib.Videos = append(lib.Videos,
 		InspirationVideo{ID: "v1", ChannelID: "UC1", Title: "Older",
 			PublishedAt: "2026-01-01T00:00:00Z", Status: inspirationTracked},

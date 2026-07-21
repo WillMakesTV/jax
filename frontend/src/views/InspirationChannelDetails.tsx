@@ -4,15 +4,18 @@ import {
   Download,
   ExternalLink,
   Eye,
+  Link2,
   Loader2,
   Plus,
   Sparkles,
   Trash2,
+  Users,
 } from 'lucide-react'
 import clsx from 'clsx'
 import {useCallback, useEffect, useState} from 'react'
 import {
   DeleteInspirationVideo,
+  GetInspirationChannel,
   GetInspirationVideos,
   ProcessInspirationVideo,
 } from '../../wailsjs/go/main/App'
@@ -55,21 +58,27 @@ export function isWorking(status: string): boolean {
  * runs the download → transcribe → study pipeline.
  */
 export function InspirationChannelDetails({
-  channel,
+  channel: initial,
   onOpenVideo,
 }: {
   channel: main.InspirationChannel
   /** Open one video's manifest page. */
   onOpenVideo: (video: main.InspirationVideo) => void
 }) {
+  const [channel, setChannel] = useState(initial)
   const [videos, setVideos] = useState<main.InspirationVideo[]>([])
   const [addOpen, setAddOpen] = useState(false)
 
   const load = useCallback(() => {
-    GetInspirationVideos(channel.id)
+    GetInspirationVideos(initial.id)
       .then((v) => setVideos(v ?? []))
       .catch(() => {})
-  }, [channel.id])
+    // Indexing a video refreshes the channel's own branding and metrics
+    // behind the page, so re-read it alongside the videos.
+    GetInspirationChannel(initial.id)
+      .then(setChannel)
+      .catch(() => {})
+  }, [initial.id])
 
   useEffect(load, [load])
   useDataChanged(['inspiration'], load)
@@ -106,6 +115,8 @@ export function InspirationChannelDetails({
         }
       />
 
+      <ChannelHero channel={channel} videoCount={videos.length} />
+
       {videos.length === 0 ? (
         <p className="rounded-xl border border-dashed border-edge bg-surface p-6 text-sm text-fg-muted">
           Nothing indexed from this channel yet. Add a video to download,
@@ -121,6 +132,100 @@ export function InspirationChannelDetails({
 
       <AddInspirationModal open={addOpen} onClose={() => setAddOpen(false)} />
     </div>
+  )
+}
+
+/**
+ * The channel at the top of its page: its banner, avatar, what it says about
+ * itself, the numbers the platform reports, and the links it publishes —
+ * everything the indexer could pull in.
+ */
+function ChannelHero({
+  channel,
+  videoCount,
+}: {
+  channel: main.InspirationChannel
+  videoCount: number
+}) {
+  const stats = [
+    channel.subscribers > 0
+      ? `${formatCompact(channel.subscribers)} subscribers`
+      : '',
+    channel.videoCount > 0
+      ? `${formatCompact(channel.videoCount)} videos published`
+      : '',
+    `${videoCount} indexed here`,
+  ].filter(Boolean)
+
+  return (
+    <section className="mb-6 overflow-hidden rounded-xl border border-edge bg-surface">
+      {channel.bannerUrl && (
+        <img
+          src={channel.bannerUrl}
+          alt={`${channel.name} banner`}
+          className="h-28 w-full object-cover sm:h-40"
+        />
+      )}
+      <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start">
+        {channel.avatarUrl && (
+          <img
+            src={channel.avatarUrl}
+            alt={`${channel.name} avatar`}
+            className="h-16 w-16 shrink-0 rounded-full border border-edge object-cover sm:h-20 sm:w-20"
+          />
+        )}
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="text-base font-semibold text-fg">
+              {channel.name}
+            </span>
+            {channel.handle && (
+              <span className="text-sm text-fg-muted">{channel.handle}</span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-fg-muted">
+            <span className="inline-flex items-center gap-1">
+              <Users size={12} aria-hidden />
+              {stats.join(' · ')}
+            </span>
+          </div>
+          {channel.description && (
+            <p className="line-clamp-4 whitespace-pre-wrap text-sm text-fg-muted">
+              {channel.description}
+            </p>
+          )}
+          {channel.links.length > 0 && (
+            <ul className="flex flex-wrap gap-1.5">
+              {channel.links.map((l, i) => (
+                <li key={`${l.url}-${i}`}>
+                  <button
+                    type="button"
+                    onClick={() => openExternal(l.url)}
+                    title={l.url}
+                    className="inline-flex items-center gap-1 rounded-full border border-edge bg-bg px-2 py-0.5 text-xs text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                  >
+                    <Link2 size={11} aria-hidden />
+                    {l.label || l.url}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {channel.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {channel.tags.slice(0, 10).map((t) => (
+                <span
+                  key={t}
+                  className="rounded-full border border-edge bg-bg px-2 py-0.5 text-xs text-fg-muted"
+                >
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   )
 }
 

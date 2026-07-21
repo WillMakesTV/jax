@@ -11,7 +11,7 @@ import {main} from '../../wailsjs/go/models'
 import {Modal} from '../components/Modal'
 import {PageHeader} from '../components/PageHeader'
 import {useDataChanged} from '../lib/dataChanged'
-import {formatDate} from '../lib/format'
+import {formatCompact, formatDate} from '../lib/format'
 
 /** Message text from a rejected binding call. */
 export function inspirationError(err: unknown, fallback: string): string {
@@ -148,7 +148,14 @@ function ChannelCard({
         }}
         className="group flex h-full cursor-pointer flex-col overflow-hidden rounded-xl border border-edge bg-surface text-left transition-colors hover:border-accent/50 hover:bg-surface-hover"
       >
-        {cover ? (
+        {channel.bannerUrl ? (
+          <img
+            src={channel.bannerUrl}
+            alt=""
+            aria-hidden
+            className="aspect-video w-full border-b border-edge object-cover"
+          />
+        ) : cover ? (
           <img
             src={cover.thumbUrl || cover.thumbnailUrl}
             alt=""
@@ -163,6 +170,14 @@ function ChannelCard({
 
         <div className="flex flex-1 flex-col p-4">
           <div className="flex min-w-0 items-start gap-2">
+            {channel.avatarUrl && (
+              <img
+                src={channel.avatarUrl}
+                alt=""
+                aria-hidden
+                className="h-8 w-8 shrink-0 rounded-full border border-edge object-cover"
+              />
+            )}
             <p className="min-w-0 flex-1 truncate text-sm font-semibold text-fg">
               {channel.name || 'Unknown channel'}
             </p>
@@ -191,6 +206,11 @@ function ChannelCard({
             {ready > 0 && (
               <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent">
                 {ready} studied
+              </span>
+            )}
+            {channel.subscribers > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-edge bg-bg px-2 py-0.5 text-xs font-medium text-fg-muted">
+                {formatCompact(channel.subscribers)} subs
               </span>
             )}
           </div>

@@ -8,7 +8,7 @@ The pipeline is driven from the app (Inspiration → Add, or a tracked video's D
 
 ## Reading the library
 
-- `list_inspiration_channels` — the tracked channels.
+- `list_inspiration_channels` — the tracked channels, with the branding and metrics the indexer pulled in: avatar and banner, subscriber and video counts, the channel's own description, its tags, and the links it publishes. Every video indexed from a channel refreshes this.
 - `list_inspiration_videos` — what is indexed, with each video's status and how much has been derived from it. Bodies are omitted; the counts tell you what is worth fetching.
 - `get_inspiration_video` — one video in full: description, summary, outline, beats, takeaways, links, mentions. Pass `includeTranscript: true` only when you actually need the words — transcripts run to thousands of lines.
 - `get_inspiration_transcript` — just the timestamped transcript.

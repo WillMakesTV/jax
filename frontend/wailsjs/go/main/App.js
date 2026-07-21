@@ -434,6 +434,10 @@ export function GetGitHubConnection() {
   return window['go']['main']['App']['GetGitHubConnection']();
 }
 
+export function GetInspirationChannel(arg1) {
+  return window['go']['main']['App']['GetInspirationChannel'](arg1);
+}
+
 export function GetInspirationChannels() {
   return window['go']['main']['App']['GetInspirationChannels']();
 }
