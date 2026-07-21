@@ -13,6 +13,7 @@ import {
 import clsx from 'clsx'
 import {useCallback, useEffect, useRef, useState} from 'react'
 import {
+  ExtractInspirationTakeaways,
   GetInspirationVideo,
   ProcessInspirationVideo,
 } from '../../wailsjs/go/main/App'
@@ -99,11 +100,14 @@ export function InspirationVideoDetails({
 
   // One action covers the whole workflow: download, transcribe, study,
   // extract the takeaways, then drop the local copy (see inspiration.go).
-  const process = async () => {
-    setBusy('process')
+  // Extracting again re-runs only the last pass, which reads the stored
+  // outline — no download needed.
+  const run = async (what: 'process' | 'takeaways') => {
+    setBusy(what)
     setError('')
     try {
-      await ProcessInspirationVideo(video.id)
+      if (what === 'takeaways') await ExtractInspirationTakeaways(video.id)
+      else await ProcessInspirationVideo(video.id)
     } catch (err) {
       setError(inspirationError(err, 'That did not work — try again.'))
     } finally {
@@ -156,7 +160,7 @@ export function InspirationVideoDetails({
             {!working && (
               <button
                 type="button"
-                onClick={() => void process()}
+                onClick={() => void run('process')}
                 disabled={busy !== ''}
                 title="Download, transcribe, study, and extract the takeaways"
                 className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
@@ -330,13 +334,31 @@ export function InspirationVideoDetails({
         <div className="flex min-w-0 flex-col gap-4">
           {tab === 'takeaways' && (
             <div className="flex flex-col gap-3">
+              {studied && (
+                <button
+                  type="button"
+                  onClick={() => void run('takeaways')}
+                  disabled={busy !== ''}
+                  title="Re-read the outline and lift the takeaways out again"
+                  className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
+                >
+                  {busy === 'takeaways' ? (
+                    <Loader2 size={14} aria-hidden className="animate-spin" />
+                  ) : (
+                    <RefreshCw size={14} aria-hidden />
+                  )}
+                  {video.takeaways.length > 0
+                    ? 'Extract again'
+                    : 'Extract takeaways'}
+                </button>
+              )}
               {video.takeaways.length === 0 ? (
                 <Empty
                   text={
                     working
                       ? 'Takeaways are lifted out of the outline once the video has been studied.'
                       : studied
-                        ? 'No takeaways yet — they are extracted in the background; Process again to retry.'
+                        ? 'No takeaways yet — they are extracted in the background, or run it now with Extract takeaways.'
                         : 'No takeaways yet — this video needs to be downloaded, transcribed and studied first.'
                   }
                 />
