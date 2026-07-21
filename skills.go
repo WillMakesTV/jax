@@ -35,6 +35,7 @@ var appSkillDefs = []struct {
 	{"go-live", "Going live", "The broadcast-day flow: applying a plan, monitoring while live, and concluding the episode."},
 	{"past-streams", "Reviewing past streams", "Work the stream archive: transcripts, chat logs, and AI outlines for recaps and clip hunting."},
 	{"download-transcribe", "Downloads & transcription", "Pull VODs to disk and re-transcribe them locally for cleaner transcripts."},
+	{"inspiration-types", "Inspiration types", "What an inspiration type is, how a channel gets tagged with one, and how to write a new type's brief."},
 	{skillInspirationTakeaways, "Inspiration takeaways", "The brief behind what counts as a takeaway when a studied video is mined for tips, techniques and concepts — overridable per channel."},
 	{"inspiration", "Inspiration library", "Study other creators' videos: what has been indexed, what was derived from each, and how to search the library and cite it."},
 	{"videos", "Videos & video plans", "Browse the channels' catalogue, review performance, and prepare video plans for the editor."},
@@ -147,6 +148,22 @@ func (a *App) ListAppSkills() ([]AppSkill, error) {
 			Overridden:  overridden,
 		})
 	}
+	// Each inspiration type publishes its lens as a skill — the same brief
+	// the type's own page edits (see inspiration_types.go).
+	for _, t := range a.getInspirationTypes() {
+		id := inspirationTypeSkillID(t)
+		content, overridden := overrides[id]
+		if !overridden {
+			content = inspirationTypeSkillContent(t)
+		}
+		out = append(out, AppSkill{
+			ID:          id,
+			Title:       "Inspiration type: " + t.Name,
+			Description: inspirationTypeSkillDescription(t),
+			Content:     content,
+			Overridden:  overridden,
+		})
+	}
 	// So does each stream widget: its skill is the creative brief behind
 	// generating the widget's imagery (see widget_images.go).
 	for _, w := range a.getStreamWidgets() {
@@ -175,6 +192,9 @@ func (a *App) defaultContentFor(id string) (string, error) {
 	}
 	if w, ok := a.widgetBySkillID(id); ok {
 		return widgetSkillContent(w), nil
+	}
+	if t, ok := a.inspirationTypeBySkillID(id); ok {
+		return inspirationTypeSkillContent(t), nil
 	}
 	return defaultSkillContent(id)
 }

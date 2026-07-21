@@ -21,6 +21,8 @@ export type ViewId =
   | 'inspiration'
   | 'inspiration-channel'
   | 'inspiration-video'
+  | 'inspiration-types'
+  | 'inspiration-type'
   | 'projects'
   | 'project-details'
   | 'sponsors'

@@ -15,6 +15,10 @@ The pipeline is driven from the app (Inspiration → Add, or a video's Process b
 - `get_inspiration_video` — one video in full: description, summary, outline, beats, takeaways, links, mentions. Pass `includeTranscript: true` only when you actually need the words — transcripts run to thousands of lines.
 - `get_inspiration_transcript` — just the timestamped transcript.
 
+## Types
+
+A channel can be tagged with **inspiration types** — the lenses it is studied through (Tips, Editing Style, and whatever else the producer defines at Inspiration → Types). A tagged channel has each type's brief appended to its videos' takeaway extraction, so the same pipeline mines a gear channel for products and a storytelling channel for structure. `list_inspiration_channels` reports each channel's `typeIds`, and every type publishes its brief as the skill `inspiration-type-<id>`. See the "Inspiration types" skill for how they are written.
+
 ## Takeaways
 
 The last pass of the pipeline mines a studied video for what another creator could actually use: tips, techniques, concepts, hooks and formats, each with what the video does, how it could be applied, and the moment it comes up.

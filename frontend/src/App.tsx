@@ -28,6 +28,8 @@ import {EditRoutine} from './views/EditRoutine'
 import {EditSeries} from './views/EditSeries'
 import {Inspiration} from './views/Inspiration'
 import {InspirationChannelDetails} from './views/InspirationChannelDetails'
+import {InspirationTypeDetails} from './views/InspirationTypeDetails'
+import {InspirationTypes} from './views/InspirationTypes'
 import {InspirationVideoDetails} from './views/InspirationVideoDetails'
 import {LiveStreamDetails} from './views/LiveStreamDetails'
 import {Planning, type PlanningTab} from './views/Planning'
@@ -96,6 +98,8 @@ interface NavState {
   inspirationChannel: main.InspirationChannel | null
   /** The inspiration video being read; null = none. */
   inspirationVideo: main.InspirationVideo | null
+  /** The inspiration type being edited; null = a new one. */
+  inspirationType: main.InspirationType | null
   /** Tab to land on when opening Settings; null = default. */
   settingsTab: SettingsTab | null
 }
@@ -122,6 +126,7 @@ const INITIAL_NAV: NavState = {
   campaign: null,
   inspirationChannel: null,
   inspirationVideo: null,
+  inspirationType: null,
   settingsTab: null,
 }
 
@@ -147,6 +152,7 @@ const sameNav = (a: NavState, b: NavState) =>
   a.campaign === b.campaign &&
   a.inspirationChannel === b.inspirationChannel &&
   a.inspirationVideo === b.inspirationVideo &&
+  a.inspirationType === b.inspirationType &&
   a.settingsTab === b.settingsTab
 
 function App() {
@@ -329,6 +335,15 @@ function App() {
   const openInspirationVideo = useCallback(
     (video: main.InspirationVideo) =>
       navigate({view: 'inspiration-video', inspirationVideo: video}),
+    [navigate],
+  )
+  const openInspirationTypes = useCallback(
+    () => navigate({view: 'inspiration-types', inspirationType: null}),
+    [navigate],
+  )
+  const openInspirationType = useCallback(
+    (type: main.InspirationType | null) =>
+      navigate({view: 'inspiration-type', inspirationType: type}),
     [navigate],
   )
   // Status-bar chip for the inspiration pipeline: resolve the video by id,
@@ -595,6 +610,10 @@ function App() {
         return cur.inspirationChannel?.name || 'Channel'
       case 'inspiration-video':
         return cur.inspirationVideo?.title || 'Inspiration video'
+      case 'inspiration-types':
+        return 'Inspiration types'
+      case 'inspiration-type':
+        return cur.inspirationType?.name || 'New inspiration type'
       case 'sponsor-details':
         return cur.sponsor ? cur.sponsor.name || 'Sponsor' : 'New sponsor'
       case 'campaign-details':
@@ -739,7 +758,21 @@ function App() {
             )}
             {view === 'sponsors' && <Sponsors onOpenSponsor={openSponsor} />}
             {view === 'inspiration' && (
-              <Inspiration onOpenChannel={openInspirationChannel} />
+              <Inspiration
+                onOpenChannel={openInspirationChannel}
+                onOpenTypes={openInspirationTypes}
+              />
+            )}
+            {view === 'inspiration-types' && (
+              <InspirationTypes onOpenType={openInspirationType} />
+            )}
+            {view === 'inspiration-type' && (
+              <InspirationTypeDetails
+                type={cur.inspirationType}
+                onSaved={(type) =>
+                  navigate({view: 'inspiration-type', inspirationType: type})
+                }
+              />
             )}
             {view === 'inspiration-channel' && cur.inspirationChannel && (
               <InspirationChannelDetails

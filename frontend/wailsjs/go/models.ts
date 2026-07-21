@@ -1584,6 +1584,7 @@ export class InspirationChannel {
     addedAt: string;
     indexedAt: string;
     takeawaysSkill: string;
+    typeIds: string[];
 
     static createFrom(source: any = {}) {
         return new InspirationChannel(source);
@@ -1605,6 +1606,7 @@ export class InspirationChannel {
         this.addedAt = source["addedAt"];
         this.indexedAt = source["indexedAt"];
         this.takeawaysSkill = source["takeawaysSkill"];
+        this.typeIds = source["typeIds"];
     }
 
 	convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1777,6 +1779,28 @@ export class InspirationTakeaway {
         this.detail = source["detail"];
         this.apply = source["apply"];
         this.atSecs = source["atSecs"];
+    }
+}
+export class InspirationType {
+    id: string;
+    name: string;
+    summary: string;
+    brief: string;
+    createdAt: string;
+    updatedAt: string;
+
+    static createFrom(source: any = {}) {
+        return new InspirationType(source);
+    }
+
+    constructor(source: any = {}) {
+        if ('string' === typeof source) source = JSON.parse(source);
+        this.id = source["id"];
+        this.name = source["name"];
+        this.summary = source["summary"];
+        this.brief = source["brief"];
+        this.createdAt = source["createdAt"];
+        this.updatedAt = source["updatedAt"];
     }
 }
 export class InspirationVideo {

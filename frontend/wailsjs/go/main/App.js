@@ -186,6 +186,10 @@ export function DeleteInspirationChannel(arg1) {
   return window['go']['main']['App']['DeleteInspirationChannel'](arg1);
 }
 
+export function DeleteInspirationType(arg1) {
+  return window['go']['main']['App']['DeleteInspirationType'](arg1);
+}
+
 export function DeleteInspirationVideo(arg1) {
   return window['go']['main']['App']['DeleteInspirationVideo'](arg1);
 }
@@ -268,6 +272,10 @@ export function ExportPlanTimeline(arg1, arg2) {
 
 export function ExtractInspirationTakeaways(arg1) {
   return window['go']['main']['App']['ExtractInspirationTakeaways'](arg1);
+}
+
+export function GenerateInspirationTypeBrief(arg1, arg2) {
+  return window['go']['main']['App']['GenerateInspirationTypeBrief'](arg1, arg2);
 }
 
 export function GenerateClipIdeas(arg1, arg2, arg3) {
@@ -444,6 +452,14 @@ export function GetInspirationChannels() {
 
 export function GetInspirationTakeaways(arg1) {
   return window['go']['main']['App']['GetInspirationTakeaways'](arg1);
+}
+
+export function GetInspirationType(arg1) {
+  return window['go']['main']['App']['GetInspirationType'](arg1);
+}
+
+export function GetInspirationTypes() {
+  return window['go']['main']['App']['GetInspirationTypes']();
 }
 
 export function GetInspirationVideo(arg1) {
@@ -956,6 +972,14 @@ export function SetSponsorLogo(arg1, arg2) {
 
 export function SetStreamDescription(arg1, arg2) {
   return window['go']['main']['App']['SetStreamDescription'](arg1, arg2);
+}
+
+export function SaveInspirationType(arg1) {
+  return window['go']['main']['App']['SaveInspirationType'](arg1);
+}
+
+export function SetInspirationChannelTypes(arg1, arg2) {
+  return window['go']['main']['App']['SetInspirationChannelTypes'](arg1, arg2);
 }
 
 export function SetInspirationChannelTakeaways(arg1, arg2) {

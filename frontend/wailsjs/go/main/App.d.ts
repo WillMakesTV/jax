@@ -94,6 +94,8 @@ export function DeleteLocalStream(arg1:string):Promise<void>;
 
 export function DeleteInspirationChannel(arg1:string):Promise<void>;
 
+export function DeleteInspirationType(arg1:string):Promise<void>;
+
 export function DeleteInspirationVideo(arg1:string):Promise<void>;
 
 export function DeletePlannedStream(arg1:string):Promise<void>;
@@ -135,6 +137,8 @@ export function EnsureVideoPlanWorkspace(arg1:string):Promise<main.PlanWorkspace
 export function ExportPlanTimeline(arg1:string,arg2:main.PlanTimeline):Promise<main.EditWorkspaceInfo>;
 
 export function ExtractInspirationTakeaways(arg1:string):Promise<void>;
+
+export function GenerateInspirationTypeBrief(arg1:string,arg2:string):Promise<string>;
 
 export function GenerateClipIdeas(arg1:string,arg2:string,arg3:string):Promise<main.ClipIdeaSet>;
 
@@ -223,6 +227,10 @@ export function GetInspirationChannel(arg1:string):Promise<main.InspirationChann
 export function GetInspirationChannels():Promise<Array<main.InspirationChannel>>;
 
 export function GetInspirationTakeaways(arg1:string):Promise<Array<main.InspirationTakeawayRef>>;
+
+export function GetInspirationType(arg1:string):Promise<main.InspirationType>;
+
+export function GetInspirationTypes():Promise<Array<main.InspirationType>>;
 
 export function GetInspirationVideo(arg1:string):Promise<main.InspirationVideo>;
 
@@ -479,6 +487,10 @@ export function SetSetting(arg1:string,arg2:string):Promise<void>;
 export function SetSponsorLogo(arg1:string,arg2:string):Promise<main.Sponsor>;
 
 export function SetStreamDescription(arg1:string,arg2:string):Promise<void>;
+
+export function SaveInspirationType(arg1:main.InspirationType):Promise<main.InspirationType>;
+
+export function SetInspirationChannelTypes(arg1:string,arg2:Array<string>):Promise<main.InspirationChannel>;
 
 export function SetInspirationChannelTakeaways(arg1:string,arg2:string):Promise<main.InspirationChannel>;
 

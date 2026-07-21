@@ -68,6 +68,9 @@ type InspirationChannel struct {
 	// TakeawaysSkill overrides the "Inspiration takeaways" skill for this
 	// channel's videos; blank uses the app-wide brief.
 	TakeawaysSkill string `json:"takeawaysSkill"`
+	// TypeIDs are the inspiration types this channel is studied for (see
+	// inspiration_types.go); their briefs steer its extractions.
+	TypeIDs []string `json:"typeIds"`
 }
 
 // InspirationChapter is one chapter marker from the video's own metadata.
@@ -298,6 +301,9 @@ func fillInspirationChannel(c *InspirationChannel) {
 	if c.Links == nil {
 		c.Links = []InspirationLink{}
 	}
+	if c.TypeIDs == nil {
+		c.TypeIDs = []string{}
+	}
 }
 
 // GetInspirationVideos returns a channel's videos (all of them when channelID
@@ -366,6 +372,9 @@ func (a *App) upsertInspirationChannel(lib *inspirationLibrary, ch InspirationCh
 		ch.AddedAt = old.AddedAt
 		ch.IndexedAt = firstNonEmpty(ch.IndexedAt, old.IndexedAt)
 		ch.TakeawaysSkill = firstNonEmpty(ch.TakeawaysSkill, old.TakeawaysSkill)
+		if len(ch.TypeIDs) == 0 {
+			ch.TypeIDs = old.TypeIDs
+		}
 		lib.Channels[i] = ch
 		return ch.ID
 	}
@@ -1090,18 +1099,34 @@ func (a *App) takeawayInstructions(channelID string) (string, error) {
 	if channelID != "" {
 		for _, c := range a.getInspiration().Channels {
 			if c.ID == channelID && strings.TrimSpace(c.TakeawaysSkill) != "" {
-				return c.TakeawaysSkill, nil
+				return c.TakeawaysSkill +
+					inspirationTypeSection(a.inspirationTypeBriefs(channelID)), nil
 			}
 		}
 	}
+	base := ""
 	skill, err := a.getAppSkill(skillInspirationTakeaways)
-	if err != nil {
-		return defaultSkillContent(skillInspirationTakeaways)
+	if err == nil && strings.TrimSpace(skill.Content) != "" {
+		base = skill.Content
+	} else if base, err = defaultSkillContent(skillInspirationTakeaways); err != nil {
+		return "", err
 	}
-	if strings.TrimSpace(skill.Content) == "" {
-		return defaultSkillContent(skillInspirationTakeaways)
+	return base + inspirationTypeSection(a.inspirationTypeBriefs(channelID)), nil
+}
+
+// inspirationTypeSection renders the lenses a channel is studied through, to
+// be appended to the takeaway brief. Empty when it is tagged with none.
+func inspirationTypeSection(types []InspirationType) string {
+	if len(types) == 0 {
+		return ""
 	}
-	return skill.Content, nil
+	var b strings.Builder
+	b.WriteString("\n\n## What this channel is studied for\n")
+	b.WriteString("This channel is tagged with the lenses below. Weigh the takeaways towards them and leave out what they say to skip.\n")
+	for _, t := range types {
+		fmt.Fprintf(&b, "\n### %s\n%s\n", t.Name, t.Brief)
+	}
+	return b.String()
 }
 
 // SetInspirationChannelTakeaways overrides the takeaway brief for one

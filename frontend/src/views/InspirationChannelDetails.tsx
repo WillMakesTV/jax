@@ -4,6 +4,7 @@ import {
   ExternalLink,
   Eye,
   Link2,
+  Layers,
   Lightbulb,
   Loader2,
   Play,
@@ -18,9 +19,11 @@ import {
   DeleteInspirationVideo,
   GetInspirationChannel,
   GetInspirationTakeaways,
+  GetInspirationTypes,
   GetInspirationVideos,
   ProcessInspirationVideo,
   SetInspirationChannelTakeaways,
+  SetInspirationChannelTypes,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {PageHeader} from '../components/PageHeader'
@@ -208,7 +211,10 @@ export function InspirationChannelDetails({
       )}
 
       {tab === 'options' && (
-        <TakeawaySkillOptions channel={channel} onSaved={setChannel} />
+        <div className="flex flex-col gap-4">
+          <ChannelTypeOptions channel={channel} onSaved={setChannel} />
+          <TakeawaySkillOptions channel={channel} onSaved={setChannel} />
+        </div>
       )}
 
       <AddInspirationModal open={addOpen} onClose={() => setAddOpen(false)} />
@@ -422,6 +428,89 @@ function ChannelTakeaways({
         </li>
       ))}
     </ul>
+  )
+}
+
+/**
+ * What this channel is studied for. Each tagged type's brief rides along with
+ * its videos' takeaway extraction (see the "Inspiration types" skill).
+ */
+function ChannelTypeOptions({
+  channel,
+  onSaved,
+}: {
+  channel: main.InspirationChannel
+  onSaved: (channel: main.InspirationChannel) => void
+}) {
+  const [types, setTypes] = useState<main.InspirationType[]>([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    GetInspirationTypes()
+      .then((t) => setTypes(t ?? []))
+      .catch(() => {})
+  }, [])
+
+  const toggle = async (id: string) => {
+    const next = channel.typeIds.includes(id)
+      ? channel.typeIds.filter((t) => t !== id)
+      : [...channel.typeIds, id]
+    setBusy(true)
+    setError('')
+    try {
+      onSaved(await SetInspirationChannelTypes(channel.id, next))
+    } catch (err) {
+      setError(inspirationError(err, 'That could not be saved.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="flex max-w-3xl flex-col gap-3 rounded-xl border border-edge bg-surface p-4">
+      <div>
+        <p className="text-sm font-semibold text-fg">Studied for</p>
+        <p className="mt-1 text-xs text-fg-muted">
+          The lenses this channel is mined through. Each one adds its brief to
+          the takeaway pass for this channel's videos; with none it is studied
+          generically.
+        </p>
+      </div>
+      {types.length === 0 ? (
+        <p className="text-sm text-fg-muted">
+          No types defined yet — add them from Inspiration → Types.
+        </p>
+      ) : (
+        <ul className="flex flex-wrap gap-2">
+          {types.map((t) => {
+            const on = channel.typeIds.includes(t.id)
+            return (
+              <li key={t.id}>
+                <button
+                  type="button"
+                  onClick={() => void toggle(t.id)}
+                  disabled={busy}
+                  title={t.summary}
+                  className={clsx(
+                    'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-colors disabled:opacity-50',
+                    on
+                      ? 'border-accent bg-accent text-accent-fg'
+                      : 'border-edge bg-bg text-fg-muted hover:bg-surface-hover hover:text-fg',
+                  )}
+                >
+                  <Layers size={12} aria-hidden />
+                  {t.name}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {error && (
+        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </section>
   )
 }
 

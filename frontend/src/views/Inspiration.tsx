@@ -1,4 +1,11 @@
-import {Clapperboard, Lightbulb, Loader2, Plus, Trash2} from 'lucide-react'
+import {
+  Clapperboard,
+  Layers,
+  Lightbulb,
+  Loader2,
+  Plus,
+  Trash2,
+} from 'lucide-react'
 import {useCallback, useEffect, useState} from 'react'
 import {
   AddInspirationChannel,
@@ -26,9 +33,12 @@ export function inspirationError(err: unknown, fallback: string): string {
  */
 export function Inspiration({
   onOpenChannel,
+  onOpenTypes,
 }: {
   /** Open a channel's page. */
   onOpenChannel: (channel: main.InspirationChannel) => void
+  /** Open the inspiration types listing. */
+  onOpenTypes: () => void
 }) {
   const [channels, setChannels] = useState<main.InspirationChannel[]>([])
   const [videos, setVideos] = useState<main.InspirationVideo[]>([])
@@ -54,16 +64,27 @@ export function Inspiration({
       <PageHeader
         description="Reference videos worth studying — downloaded, transcribed, and broken down, grouped by the channel they came from."
         actions={
-          channels.length > 0 && (
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setAddOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90"
+              onClick={onOpenTypes}
+              title="What channels are studied for"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
             >
-              <Plus size={14} aria-hidden />
-              Add inspiration
+              <Layers size={14} aria-hidden />
+              Types
             </button>
-          )
+            {channels.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setAddOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90"
+              >
+                <Plus size={14} aria-hidden />
+                Add inspiration
+              </button>
+            )}
+          </div>
         }
       />
 
