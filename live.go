@@ -92,6 +92,32 @@ func (a *App) GetLiveStreams() []LiveStream {
 	return out
 }
 
+// liveSnapshotTTL is how long a live snapshot serves the Browser Sources. A
+// page polling every couple of seconds must not turn into a platform API call
+// every couple of seconds; viewer counts move slowly enough that this is
+// invisible on stream.
+const liveSnapshotTTL = 20 * time.Second
+
+// liveSnapshot returns GetLiveStreams' answer, memoised for liveSnapshotTTL.
+// Never returns nil.
+func (a *App) liveSnapshot() []LiveStream {
+	a.mu.Lock()
+	if a.liveSnap != nil && time.Since(a.liveSnapAt) < liveSnapshotTTL {
+		snap := a.liveSnap
+		a.mu.Unlock()
+		return snap
+	}
+	a.mu.Unlock()
+
+	fresh := a.GetLiveStreams()
+
+	a.mu.Lock()
+	a.liveSnap = fresh
+	a.liveSnapAt = time.Now()
+	a.mu.Unlock()
+	return fresh
+}
+
 // ---------------------------------------------------------------------------
 // Shared HTTP helper
 // ---------------------------------------------------------------------------

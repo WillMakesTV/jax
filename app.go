@@ -31,6 +31,12 @@ type App struct {
 	// chat polls (guarded by mu; see chat.go).
 	ytChatID string
 
+	// liveSnap memoises the platforms' live state for surfaces that poll far
+	// faster than the platform APIs should be called — the Browser Sources
+	// above all (guarded by mu; see liveSnapshot in live.go).
+	liveSnap   []LiveStream
+	liveSnapAt time.Time
+
 	// kickAuth is the in-flight Kick browser sign-in, nil when none is
 	// pending (guarded by mu; see kick.go).
 	kickAuth *kickAuthState

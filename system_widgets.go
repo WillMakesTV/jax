@@ -166,6 +166,25 @@ func (a *App) serveUnifiedChat(w http.ResponseWriter, r *http.Request, action st
 				channels[s.Name] = s.Account
 			}
 		}
+		// Who is on the air and how many are watching, for the header strip.
+		// The snapshot is memoised, so this page's polling never becomes
+		// platform API polling.
+		type liveChannel struct {
+			Platform string `json:"platform"`
+			Channel  string `json:"channel"`
+			Viewers  int    `json:"viewers"`
+		}
+		live := []liveChannel{}
+		for _, ls := range a.liveSnapshot() {
+			if !ls.Live {
+				continue
+			}
+			live = append(live, liveChannel{
+				Platform: ls.Platform,
+				Channel:  firstNonEmpty(ls.ChannelName, channels[ls.Platform]),
+				Viewers:  ls.ViewerCount,
+			})
+		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"sessionActive": session.Active,
@@ -173,6 +192,7 @@ func (a *App) serveUnifiedChat(w http.ResponseWriter, r *http.Request, action st
 			// Follows, subs, gifts, and raids, run inline with the chat.
 			"events":   a.GetSessionLiveEvents(50),
 			"channels": channels,
+			"live":     live,
 		})
 	case "user":
 		// The user card behind clicking a message: profile info, the
@@ -285,6 +305,35 @@ const unifiedChatPage = `<!DOCTYPE html>
   #wrap {
     display: flex; flex-direction: column; height: 100vh;
     box-sizing: border-box; padding: 12px;
+  }
+  /* Who is on the air, above the chat: one chip per live channel. */
+  #live {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;
+  }
+  #live:empty { display: none; }
+  .chan {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    font-size: 12px; font-weight: 700; color: #fff;
+  }
+  .chan svg { width: 14px; height: 14px; flex: none; fill: currentColor; }
+  .chan .who {
+    max-width: 120px; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; color: rgba(255, 255, 255, 0.75);
+  }
+  .chan .viewers {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .chan .dot {
+    width: 6px; height: 6px; border-radius: 50%; background: #ff4b4b;
+    animation: livepulse 2s ease-in-out infinite;
+  }
+  @keyframes livepulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
   }
   #list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
   #list > :first-child { margin-top: auto; }
@@ -419,6 +468,7 @@ const unifiedChatPage = `<!DOCTYPE html>
 </head>
 <body>
 <div id="wrap">
+  <div id="live"></div>
   <div id="empty" style="display: none"></div>
   <div id="list"></div>
   <form id="form">
@@ -432,6 +482,7 @@ const unifiedChatPage = `<!DOCTYPE html>
 (function () {
   'use strict'
   var base = location.pathname.replace(/\/$/, '')
+  var liveBar = document.getElementById('live')
   var list = document.getElementById('list')
   var empty = document.getElementById('empty')
   var form = document.getElementById('form')
@@ -467,20 +518,57 @@ const unifiedChatPage = `<!DOCTYPE html>
     return channels[platform] || platform
   }
 
+  function platformSvg(platform) {
+    var path = PLATFORM_PATHS[platform]
+    if (!path) return null
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    svg.setAttribute('viewBox', '0 0 24 24')
+    var p = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    p.setAttribute('d', path)
+    svg.appendChild(p)
+    svg.style.color = PLATFORM_COLORS[platform] || '#ffffff'
+    return svg
+  }
+
+  function fmtCount(n) {
+    if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M'
+    if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K'
+    return String(n)
+  }
+
+  // The header strip: one chip per channel on the air — its logo, its name,
+  // and how many are watching there right now.
+  function renderLive(live) {
+    liveBar.textContent = ''
+    ;(live || []).forEach(function (ch) {
+      var chip = document.createElement('span')
+      chip.className = 'chan'
+      chip.title = (ch.channel || ch.platform) + ' — live'
+      var svg = platformSvg(ch.platform)
+      if (svg) chip.appendChild(svg)
+      var who = document.createElement('span')
+      who.className = 'who'
+      who.textContent = ch.channel || ch.platform
+      chip.appendChild(who)
+      var viewers = document.createElement('span')
+      viewers.className = 'viewers'
+      var dot = document.createElement('span')
+      dot.className = 'dot'
+      viewers.appendChild(dot)
+      var count = document.createElement('span')
+      count.textContent = fmtCount(ch.viewers || 0)
+      viewers.appendChild(count)
+      chip.appendChild(viewers)
+      liveBar.appendChild(chip)
+    })
+  }
+
   // Logo + channel name, inline: the source badge every row carries.
   function sourceEl(platform) {
     var wrap = document.createElement('span')
     wrap.className = 'source'
-    var path = PLATFORM_PATHS[platform]
-    if (path) {
-      var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-      svg.setAttribute('viewBox', '0 0 24 24')
-      var p = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-      p.setAttribute('d', path)
-      svg.appendChild(p)
-      svg.style.color = PLATFORM_COLORS[platform] || '#ffffff'
-      wrap.appendChild(svg)
-    }
+    var svg = platformSvg(platform)
+    if (svg) wrap.appendChild(svg)
     var name = document.createElement('span')
     name.textContent = platformLabel(platform)
     wrap.appendChild(name)
@@ -623,6 +711,7 @@ const unifiedChatPage = `<!DOCTYPE html>
     var messages = data.messages || []
     var events = data.events || []
     channels = data.channels || {}
+    renderLive(data.live)
     if (messages.length === 0 && events.length === 0) {
       list.style.display = 'none'
       empty.style.display = 'flex'
