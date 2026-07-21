@@ -830,10 +830,7 @@ function App() {
               />
             )}
             {view === 'video-details' && detailVideo && (
-              <VideoDetails
-                video={detailVideo}
-                onBack={() => setView('videos')}
-              />
+              <VideoDetails video={detailVideo} />
             )}
             {view === 'settings' && (
               <Settings

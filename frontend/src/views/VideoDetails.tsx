@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   Calendar,
   Clapperboard,
   ExternalLink,
@@ -20,7 +19,6 @@ import {platformName} from '../services/services'
 
 interface VideoDetailsProps {
   video: main.Video
-  onBack: () => void
 }
 
 /**
@@ -28,7 +26,7 @@ interface VideoDetailsProps {
  * top viewer comments, from the backend's 1-hour cache with a force-refresh
  * CTA.
  */
-export function VideoDetails({video, onBack}: VideoDetailsProps) {
+export function VideoDetails({video}: VideoDetailsProps) {
   const [details, setDetails] = useState<main.VideoDetails | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -61,15 +59,7 @@ export function VideoDetails({video, onBack}: VideoDetailsProps) {
 
   return (
     <div className="flex flex-col">
-      <button
-        type="button"
-        onClick={onBack}
-        className="mb-4 inline-flex w-fit items-center gap-1.5 text-sm text-fg-muted transition-colors hover:text-fg"
-      >
-        <ArrowLeft size={16} aria-hidden />
-        Back to Videos
-      </button>
-
+      {/* No local back link: the top bar's global back covers it. */}
       <PageHeader
         description={`Hosted on ${platformName(v.platform)}${
           v.channelName ? ` · ${v.channelName}` : ''
