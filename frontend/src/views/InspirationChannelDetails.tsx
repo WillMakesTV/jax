@@ -188,7 +188,7 @@ export function InspirationChannelDetails({
             transcribe, and break it down.
           </p>
         ) : (
-          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {videos.map((v) => (
               <VideoCard key={v.id} video={v} onOpen={() => onOpenVideo(v)} />
             ))}
