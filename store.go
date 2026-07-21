@@ -216,6 +216,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 	badges       TEXT NOT NULL DEFAULT '[]',
 	color        TEXT NOT NULL DEFAULT '',
 	text         TEXT NOT NULL,
+	rich_text    TEXT NOT NULL DEFAULT '',
 	at           INTEGER NOT NULL,
 	read         INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (platform, id)
@@ -275,6 +276,7 @@ CREATE TABLE IF NOT EXISTS dev_ai_debug_fixed (
 		`ALTER TABLE dev_ai_debug_fixed ADD COLUMN issue_url TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE dev_ai_debug_fixed ADD COLUMN issue_number INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE dev_ai_debug_fixed ADD COLUMN read INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE chat_messages ADD COLUMN rich_text TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil &&
 			!strings.Contains(err.Error(), "duplicate column name") {
@@ -987,11 +989,11 @@ func (s *Store) saveChatMessages(items []StoredChatMessage, protect [][2]int64) 
 		}
 		if _, err := tx.Exec(
 			`INSERT INTO chat_messages
-				(platform, id, author, author_id, author_login, avatar_url, badges, color, text, at, read)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				(platform, id, author, author_id, author_login, avatar_url, badges, color, text, rich_text, at, read)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			 ON CONFLICT(platform, id) DO NOTHING`,
 			m.Platform, m.ID, m.Author, m.AuthorID, m.AuthorLogin,
-			m.AvatarURL, string(badges), m.Color, m.Text, m.At, boolToInt(m.Read),
+			m.AvatarURL, string(badges), m.Color, m.Text, m.RichText, m.At, boolToInt(m.Read),
 		); err != nil {
 			return err
 		}
@@ -1016,7 +1018,7 @@ func (s *Store) saveChatMessages(items []StoredChatMessage, protect [][2]int64) 
 // the rolling log's cap.
 func (s *Store) getChatBetween(lo, hi int64) ([]StoredChatMessage, error) {
 	rows, err := s.db.Query(
-		`SELECT platform, id, author, author_id, author_login, avatar_url, badges, color, text, at, read
+		`SELECT platform, id, author, author_id, author_login, avatar_url, badges, color, text, rich_text, at, read
 		 FROM chat_messages WHERE at BETWEEN ? AND ? ORDER BY at ASC`, lo, hi,
 	)
 	if err != nil {
@@ -1031,7 +1033,7 @@ func (s *Store) getChatBetween(lo, hi int64) ([]StoredChatMessage, error) {
 		var read int
 		if err := rows.Scan(
 			&m.Platform, &m.ID, &m.Author, &m.AuthorID, &m.AuthorLogin,
-			&m.AvatarURL, &badges, &m.Color, &m.Text, &m.At, &read,
+			&m.AvatarURL, &badges, &m.Color, &m.Text, &m.RichText, &m.At, &read,
 		); err != nil {
 			return nil, err
 		}
@@ -1165,7 +1167,7 @@ func (s *Store) streamSessionWindows() ([][2]string, error) {
 // getChatHistory returns the newest limit messages in chronological order.
 func (s *Store) getChatHistory(limit int) ([]StoredChatMessage, error) {
 	rows, err := s.db.Query(
-		`SELECT platform, id, author, author_id, author_login, avatar_url, badges, color, text, at, read
+		`SELECT platform, id, author, author_id, author_login, avatar_url, badges, color, text, rich_text, at, read
 		 FROM (
 			SELECT * FROM chat_messages ORDER BY at DESC LIMIT ?
 		 ) ORDER BY at ASC`, limit,
@@ -1182,7 +1184,7 @@ func (s *Store) getChatHistory(limit int) ([]StoredChatMessage, error) {
 		var read int
 		if err := rows.Scan(
 			&m.Platform, &m.ID, &m.Author, &m.AuthorID, &m.AuthorLogin,
-			&m.AvatarURL, &badges, &m.Color, &m.Text, &m.At, &read,
+			&m.AvatarURL, &badges, &m.Color, &m.Text, &m.RichText, &m.At, &read,
 		); err != nil {
 			return nil, err
 		}

@@ -208,8 +208,9 @@ func (a *App) serveUnifiedChat(w http.ResponseWriter, r *http.Request, action st
 // hover timestamps, a click-through user card (profile, their stored
 // messages, and Twitch's popout viewer card for ban/timeout/mod actions),
 // and a send box that broadcasts to every connected channel. Message
-// content is rendered via textContent only — chat text never becomes
-// markup.
+// content is rendered as text nodes only — chat text never becomes markup;
+// the one exception is Kick's emote markup, which becomes an <img> built
+// from the emote's numeric id (see appendBody).
 const unifiedChatPage = `<!DOCTYPE html>
 <html>
 <head>
@@ -259,6 +260,9 @@ const unifiedChatPage = `<!DOCTYPE html>
     letter-spacing: 0.06em; padding: 1px 6px; border-radius: 999px; color: #fff;
   }
   .author { font-weight: 700; margin-right: 6px; }
+  /* Kick emotes, drawn inline at line height (see appendBody). */
+  .emote { height: 22px; width: auto; vertical-align: -5px; }
+  .past .emote { height: 18px; vertical-align: -4px; }
   .time {
     position: absolute; top: 7px; right: 10px;
     font-size: 11px; color: rgba(255, 255, 255, 0.5);
@@ -361,6 +365,37 @@ const unifiedChatPage = `<!DOCTYPE html>
     return span
   }
 
+  // Kick inlines its emotes in the message as "[emote:12345:catJAM]"; draw
+  // them from Kick's file host, keyed on the id (digits only, so nothing a
+  // chatter types can escape into the URL). Text still goes in as text
+  // nodes — chat content never becomes markup.
+  var EMOTE_RE = /\[emote:(\d+):([^\]]*)\]/g
+
+  function appendBody(parent, m) {
+    var source = m.richText || ''
+    if (!source) {
+      parent.appendChild(document.createTextNode(m.text || ''))
+      return
+    }
+    var last = 0
+    EMOTE_RE.lastIndex = 0
+    for (var hit = EMOTE_RE.exec(source); hit; hit = EMOTE_RE.exec(source)) {
+      if (hit.index > last) {
+        parent.appendChild(document.createTextNode(source.slice(last, hit.index)))
+      }
+      var img = document.createElement('img')
+      img.className = 'emote'
+      img.src = 'https://files.kick.com/emotes/' + hit[1] + '/fullsize'
+      img.alt = hit[2]
+      img.title = hit[2]
+      parent.appendChild(img)
+      last = hit.index + hit[0].length
+    }
+    if (last < source.length) {
+      parent.appendChild(document.createTextNode(source.slice(last)))
+    }
+  }
+
   function render(data) {
     var messages = data.messages || []
     if (messages.length === 0) {
@@ -392,7 +427,7 @@ const unifiedChatPage = `<!DOCTYPE html>
       author.textContent = m.author
       if (m.color) author.style.color = m.color
       row.appendChild(author)
-      row.appendChild(document.createTextNode(m.text))
+      appendBody(row, m)
       var time = document.createElement('span')
       time.className = 'time'
       time.textContent = fmtTime(m.at)
@@ -510,7 +545,7 @@ const unifiedChatPage = `<!DOCTYPE html>
             t.className = 't'
             t.textContent = fmtTime(pm.at)
             row.appendChild(t)
-            row.appendChild(document.createTextNode(pm.text))
+            appendBody(row, pm)
             hist.appendChild(row)
           })
         }

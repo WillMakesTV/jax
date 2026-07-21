@@ -26,8 +26,12 @@ type StoredChatMessage struct {
 	Badges      []string `json:"badges"`
 	Color       string   `json:"color"`
 	Text        string   `json:"text"`
-	At          int64    `json:"at"` // unix millis
-	Read        bool     `json:"read"`
+	// RichText is the message with its platform emote markup intact (Kick's
+	// "[emote:12345:catJAM]"), for displays that draw the emotes; empty when
+	// the line carries none. Text is always the plain-language version.
+	RichText string `json:"richText"`
+	At       int64  `json:"at"` // unix millis
+	Read     bool   `json:"read"`
 }
 
 // SaveChatMessages appends new messages to the local chat log. Messages

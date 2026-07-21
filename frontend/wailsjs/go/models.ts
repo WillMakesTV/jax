@@ -1926,6 +1926,7 @@ export class RoutineStep {
 	    badges: string[];
 	    color: string;
 	    text: string;
+	    richText: string;
 	    at: number;
 	    read: boolean;
 	
@@ -1944,6 +1945,7 @@ export class RoutineStep {
 	        this.badges = source["badges"];
 	        this.color = source["color"];
 	        this.text = source["text"];
+	        this.richText = source["richText"];
 	        this.at = source["at"];
 	        this.read = source["read"];
 	    }

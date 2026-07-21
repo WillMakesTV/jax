@@ -139,6 +139,7 @@ export function ChatProvider({children}: {children: ReactNode}) {
         badges: m.badges,
         color: m.color,
         text: m.text,
+        richText: m.richText ?? '',
         at: m.at,
         read: m.read,
       })),
@@ -171,6 +172,7 @@ export function ChatProvider({children}: {children: ReactNode}) {
           badges: m.badges ?? [],
           color: m.color,
           text: m.text,
+          richText: m.richText,
           at: m.at,
           read: m.read,
         }))

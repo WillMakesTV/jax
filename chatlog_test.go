@@ -29,6 +29,10 @@ func TestChatLogRoundTrip(t *testing.T) {
 	msgs := []StoredChatMessage{
 		{Platform: "twitch", ID: "a", Author: "Ann", Badges: []string{"VIP"}, Text: "hi", At: 1000, Read: false},
 		{Platform: "youtube", ID: "b", Author: "Bob", Badges: []string{}, Text: "yo", At: 2000, Read: true},
+		// Kick keeps its emote markup alongside the plain text so the
+		// overlays can draw the emotes.
+		{Platform: "kick", ID: "c", Author: "Cal", Badges: []string{}, Text: "hey catJAM",
+			RichText: "hey [emote:12345:catJAM]", At: 3000, Read: true},
 	}
 	if err := s.saveChatMessages(msgs, nil); err != nil {
 		t.Fatalf("save: %v", err)
@@ -42,17 +46,20 @@ func TestChatLogRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("history: %v", err)
 	}
-	if len(got) != 2 {
-		t.Fatalf("want 2 messages, got %d", len(got))
+	if len(got) != 3 {
+		t.Fatalf("want 3 messages, got %d", len(got))
 	}
-	if got[0].ID != "a" || got[1].ID != "b" {
-		t.Fatalf("wrong order: %v %v", got[0].ID, got[1].ID)
+	if got[0].ID != "a" || got[1].ID != "b" || got[2].ID != "c" {
+		t.Fatalf("wrong order: %v %v %v", got[0].ID, got[1].ID, got[2].ID)
 	}
 	if got[0].Read || !got[1].Read {
 		t.Fatalf("read state lost: %+v", got)
 	}
 	if len(got[0].Badges) != 1 || got[0].Badges[0] != "VIP" {
 		t.Fatalf("badges lost: %+v", got[0].Badges)
+	}
+	if got[2].RichText != "hey [emote:12345:catJAM]" || got[0].RichText != "" {
+		t.Fatalf("rich text lost: %q / %q", got[2].RichText, got[0].RichText)
 	}
 
 	if err := s.markAllChatRead(); err != nil {
