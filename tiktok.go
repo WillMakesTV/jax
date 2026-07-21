@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/platforms/tiktok"
 	"bp-temp/internal/httpx"
 	"bp-temp/internal/mediakit"
 	"bp-temp/internal/platform"
@@ -50,11 +51,6 @@ import (
 const (
 	tiktokAuthorizeURL   = "https://www.tiktok.com/v2/auth/authorize/"
 	tiktokTokenURL       = "https://open.tiktokapis.com/v2/oauth/token/"
-	tiktokUserInfoURL    = "https://open.tiktokapis.com/v2/user/info/"
-	tiktokCreatorInfoURL = "https://open.tiktokapis.com/v2/post/publish/creator_info/query/"
-	tiktokVideoInitURL   = "https://open.tiktokapis.com/v2/post/publish/video/init/"
-	tiktokVideoListURL   = "https://open.tiktokapis.com/v2/video/list/"
-	tiktokPublishStatus  = "https://open.tiktokapis.com/v2/post/publish/status/fetch/"
 
 	// The user-info scopes are split three ways, and asking for a field under
 	// the wrong one is a scope_not_authorized error, not a missing field:
@@ -332,18 +328,11 @@ func (e tiktokError) ok() bool {
 
 // fetchTikTokDisplayName resolves the account's display name for the status.
 func fetchTikTokDisplayName(token string) string {
-	var r struct {
-		Data struct {
-			User struct {
-				DisplayName string `json:"display_name"`
-			} `json:"user"`
-		} `json:"data"`
-	}
-	endpoint := tiktokUserInfoURL + "?fields=display_name"
-	if _, err := httpx.GetJSON(endpoint, map[string]string{"Authorization": "Bearer " + token}, &r); err != nil {
+	name, err := (tiktok.Client{Token: token}).DisplayName()
+	if err != nil {
 		return "TikTok account"
 	}
-	return firstNonEmpty(r.Data.User.DisplayName, "TikTok account")
+	return firstNonEmpty(name, "TikTok account")
 }
 
 // ---------------------------------------------------------------------------
@@ -403,9 +392,13 @@ func tiktokFailure(err error) string {
 
 // tiktokUserFields queries user/info for the named fields.
 func tiktokUserFields(conn serviceConn, fields string, out any) error {
-	_, err := httpx.GetJSON(tiktokUserInfoURL+"?fields="+fields,
-		map[string]string{"Authorization": "Bearer " + conn.token}, out)
-	return err
+	return tiktokClient(conn).UserFields(fields, out)
+}
+
+// tiktokClient adapts a stored connection into the Open API caller (see
+// internal/platforms/tiktok), which owns the endpoints and request shapes.
+func tiktokClient(conn serviceConn) tiktok.Client {
+	return tiktok.Client{Token: conn.token}
 }
 
 // fetchTikTokProfile reads the account's identity — and nothing but what
@@ -504,7 +497,6 @@ const tiktokViewsPageCap = 20
 // face: the UI says "across N videos" rather than claiming a lifetime figure it
 // didn't actually reach.
 func fetchTikTokViews(conn serviceConn) (views int64, videos int64, err error) {
-	endpoint := tiktokVideoListURL + "?fields=id,view_count"
 	cursor := int64(0)
 
 	for page := 0; page < tiktokViewsPageCap; page++ {
@@ -518,13 +510,7 @@ func fetchTikTokViews(conn serviceConn) (views int64, videos int64, err error) {
 			} `json:"data"`
 			Error tiktokError `json:"error"`
 		}
-		body := map[string]any{"max_count": 20}
-		if cursor > 0 {
-			body["cursor"] = cursor
-		}
-		if _, err := httpx.PostJSON(endpoint,
-			map[string]string{"Authorization": "Bearer " + conn.token},
-			body, &r); err != nil {
+		if err := tiktokClient(conn).ListVideos("id,view_count", cursor, 20, &r); err != nil {
 			return 0, 0, err
 		}
 		if !r.Error.ok() {
@@ -718,8 +704,7 @@ func tiktokPrivacyLevel(conn serviceConn) (string, error) {
 		} `json:"data"`
 		Error tiktokError `json:"error"`
 	}
-	if _, err := httpx.PostJSON(tiktokCreatorInfoURL, map[string]string{"Authorization": "Bearer " + conn.token},
-		map[string]any{}, &r); err != nil {
+	if err := tiktokClient(conn).CreatorInfo(&r); err != nil {
 		return "", err
 	}
 	if !r.Error.ok() {
@@ -761,11 +746,8 @@ func (a *App) fetchTikTokVideos(conn serviceConn) ([]Video, error) {
 		} `json:"data"`
 		Error tiktokError `json:"error"`
 	}
-	endpoint := tiktokVideoListURL +
-		"?fields=id,title,video_description,duration,cover_image_url,share_url,create_time,view_count"
-	if _, err := httpx.PostJSON(endpoint,
-		map[string]string{"Authorization": "Bearer " + conn.token},
-		map[string]any{"max_count": 20}, &r); err != nil {
+	const fields = "id,title,video_description,duration,cover_image_url,share_url,create_time,view_count"
+	if err := tiktokClient(conn).ListVideos(fields, 0, 20, &r); err != nil {
 		return nil, fmt.Errorf("%s", tiktokFailure(err))
 	}
 	if !r.Error.ok() {
@@ -840,7 +822,7 @@ func (a *App) applyPlanToTikTok(plan PlannedStream, _ *ContentSeries) string {
 		} `json:"data"`
 		Error tiktokError `json:"error"`
 	}
-	_, err = httpx.PostJSON(tiktokVideoInitURL, map[string]string{"Authorization": "Bearer " + conn.token},
+	_, err = tiktokClient(conn).InitPost(
 		map[string]any{
 			"post_info": map[string]any{
 				"title":           caption,

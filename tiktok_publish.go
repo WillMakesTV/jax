@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bp-temp/internal/httpx"
 	"bytes"
 	"fmt"
 	"io"
@@ -193,8 +192,7 @@ func (a *App) PublishPlanVideoToTikTok(planID, output, title, description string
 		} `json:"data"`
 		Error tiktokError `json:"error"`
 	}
-	_, err = httpx.PostJSON(tiktokVideoInitURL,
-		map[string]string{"Authorization": "Bearer " + conn.token},
+	_, err = tiktokClient(conn).InitPost(
 		map[string]any{
 			"post_info": map[string]any{
 				"title":           tiktokCaption(title, description),
@@ -328,9 +326,7 @@ func (a *App) awaitTikTokPost(conn serviceConn, publishID string) (string, error
 			} `json:"data"`
 			Error tiktokError `json:"error"`
 		}
-		if _, err := httpx.PostJSON(tiktokPublishStatus,
-			map[string]string{"Authorization": "Bearer " + conn.token},
-			map[string]any{"publish_id": publishID}, &r); err != nil {
+		if _, err := tiktokClient(conn).PublishStatus(publishID, &r); err != nil {
 			return "", err
 		}
 		if !r.Error.ok() {
