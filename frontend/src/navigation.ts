@@ -4,6 +4,7 @@ import {
   FolderKanban,
   Clapperboard,
   Handshake,
+  Lightbulb,
   Settings,
   type LucideIcon,
 } from 'lucide-react'
@@ -17,6 +18,7 @@ export type ViewId =
   | 'dashboard'
   | 'broadcast-plan'
   | 'broadcasting'
+  | 'inspiration'
   | 'projects'
   | 'project-details'
   | 'sponsors'
@@ -60,6 +62,9 @@ export const PRIMARY_NAV: NavItemConfig[] = [
   // so it sits at the end, with the sponsor relationships it feeds alongside.
   {id: 'projects', label: 'Projects', icon: FolderKanban},
   {id: 'sponsors', label: 'Sponsors', icon: Handshake},
+  // Inspiration is where ideas are gathered before any of the above; it sits
+  // last while it is still a placeholder.
+  {id: 'inspiration', label: 'Inspiration', icon: Lightbulb},
 ]
 
 /** Navigation item pinned to the bottom of the sidebar. */

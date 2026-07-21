@@ -25,6 +25,7 @@ import {Dashboard} from './views/Dashboard'
 import {DownloadVideo} from './views/DownloadVideo'
 import {EditRoutine} from './views/EditRoutine'
 import {EditSeries} from './views/EditSeries'
+import {Inspiration} from './views/Inspiration'
 import {LiveStreamDetails} from './views/LiveStreamDetails'
 import {Planning, type PlanningTab} from './views/Planning'
 import {PlanStream} from './views/PlanStream'
@@ -409,6 +410,7 @@ function App() {
         'broadcasting',
         'projects',
         'sponsors',
+        'inspiration',
         'obs',
         'videos',
         'settings',
@@ -610,6 +612,8 @@ function App() {
         return cur.project ? cur.project.title || 'Project' : 'New project'
       case 'sponsors':
         return 'Sponsors'
+      case 'inspiration':
+        return 'Inspiration'
       case 'sponsor-details':
         return cur.sponsor ? cur.sponsor.name || 'Sponsor' : 'New sponsor'
       case 'campaign-details':
@@ -753,6 +757,7 @@ function App() {
               <ProjectDetails project={cur.project} onBack={backToProjects} />
             )}
             {view === 'sponsors' && <Sponsors onOpenSponsor={openSponsor} />}
+            {view === 'inspiration' && <Inspiration />}
             {view === 'sponsor-details' && (
               <SponsorDetails
                 sponsor={cur.sponsor}
