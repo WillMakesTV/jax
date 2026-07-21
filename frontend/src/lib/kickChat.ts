@@ -84,6 +84,9 @@ export function connectKickChat(
   let ws: WebSocket | null = null
   let retry: number | undefined
   let closed = false
+  // Kick's follower broadcast is a running total; the last one seen tells a
+  // follow from an unfollow (see toKickLiveEvent).
+  const state: kickFeedState = {followers: 0}
 
   const start = () => {
     if (closed) return
@@ -130,7 +133,7 @@ export function connectKickChat(
       if (name === 'ChatMessageEvent') {
         handleChatMessage(data, onMessage)
       } else if (onEvent) {
-        const live = toKickLiveEvent(name, data)
+        const live = toKickLiveEvent(name, data, state)
         if (live) onEvent(live)
       }
     }
@@ -190,6 +193,12 @@ function handleChatMessage(
 const str = (v: unknown): string => (typeof v === 'string' ? v : '')
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0)
 
+/** What one connection remembers between socket frames. */
+interface kickFeedState {
+  /** The channel's follower total as of the last FollowersUpdated. */
+  followers: number
+}
+
 /**
  * Convert a Kick socket event into a feed event, or null to ignore. Mirrors
  * the vocabulary of twitchEventSub's toLiveEvent (follow/sub/gift/raid).
@@ -197,20 +206,34 @@ const num = (v: unknown): number => (typeof v === 'number' ? v : 0)
 function toKickLiveEvent(
   name: string,
   data: Record<string, unknown>,
+  state: kickFeedState,
 ): KickLiveEvent | null {
   const at = Date.now()
   switch (name) {
     case 'FollowersUpdated': {
-      // Fires on both follow and unfollow; only announce follows, and only
-      // when the follower is named.
+      // Kick broadcasts follows as a running total, and usually without a
+      // name — requiring one dropped every follow. Announce whoever is
+      // named, and otherwise announce the follow itself. Unfollows are the
+      // same event with the flag off or the total going down.
       const username = str(data.username)
-      if (!username || data.followed === false) return null
+      const count = num(data.followersCount) || num(data.followers_count)
+      const previous = state.followers
+      if (count > 0) state.followers = count
+      if (data.followed === false) return null
+      if (previous > 0 && count > 0 && count < previous) return null
+      if (!username && count === 0) return null
       return {
-        // Deterministic identity so a re-broadcast of the same follow dedupes.
-        id: `kickfollow:${username.toLowerCase()}`,
+        // Deterministic identity so a re-broadcast of the same follow
+        // dedupes: by follower when named, else by the total it landed on.
+        id: username
+          ? `kickfollow:${username.toLowerCase()}`
+          : `kickfollow:total:${count}`,
         type: 'follow',
-        author: username,
-        detail: 'followed the channel',
+        author: username || 'Someone',
+        detail:
+          count > 0
+            ? `followed the channel · ${count} followers`
+            : 'followed the channel',
         at,
       }
     }
