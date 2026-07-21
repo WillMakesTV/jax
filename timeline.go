@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bp-temp/internal/platform"
 	"bufio"
 	"encoding/json"
 	"fmt"
@@ -13,6 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"bp-temp/internal/mediakit"
+	"bp-temp/internal/platform"
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -340,61 +342,6 @@ func needsSourcePadding(segments []TimelineSegment) bool {
 	return false
 }
 
-// videoProps are the base render's properties, which every clip joined onto it
-// is normalized to.
-type videoProps struct {
-	width, height int
-	fps           string // ffmpeg r_frame_rate, e.g. "30000/1001"
-	hasAudio      bool
-}
-
-// probeVideo reads a video's dimensions, frame rate, and whether it carries
-// audio.
-func probeVideo(path string) (videoProps, error) {
-	var p videoProps
-	ffprobe, err := exec.LookPath("ffprobe")
-	if err != nil {
-		return p, fmt.Errorf("ffprobe was not found on PATH — it ships with ffmpeg and is needed to expand segments")
-	}
-	cmd := exec.Command(ffprobe,
-		"-v", "error",
-		"-show_entries", "stream=codec_type,width,height,r_frame_rate",
-		"-of", "json", path)
-	platform.HideWindow(cmd)
-	out, err := cmd.Output()
-	if err != nil {
-		return p, fmt.Errorf("could not read %s: %v", filepath.Base(path), err)
-	}
-	var probed struct {
-		Streams []struct {
-			CodecType  string `json:"codec_type"`
-			Width      int    `json:"width"`
-			Height     int    `json:"height"`
-			RFrameRate string `json:"r_frame_rate"`
-		} `json:"streams"`
-	}
-	if err := json.Unmarshal(out, &probed); err != nil {
-		return p, fmt.Errorf("could not read %s: %v", filepath.Base(path), err)
-	}
-	for _, s := range probed.Streams {
-		switch s.CodecType {
-		case "video":
-			if p.width == 0 && s.Width > 0 && s.Height > 0 {
-				p.width, p.height, p.fps = s.Width, s.Height, s.RFrameRate
-			}
-		case "audio":
-			p.hasAudio = true
-		}
-	}
-	if p.width == 0 || p.height == 0 {
-		return p, fmt.Errorf("%s has no video track", filepath.Base(path))
-	}
-	if p.fps == "" || p.fps == "0/0" {
-		p.fps = "30"
-	}
-	return p, nil
-}
-
 // paddedClip is one span of one input file in the final playback order.
 type paddedClip struct {
 	input      int // ffmpeg input index
@@ -427,14 +374,14 @@ func paddedClips(segments []TimelineSegment, inputOf map[string]int) []paddedCli
 // paddedFilter builds the filter_complex that trims every clip, normalizes it
 // to the base render's format (clips restored from source footage can differ in
 // resolution, frame rate, and audio layout), and concatenates the lot.
-func paddedFilter(clips []paddedClip, p videoProps, audio bool) (filter, vOut, aOut string) {
+func paddedFilter(clips []paddedClip, p mediakit.Props, audio bool) (filter, vOut, aOut string) {
 	var b strings.Builder
 	for i, c := range clips {
 		fmt.Fprintf(&b,
 			"[%d:v]trim=start=%.3f:end=%.3f,setpts=PTS-STARTPTS,"+
 				"scale=%d:%d:force_original_aspect_ratio=decrease,"+
 				"pad=%d:%d:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=%s[v%d];",
-			c.input, c.start, c.end, p.width, p.height, p.width, p.height, p.fps, i)
+			c.input, c.start, c.end, p.Width, p.Height, p.Width, p.Height, p.FPS, i)
 		if audio {
 			fmt.Fprintf(&b,
 				"[%d:a]atrim=start=%.3f:end=%.3f,asetpts=PTS-STARTPTS,"+
@@ -523,7 +470,7 @@ func (a *App) runTimelineExport(planID, ffmpeg, src, dst string, segments []Time
 // the rendered spans keep their overlays while the restored frames come raw
 // from the original video.
 func (a *App) runPaddedExport(planID, ffmpeg, src, dst string, segments []TimelineSegment) error {
-	base, err := probeVideo(src)
+	base, err := mediakit.Probe(src)
 	if err != nil {
 		return err
 	}
@@ -533,7 +480,7 @@ func (a *App) runPaddedExport(planID, ffmpeg, src, dst string, segments []Timeli
 	dir := a.editWorkspaceDir(planID)
 	inputOf := map[string]int{}
 	var paths []string
-	audio := base.hasAudio
+	audio := base.HasAudio
 	for _, s := range segments {
 		if s.Source == "" || (s.PadStart <= 0 && s.PadEnd <= 0) {
 			continue
@@ -545,11 +492,11 @@ func (a *App) runPaddedExport(planID, ffmpeg, src, dst string, segments []Timeli
 		if !fileExists(path) {
 			return fmt.Errorf("%s is not in the plan's workspace — refresh the workspace on the Editor tab, then reprocess", s.Source)
 		}
-		props, err := probeVideo(path)
+		props, err := mediakit.Probe(path)
 		if err != nil {
 			return err
 		}
-		if !props.hasAudio {
+		if !props.HasAudio {
 			audio = false
 		}
 		inputOf[s.Source] = len(paths) + 1

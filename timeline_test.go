@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"bp-temp/internal/mediakit"
 )
 
 func TestValidTimelineSegments(t *testing.T) {
@@ -258,17 +260,17 @@ func TestProbeVideo(t *testing.T) {
 	path := filepath.Join(dir, "base.mp4")
 	synthVideo(t, ffmpeg, path, 3, "320x240", 30)
 
-	p, err := probeVideo(path)
+	p, err := mediakit.Probe(path)
 	if err != nil {
 		t.Fatalf("probeVideo: %v", err)
 	}
-	if p.width != 320 || p.height != 240 {
-		t.Errorf("probed %dx%d, want 320x240", p.width, p.height)
+	if p.Width != 320 || p.Height != 240 {
+		t.Errorf("probed %dx%d, want 320x240", p.Width, p.Height)
 	}
-	if !p.hasAudio {
+	if !p.HasAudio {
 		t.Error("the test video has an audio track; probeVideo missed it")
 	}
-	if p.fps == "" {
+	if p.FPS == "" {
 		t.Error("probeVideo returned no frame rate")
 	}
 }
@@ -299,7 +301,7 @@ func TestPaddedRenderJoinsMismatchedSourceFootage(t *testing.T) {
 		{Start: 6, End: 8},
 	}
 
-	props, err := probeVideo(base)
+	props, err := mediakit.Probe(base)
 	if err != nil {
 		t.Fatalf("probeVideo: %v", err)
 	}
@@ -330,14 +332,14 @@ func TestPaddedRenderJoinsMismatchedSourceFootage(t *testing.T) {
 
 	// The restored footage was normalized to the render's frame, not the
 	// source's — otherwise the concat would have been rejected outright.
-	out, err := probeVideo(dst)
+	out, err := mediakit.Probe(dst)
 	if err != nil {
-		t.Fatalf("probeVideo(out): %v", err)
+		t.Fatalf("mediakit.Probe(out): %v", err)
 	}
-	if out.width != 320 || out.height != 240 {
-		t.Errorf("the render is %dx%d, want the base's 320x240", out.width, out.height)
+	if out.Width != 320 || out.Height != 240 {
+		t.Errorf("the render is %dx%d, want the base's 320x240", out.Width, out.Height)
 	}
-	if !out.hasAudio {
+	if !out.HasAudio {
 		t.Error("the render lost its audio track")
 	}
 }

@@ -1,16 +1,15 @@
 package main
 
 import (
-	"bp-temp/internal/platform"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
+
+	"bp-temp/internal/mediakit"
 )
 
 // ---------------------------------------------------------------------------
@@ -56,14 +55,14 @@ func (a *App) GenerateDownloadThumbnail(subfolder string) (string, error) {
 		if video == "" {
 			return "", fmt.Errorf("no downloaded video in %q to extract a thumbnail from", subfolder)
 		}
-		ffmpeg, err := exec.LookPath("ffmpeg")
+		ffmpeg, err := mediakit.FFmpeg("it is needed to extract a thumbnail")
 		if err != nil {
-			return "", fmt.Errorf("ffmpeg was not found on PATH — it is needed to extract a thumbnail")
+			return "", err
 		}
-		if err := extractFrame(ffmpeg, video, thumb, seek); err != nil {
+		if err := mediakit.ExtractFrame(ffmpeg, video, thumb, seek); err != nil {
 			// The seek may sit past the end of a short or misreported video;
 			// the first frame always exists.
-			if err = extractFrame(ffmpeg, video, thumb, 0); err != nil {
+			if err = mediakit.ExtractFrame(ffmpeg, video, thumb, 0); err != nil {
 				return "", fmt.Errorf("could not extract a thumbnail: %w", err)
 			}
 		}
@@ -101,34 +100,4 @@ func downloadVideoAndSeek(folder string) (video string, seekSecs int) {
 		return "", 0
 	}
 	return filepath.Join(folder, video), seekSecs
-}
-
-// extractFrame writes one frame of the video at the given offset as a JPEG,
-// scaled down to thumbnail size. Treats a missing/empty output as failure —
-// ffmpeg exits 0 on an out-of-range seek while writing nothing.
-func extractFrame(ffmpeg, video, out string, seekSecs int) error {
-	cmd := exec.Command(ffmpeg,
-		"-y", "-loglevel", "error",
-		"-ss", strconv.Itoa(seekSecs),
-		"-i", video,
-		"-frames:v", "1",
-		"-vf", "scale=640:-2",
-		"-q:v", "4",
-		out,
-	)
-	platform.HideWindow(cmd)
-	raw, err := cmd.CombinedOutput()
-	if err != nil {
-		_ = os.Remove(out)
-		msg := strings.TrimSpace(string(raw))
-		if len(msg) > 300 {
-			msg = msg[len(msg)-300:]
-		}
-		return fmt.Errorf("%s", firstNonEmpty(msg, err.Error()))
-	}
-	if info, statErr := os.Stat(out); statErr != nil || info.Size() == 0 {
-		_ = os.Remove(out)
-		return fmt.Errorf("no frame at %ds", seekSecs)
-	}
-	return nil
 }

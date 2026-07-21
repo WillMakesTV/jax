@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bp-temp/internal/mediakit"
 	"bp-temp/internal/platform"
 	"bytes"
 	"context"
@@ -656,9 +657,9 @@ func (a *App) fetchTikTokLive(conn serviceConn) LiveStream {
 // the plan has none), with a silent audio track — TikTok rejects videos
 // without audio streams.
 func (a *App) renderAnnouncementVideo(plan PlannedStream) (string, error) {
-	ffmpeg, err := exec.LookPath("ffmpeg")
+	ffmpeg, err := mediakit.FFmpeg("it renders the announcement video")
 	if err != nil {
-		return "", fmt.Errorf("ffmpeg was not found on PATH — it renders the announcement video")
+		return "", err
 	}
 	dir, err := dataDir()
 	if err != nil {
