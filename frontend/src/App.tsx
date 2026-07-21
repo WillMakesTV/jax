@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useMemo, useState} from 'react'
 import {
   GetDownloads,
+  GetInspirationVideo,
   GetPastStreams,
   GetProjects,
   GetSponsors,
@@ -328,6 +329,20 @@ function App() {
   const openInspirationVideo = useCallback(
     (video: main.InspirationVideo) =>
       navigate({view: 'inspiration-video', inspirationVideo: video}),
+    [navigate],
+  )
+  // Status-bar chip for the inspiration pipeline: resolve the video by id,
+  // then open its page.
+  const openInspirationVideoById = useCallback(
+    async (videoId: string) => {
+      try {
+        const video = await GetInspirationVideo(videoId)
+        if (!video) return
+        navigate({view: 'inspiration-video', inspirationVideo: video})
+      } catch {
+        // Lookup failed; stay where we are.
+      }
+    },
     [navigate],
   )
   const backToSponsors = useCallback(
@@ -908,6 +923,7 @@ function App() {
         onOpenPostStream={(startedAt, streamTab) =>
           void openStreamByStart(startedAt, streamTab)
         }
+        onOpenInspiration={(videoId) => void openInspirationVideoById(videoId)}
         onOpenFixNotice={openFixNotice}
       />
     </div>

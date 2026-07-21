@@ -18,6 +18,7 @@ import {PlanAiProvider} from './plans/PlanAiProvider'
 import {ProjectThumbsProvider} from './projects/ProjectThumbsProvider'
 import {SponsorAiProvider} from './sponsors/SponsorAiProvider'
 import {EditSessionProvider} from './editor/EditSessionProvider'
+import {InspirationProvider} from './inspiration/InspirationProvider'
 
 const container = document.getElementById('root')
 
@@ -41,7 +42,9 @@ root.render(
                                                             <ProjectThumbsProvider>
                                                                 <SponsorAiProvider>
                                                                     <EditSessionProvider>
-                                                                        <App/>
+                                                                        <InspirationProvider>
+                                                                            <App/>
+                                                                        </InspirationProvider>
                                                                     </EditSessionProvider>
                                                                 </SponsorAiProvider>
                                                             </ProjectThumbsProvider>

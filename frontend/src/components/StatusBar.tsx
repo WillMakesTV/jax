@@ -8,6 +8,7 @@ import {
   Eye,
   EyeOff,
   Gauge,
+  Lightbulb,
   Loader2,
   MessageSquare,
   Mic,
@@ -46,6 +47,10 @@ import {
   type ScriptNotice,
 } from '../editor/EditSessionProvider'
 import {useEvents} from '../events/EventsProvider'
+import {
+  useInspirationJobs,
+  type InspirationJob,
+} from '../inspiration/InspirationProvider'
 import {useCaptureHidden} from '../lib/captureHidden'
 import {formatCompact, formatDurationMs, formatKbps} from '../lib/format'
 import {aggregateLive, useLiveData} from '../live/LiveDataProvider'
@@ -79,6 +84,8 @@ interface StatusBarProps {
   /** Open the past stream the post-stream wrap-up is processing, on the tab
    *  matching the pipeline's stage (null = overview). */
   onOpenPostStream: (startedAt: string, tab: StreamTab | null) => void
+  /** Open the inspiration video being downloaded/transcribed/studied. */
+  onOpenInspiration: (videoId: string) => void
   /** Open the page a resolved bug report was filed on. */
   onOpenFixNotice: (notice: main.FixNotice) => void
 }
@@ -97,6 +104,7 @@ export function StatusBar({
   onOpenAiItem,
   onOpenEditSession,
   onOpenPostStream,
+  onOpenInspiration,
   onOpenFixNotice,
 }: StatusBarProps) {
   const {platforms, obs, mics, music, camera, micSourceName, obsConnected} =
@@ -108,6 +116,7 @@ export function StatusBar({
   const outline = useOutlineJobs()
   const aiQueue = useAiQueue()
   const editSession = useEditSession()
+  const inspiration = useInspirationJobs()
 
   // Prefer the designated primary mic; otherwise "on" when any mic is
   // unmuted. Hidden entirely when OBS is away or has no mic devices.
@@ -286,6 +295,10 @@ export function StatusBar({
         notice={vodTranscribe.notice}
         onOpen={onOpenTranscribing}
       />
+
+      {/* Inspiration pipeline (download → transcribe → study); click through
+          to the video being processed. */}
+      <InspirationStatus jobs={inspiration.jobs} onOpen={onOpenInspiration} />
 
       {/* Outline generation; click through to the stream's Outline tab. */}
       <OutlineStatus
@@ -882,6 +895,72 @@ function PostStreamStatusChip({
  * Transcription-queue chip: while jobs exist it is a button that jumps to the
  * stream being transcribed; afterwards the end-of-run notice lingers briefly.
  */
+/** How each pipeline step reads in the status bar. */
+const INSPIRATION_LABELS: Record<string, string> = {
+  downloading: 'Downloading',
+  transcribing: 'Transcribing',
+  analyzing: 'Studying',
+  ready: 'Studied',
+  error: 'Failed',
+}
+
+/**
+ * The inspiration library's pipeline: one chip for the video being worked on,
+ * with a count when others are queued behind it. Finished and failed runs
+ * linger briefly (see InspirationProvider) so a completed study is noticed.
+ */
+function InspirationStatus({
+  jobs,
+  onOpen,
+}: {
+  jobs: InspirationJob[]
+  onOpen: (videoId: string) => void
+}) {
+  if (jobs.length === 0) return null
+  const working = jobs.filter(
+    (j) => j.status !== 'ready' && j.status !== 'error',
+  )
+  const job = working[0] ?? jobs[jobs.length - 1]
+  const done = job.status === 'ready'
+  const failed = job.status === 'error'
+
+  const step = INSPIRATION_LABELS[job.status] ?? job.status
+  const progress =
+    job.status === 'downloading' && job.progress > 0
+      ? ` ${job.progress}%`
+      : job.status === 'transcribing' && job.progress > 60
+        ? ` ${Math.floor(job.progress / 60)}m in`
+        : ''
+  const queued = working.length > 1 ? ` · ${working.length - 1} queued` : ''
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(job.id)}
+      title={job.detail || 'Open the inspiration video being processed'}
+      className={
+        failed
+          ? 'inline-flex min-w-0 items-center gap-1.5 font-medium text-red-500 transition-colors hover:text-accent dark:text-red-400'
+          : done
+            ? 'inline-flex min-w-0 items-center gap-1.5 font-medium text-green-600 transition-colors hover:text-accent dark:text-green-400'
+            : 'inline-flex min-w-0 items-center gap-1.5 font-medium text-fg transition-colors hover:text-accent'
+      }
+    >
+      {done || failed ? (
+        <Lightbulb size={12} aria-hidden />
+      ) : (
+        <Loader2 size={12} aria-hidden className="animate-spin" />
+      )}
+      <span className="max-w-[22rem] truncate">
+        {done ? '✓ ' : ''}
+        {step}
+        {progress} — {job.title}
+        {queued}
+      </span>
+    </button>
+  )
+}
+
 function TranscribeStatus({
   jobs,
   notice,

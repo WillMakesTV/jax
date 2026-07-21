@@ -310,16 +310,27 @@ func (a *App) mutateInspirationVideo(id string, fn func(v *InspirationVideo)) {
 	}
 }
 
-// inspirationStatus records a pipeline step and reports it to open pages.
+// inspirationStatus records a pipeline step and reports it to open pages and
+// the status bar. The title rides along so the status-bar chip can name the
+// video without a lookup of its own.
 func (a *App) inspirationStatus(id, status, detail string, progress int) {
+	title := ""
 	a.mutateInspirationVideo(id, func(v *InspirationVideo) {
 		v.Status = status
 		v.StatusDetail = detail
 		v.Progress = progress
+		title = v.Title
 	})
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "inspiration:status", id, status, detail, progress)
+	a.emitInspirationStatus(id, title, status, detail, progress)
+}
+
+// emitInspirationStatus reports a pipeline step without touching the store —
+// for the moments the library was just written wholesale.
+func (a *App) emitInspirationStatus(id, title, status, detail string, progress int) {
+	if a.ctx == nil {
+		return
 	}
+	wruntime.EventsEmit(a.ctx, "inspiration:status", id, title, status, detail, progress)
 }
 
 // inspirationSidecar writes the embedded fetcher and returns the command to
@@ -638,9 +649,7 @@ func (a *App) processInspirationVideo(id, videoURL string) {
 	if err := a.saveInspiration(lib); err != nil {
 		log.Printf("jax: save inspiration: %v", err)
 	}
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "inspiration:status", id, inspirationTranscribing, "", 100)
-	}
+	a.emitInspirationStatus(id, meta.Video.Title, inspirationTranscribing, "", 100)
 
 	// --- Transcribe ---------------------------------------------------
 	lines, err := a.transcribeInspirationVideo(id, filepath.Join(root, filepath.FromSlash(folder), file))
@@ -652,9 +661,7 @@ func (a *App) processInspirationVideo(id, videoURL string) {
 		v.Transcript = lines
 		v.Status = inspirationAnalyzing
 	})
-	if a.ctx != nil {
-		wruntime.EventsEmit(a.ctx, "inspiration:status", id, inspirationAnalyzing, "", 0)
-	}
+	a.emitInspirationStatus(id, meta.Video.Title, inspirationAnalyzing, "", 0)
 
 	// --- Analyse ------------------------------------------------------
 	if err := a.analyzeInspirationVideo(id); err != nil {
