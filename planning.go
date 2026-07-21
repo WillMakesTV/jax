@@ -289,10 +289,7 @@ func (a *App) applyPlanToTwitch(plan PlannedStream, series *ContentSeries) strin
 		payload["content_classification_labels"] = labels
 	}
 
-	status, err := httpx.PatchJSON(
-		twitchChannelsURL+"?broadcaster_id="+conn.userID,
-		twitchHeaders(conn), payload,
-	)
+	status, err := twitchClient(conn).UpdateChannel(payload)
 	if err != nil {
 		log.Printf("jax: apply plan to twitch: %v", err)
 		if status == 401 || status == 403 {
@@ -779,19 +776,13 @@ func (a *App) twitchInfoStatus(plan PlannedStream) PlanChannelInfo {
 		return info
 	}
 	info.Connected = true
-	var resp struct {
-		Data []struct {
-			Title string `json:"title"`
-		} `json:"data"`
-	}
-	if _, err := httpx.GetJSON(
-		twitchChannelsURL+"?broadcaster_id="+conn.userID, twitchHeaders(conn), &resp,
-	); err != nil || len(resp.Data) == 0 {
+	channel, err := twitchClient(conn).ChannelInfo()
+	if err != nil {
 		log.Printf("jax: twitch info status: %v", err)
 		info.Detail = "Could not read the current stream info."
 		return info
 	}
-	info.CurrentTitle = resp.Data[0].Title
+	info.CurrentTitle = channel.Title
 	info.Matches = info.CurrentTitle == info.WantTitle
 	return info
 }

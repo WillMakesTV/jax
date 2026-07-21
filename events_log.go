@@ -2,6 +2,7 @@ package main
 
 import (
 	"bp-temp/internal/httpx"
+	"bp-temp/internal/platforms/twitch"
 	"log"
 	"time"
 )
@@ -193,7 +194,7 @@ func (a *App) fetchTwitchFollowers() []StoredLiveEvent {
 			FollowedAt string `json:"followed_at"`
 		} `json:"data"`
 	}
-	endpoint := twitchFollowersURL + "?first=100&broadcaster_id=" + conn.userID
+	endpoint := twitch.FollowersURL + "?first=100&broadcaster_id=" + conn.userID
 	if _, err := httpx.GetJSON(endpoint, twitchHeaders(conn), &resp); err != nil {
 		log.Printf("jax: twitch followers sync: %v", err)
 		return events

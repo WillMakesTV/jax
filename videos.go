@@ -375,15 +375,7 @@ func fetchTwitchVideos(conn serviceConn) ([]Video, error) {
 	// past.go excludes from the Streams page since it belongs on the live
 	// card instead. Find the current live stream id (if any) so its
 	// in-progress VOD can be excluded here too.
-	liveStreamID := ""
-	var liveResp struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if _, err := httpx.GetJSON(twitchStreamsURL+"?user_id="+conn.userID, headers, &liveResp); err == nil && len(liveResp.Data) > 0 {
-		liveStreamID = liveResp.Data[0].ID
-	}
+	liveStreamID, _ := twitchClient(conn).LiveStreamID()
 
 	var out []Video
 	cursor := ""

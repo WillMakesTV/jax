@@ -154,9 +154,6 @@ func atoi64(s string) int64 {
 // ---------------------------------------------------------------------------
 
 const (
-	twitchStreamsURL   = "https://api.twitch.tv/helix/streams"
-	twitchChannelsURL  = "https://api.twitch.tv/helix/channels"
-	twitchFollowersURL = "https://api.twitch.tv/helix/channels/followers"
 )
 
 func twitchHeaders(conn serviceConn) map[string]string {
@@ -230,23 +227,10 @@ func (a *App) fetchTwitchLive(conn serviceConn) LiveStream {
 		ls.Error = "Twitch account details unavailable — try reconnecting."
 		return ls
 	}
-	headers := twitchHeaders(conn)
+	client := twitchClient(conn)
 
-	// Current stream (empty data array = offline).
-	var streams struct {
-		Data []struct {
-			ID           string   `json:"id"`
-			GameName     string   `json:"game_name"`
-			Title        string   `json:"title"`
-			ViewerCount  int      `json:"viewer_count"`
-			StartedAt    string   `json:"started_at"`
-			Language     string   `json:"language"`
-			ThumbnailURL string   `json:"thumbnail_url"`
-			IsMature     bool     `json:"is_mature"`
-			Tags         []string `json:"tags"`
-		} `json:"data"`
-	}
-	status, err := httpx.GetJSON(twitchStreamsURL+"?user_id="+conn.userID, headers, &streams)
+	// Current stream (no data = offline).
+	s, live, status, err := client.CurrentStream()
 	if err != nil {
 		log.Printf("jax: twitch streams: %v", err)
 		if status == http.StatusUnauthorized {
@@ -257,8 +241,7 @@ func (a *App) fetchTwitchLive(conn serviceConn) LiveStream {
 		return ls
 	}
 
-	if len(streams.Data) > 0 {
-		s := streams.Data[0]
+	if live {
 		ls.Live = true
 		ls.Title = s.Title
 		ls.Category = s.GameName
@@ -286,59 +269,34 @@ func (a *App) fetchTwitchLive(conn serviceConn) LiveStream {
 	// refetched on every poll tick.
 	info, _, _, err := cachedJSON(a, keyTwitchChannelInfo, apiCacheTTL, false, func() (twitchChannelInfo, error) {
 		out := twitchChannelInfo{}
-		var channels struct {
-			Data []struct {
-				Title                       string   `json:"title"`
-				GameName                    string   `json:"game_name"`
-				BroadcasterLanguage         string   `json:"broadcaster_language"`
-				Delay                       int      `json:"delay"`
-				Tags                        []string `json:"tags"`
-				ContentClassificationLabels []string `json:"content_classification_labels"`
-				IsBrandedContent            bool     `json:"is_branded_content"`
-			} `json:"data"`
-		}
-		if _, err := httpx.GetJSON(twitchChannelsURL+"?broadcaster_id="+conn.userID, headers, &channels); err != nil {
+		channel, err := client.ChannelInfo()
+		if err != nil {
 			return out, err
 		}
-		if len(channels.Data) > 0 {
-			c := channels.Data[0]
-			out.Title = c.Title
-			out.Category = c.GameName
-			out.Language = c.BroadcasterLanguage
-			out.Delay = c.Delay
-			out.Tags = strings.Join(c.Tags, ", ")
-			out.Labels = strings.Join(c.ContentClassificationLabels, ", ")
-			out.Branded = c.IsBrandedContent
-		}
+		out.Title = channel.Title
+		out.Category = channel.GameName
+		out.Language = channel.BroadcasterLanguage
+		out.Delay = channel.Delay
+		out.Tags = strings.Join(channel.Tags, ", ")
+		out.Labels = strings.Join(channel.ContentClassificationLabels, ", ")
+		out.Branded = channel.IsBrandedContent
+
 		// Follower count needs moderator:read:followers for full data, but
 		// `total` is returned for the broadcaster's own token; tolerate failure.
-		var followers struct {
-			Total int64 `json:"total"`
-		}
-		if _, err := httpx.GetJSON(twitchFollowersURL+"?broadcaster_id="+conn.userID+"&first=1", headers, &followers); err == nil {
-			out.Followers = fmtCount(followers.Total)
-			out.FollowersN = followers.Total
+		if followers, err := client.FollowerCount(); err == nil {
+			out.Followers = fmtCount(followers)
+			out.FollowersN = followers
 		}
 		// Subscriber count + points (needs channel:read:subscriptions).
-		var subs struct {
-			Total  int64 `json:"total"`
-			Points int64 `json:"points"`
-		}
-		if _, err := httpx.GetJSON(twitch.SubscriptionsURL+"?broadcaster_id="+conn.userID+"&first=1", headers, &subs); err == nil {
-			out.Subscribers = fmtCount(subs.Total)
-			out.SubPoints = fmtCount(subs.Points)
-			out.SubscribersN = subs.Total
+		if total, points, err := client.SubscriberCount(); err == nil {
+			out.Subscribers = fmtCount(total)
+			out.SubPoints = fmtCount(points)
+			out.SubscribersN = total
 		}
 		// Channel branding (profile image + offline/banner image).
-		var users struct {
-			Data []struct {
-				ProfileImageURL string `json:"profile_image_url"`
-				OfflineImageURL string `json:"offline_image_url"`
-			} `json:"data"`
-		}
-		if _, err := httpx.GetJSON(twitch.UsersURL+"?id="+conn.userID, headers, &users); err == nil && len(users.Data) > 0 {
-			out.Avatar = users.Data[0].ProfileImageURL
-			out.Banner = users.Data[0].OfflineImageURL
+		if avatar, banner, err := client.Branding(); err == nil && avatar != "" {
+			out.Avatar = avatar
+			out.Banner = banner
 		}
 		return out, nil
 	})

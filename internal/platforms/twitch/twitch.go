@@ -30,6 +30,7 @@ const (
 	StreamsURL          = "https://api.twitch.tv/helix/streams"
 	VideosURL           = "https://api.twitch.tv/helix/videos"
 	ClipsURL            = "https://api.twitch.tv/helix/clips"
+	ChannelsURL         = "https://api.twitch.tv/helix/channels"
 )
 
 // Client is an authenticated Twitch caller.
@@ -301,4 +302,107 @@ func (c Client) ClipsPage(cursor string, first int) ([]Clip, string, error) {
 		return nil, "", err
 	}
 	return resp.Data, resp.Pagination.Cursor, nil
+}
+
+// Stream is the broadcaster's stream while it is on air. ThumbnailURL is a
+// size template ("{width}x{height}") until a caller fills it in.
+type Stream struct {
+	ID           string   `json:"id"`
+	GameName     string   `json:"game_name"`
+	Title        string   `json:"title"`
+	ViewerCount  int      `json:"viewer_count"`
+	StartedAt    string   `json:"started_at"`
+	Language     string   `json:"language"`
+	ThumbnailURL string   `json:"thumbnail_url"`
+	IsMature     bool     `json:"is_mature"`
+	Tags         []string `json:"tags"`
+}
+
+// CurrentStream returns the live stream and true, or false when the channel
+// is offline. The status rides along so a caller can tell "offline" from
+// "the token expired".
+func (c Client) CurrentStream() (Stream, bool, int, error) {
+	var streams struct {
+		Data []Stream `json:"data"`
+	}
+	status, err := httpx.GetJSON(StreamsURL+"?user_id="+url.QueryEscape(c.UserID),
+		c.Headers(), &streams)
+	if err != nil || len(streams.Data) == 0 {
+		return Stream{}, false, status, err
+	}
+	return streams.Data[0], true, status, nil
+}
+
+// Channel is the broadcaster's configured channel information — what the
+// stream will carry next time it goes live.
+type Channel struct {
+	Title                       string   `json:"title"`
+	GameName                    string   `json:"game_name"`
+	BroadcasterLanguage         string   `json:"broadcaster_language"`
+	Delay                       int      `json:"delay"`
+	Tags                        []string `json:"tags"`
+	ContentClassificationLabels []string `json:"content_classification_labels"`
+	IsBrandedContent            bool     `json:"is_branded_content"`
+}
+
+// ChannelInfo reads the channel's configured title, category and settings.
+func (c Client) ChannelInfo() (Channel, error) {
+	var channels struct {
+		Data []Channel `json:"data"`
+	}
+	if _, err := httpx.GetJSON(ChannelsURL+"?broadcaster_id="+url.QueryEscape(c.UserID),
+		c.Headers(), &channels); err != nil {
+		return Channel{}, err
+	}
+	if len(channels.Data) == 0 {
+		return Channel{}, fmt.Errorf("Twitch returned no channel information")
+	}
+	return channels.Data[0], nil
+}
+
+// UpdateChannel applies stream information (title, category, tags, content
+// labels) to the channel. Needs channel:manage:broadcast.
+func (c Client) UpdateChannel(payload map[string]any) (int, error) {
+	return httpx.PatchJSON(ChannelsURL+"?broadcaster_id="+url.QueryEscape(c.UserID),
+		c.Headers(), payload)
+}
+
+// Counts are the channel's audience totals: followers, and the subscriber
+// total with its points value. Each needs its own scope, so a caller may get
+// one without the other.
+func (c Client) FollowerCount() (int64, error) {
+	var followers struct {
+		Total int64 `json:"total"`
+	}
+	_, err := httpx.GetJSON(
+		FollowersURL+"?broadcaster_id="+url.QueryEscape(c.UserID)+"&first=1",
+		c.Headers(), &followers)
+	return followers.Total, err
+}
+
+// SubscriberCount returns the subscriber total and its points value.
+func (c Client) SubscriberCount() (total, points int64, err error) {
+	var subs struct {
+		Total  int64 `json:"total"`
+		Points int64 `json:"points"`
+	}
+	_, err = httpx.GetJSON(
+		SubscriptionsURL+"?broadcaster_id="+url.QueryEscape(c.UserID)+"&first=1",
+		c.Headers(), &subs)
+	return subs.Total, subs.Points, err
+}
+
+// Branding is the channel's profile and offline images.
+func (c Client) Branding() (profileImage, offlineImage string, err error) {
+	var users struct {
+		Data []struct {
+			ProfileImageURL string `json:"profile_image_url"`
+			OfflineImageURL string `json:"offline_image_url"`
+		} `json:"data"`
+	}
+	if _, err = httpx.GetJSON(UsersURL+"?id="+url.QueryEscape(c.UserID),
+		c.Headers(), &users); err != nil || len(users.Data) == 0 {
+		return "", "", err
+	}
+	return users.Data[0].ProfileImageURL, users.Data[0].OfflineImageURL, nil
 }
