@@ -923,6 +923,13 @@ func (a *App) GenerateEditDirections(planID, notes, current string) (string, err
 		fmt.Fprintf(&b, "Idea (what this video is about — the script must deliver on it):\n%s\n", strings.TrimSpace(plan.Description))
 	}
 	b.WriteString("\n")
+	// The plan's video style, when it has one: the document and its
+	// directives, so the directions come back in the style the video is
+	// meant to be made in (see video_style.go).
+	if style := a.videoStyleContext(plan.StyleID); style != "" {
+		b.WriteString(style)
+		b.WriteString("\n")
+	}
 	b.WriteString(a.editSourceNotes(plan))
 	// The brand's outward links (Profile → Links) always ride along, so
 	// outro/CTA beats point at the real socials/site.

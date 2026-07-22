@@ -448,6 +448,40 @@ func parseVideoStyleAnswer(text string) (string, []VideoStyleDirective) {
 	return strings.TrimSpace(out.Body), kept
 }
 
+// videoStyleContext renders a style for another feature's prompt: the
+// document it was written as, and the directives our videos are held to.
+// Blank when the id names no style, so a caller can add it unconditionally.
+func (a *App) videoStyleContext(styleID string) string {
+	if strings.TrimSpace(styleID) == "" {
+		return ""
+	}
+	style, err := a.GetVideoStyle(styleID)
+	if err != nil {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Video style: %s\n", style.Name)
+	b.WriteString("This video is made to the style below. Follow it — it is the producer's own standard, not a suggestion.\n")
+	if strings.TrimSpace(style.Body) != "" {
+		fmt.Fprintf(&b, "\n%s\n", strings.TrimSpace(style.Body))
+	}
+	if len(style.Directives) > 0 {
+		b.WriteString("\n## Directives — every one of these applies to this video\n")
+		for _, d := range style.Directives {
+			fmt.Fprintf(&b, "- ")
+			if d.Kind != "" {
+				fmt.Fprintf(&b, "[%s] ", d.Kind)
+			}
+			fmt.Fprintf(&b, "%s", d.Title)
+			if d.Detail != "" {
+				fmt.Fprintf(&b, " — %s", d.Detail)
+			}
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
 // videoStylePrompt lays the style's name and its takeaways out for the model.
 func videoStylePrompt(s VideoStyle) string {
 	var b strings.Builder

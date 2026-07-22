@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestVideoStyleSuggestAndStore(t *testing.T) {
 	a := newTestApp(t)
@@ -97,5 +100,38 @@ func TestParseVideoStyleAnswer(t *testing.T) {
 	body, directives = parseVideoStyleAnswer("## What this style is\nSlow.\n")
 	if body != "## What this style is\nSlow." || directives != nil {
 		t.Fatalf("markdown fallback: %q %+v", body, directives)
+	}
+}
+
+func TestVideoStyleContext(t *testing.T) {
+	a := newTestApp(t)
+
+	// No style on the plan (or an id that no longer resolves) adds nothing,
+	// so a caller can append it unconditionally.
+	if got := a.videoStyleContext(""); got != "" {
+		t.Fatalf("no style should render nothing: %q", got)
+	}
+	if got := a.videoStyleContext("style_gone"); got != "" {
+		t.Fatalf("an unknown style should render nothing: %q", got)
+	}
+
+	style, err := a.saveVideoStyle(VideoStyle{
+		Name: "Fast Cuts", Status: videoStyleReady,
+		Body: "## What this style is\nQuick.",
+		Directives: []VideoStyleDirective{
+			{Kind: "pacing", Title: "Cut on the beat", Detail: "Never hold past the point."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("save style: %v", err)
+	}
+	got := a.videoStyleContext(style.ID)
+	for _, want := range []string{
+		"Fast Cuts", "## What this style is", "Directives",
+		"[pacing] Cut on the beat — Never hold past the point.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("style context missing %q:\n%s", want, got)
+		}
 	}
 }

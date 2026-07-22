@@ -16,6 +16,7 @@ import {
   DeleteVideoPlan,
   EnsureVideoPlanWorkspace,
   GetPastStreams,
+  GetVideoStyles,
   ImportVideoPlanFootage,
   PickFootageFiles,
   RemoveVideoPlanFootage,
@@ -77,6 +78,10 @@ export function PlanVideo({
   const [step, setStep] = useState<1 | 2>(1)
   const [title, setTitle] = useState(plan?.title ?? '')
   const [format, setFormat] = useState<string>(plan?.format || 'long')
+  // The video style this plan is cut to. It rides along with script
+  // generation, so the directions come back in that style (see video_style.go).
+  const [styleId, setStyleId] = useState(plan?.styleId ?? '')
+  const [styles, setStyles] = useState<main.VideoStyle[]>([])
   // The stored plan behind the form. A brand-new plan is created (and its
   // workspace folder made) as the wizard advances past the idea step, so
   // recordings and imports have a home on disk from the start.
@@ -107,6 +112,11 @@ export function PlanVideo({
       .then((s) => setPastStreams(s ?? []))
       .catch(() => {})
       .finally(() => setStreamsLoaded(true))
+  }, [])
+  useEffect(() => {
+    GetVideoStyles()
+      .then((v) => setStyles(v ?? []))
+      .catch(() => {})
   }, [])
   const isSelected = (startedAt: string) =>
     sources.some((src) => src.startedAt === startedAt)
@@ -171,6 +181,7 @@ export function PlanVideo({
             id: '',
             title: title.trim(),
             format,
+            styleId,
             tags: [],
             streams: [],
             description: '',
@@ -252,6 +263,7 @@ export function PlanVideo({
           id: draft?.id ?? '',
           title: title.trim(),
           format,
+          styleId,
           tags: tags
             .split(',')
             .map((t) => t.trim())
@@ -354,6 +366,30 @@ export function PlanVideo({
                 </span>
               </button>
             ))}
+          </div>
+
+          <div>
+            <label htmlFor="video-plan-style" className={labelCls}>
+              Video style
+            </label>
+            <select
+              id="video-plan-style"
+              value={styleId}
+              onChange={(e) => setStyleId(e.target.value)}
+              className={field}
+            >
+              <option value="">No style</option>
+              {styles.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-xs text-fg-muted">
+              {styles.length === 0
+                ? 'Build a style on Videos → Video Style and it can be picked here.'
+                : 'The style and its directives are sent with the script, so the directions come back in the style this video is meant to be made in.'}
+            </p>
           </div>
 
           <div>

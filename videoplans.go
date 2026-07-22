@@ -37,6 +37,11 @@ type VideoPlan struct {
 	// Format distinguishes short-form (Shorts, clips) from long-form videos.
 	Format string   `json:"format"` // "short" | "long"
 	Tags   []string `json:"tags"`
+	// StyleID names the video style this plan is cut to ("" = none). The
+	// style and its directives ride along with script generation, so the
+	// directions come back in the style the video is meant to be made in
+	// (see video_style.go).
+	StyleID string `json:"styleId"`
 	// Streams are the past streams this video is sourced from.
 	Streams []VideoPlanStream `json:"streams"`
 	// Files are imported footage files (bare names) in the plan's edit

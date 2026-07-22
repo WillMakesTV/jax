@@ -2671,6 +2671,7 @@ export class RoutineStep {
 	    description: string;
 	    format: string;
 	    tags: string[];
+	    styleId: string;
 	    streams: VideoPlanStream[];
 	    files: string[];
 	    fileUrls: string[];
@@ -2694,6 +2695,7 @@ export class RoutineStep {
 	        this.description = source["description"];
 	        this.format = source["format"];
 	        this.tags = source["tags"];
+	        this.styleId = source["styleId"];
 	        this.streams = this.convertValues(source["streams"], VideoPlanStream);
 	        this.files = source["files"];
 	        this.fileUrls = source["fileUrls"];
