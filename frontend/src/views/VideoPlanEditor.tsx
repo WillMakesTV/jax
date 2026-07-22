@@ -1022,6 +1022,7 @@ export function VideoPlanEditor({
                       <Loader2 size={12} aria-hidden className="animate-spin" />
                       running…
                     </span>
+                    <RunningFor startedAt={r.startedAt} />
                     {/* Kill a stuck run: the live session's process tree, or
                         just closing out a row orphaned by an app restart. */}
                     <button
@@ -1118,6 +1119,31 @@ export function VideoPlanEditor({
         </div>
       </Modal>
     </div>
+  )
+}
+
+/**
+ * How long a run has been going, ticking every second. A render can take
+ * tens of minutes, and "running…" alone says nothing about whether it is
+ * progressing or wedged — the finished rows show their duration, so an
+ * in-flight one shows its clock.
+ */
+function RunningFor({startedAt}: {startedAt: string}) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  const started = new Date(startedAt).getTime()
+  if (!Number.isFinite(started)) return null
+  return (
+    <span
+      title={`Started ${formatDate(startedAt)}`}
+      className="shrink-0 font-medium tabular-nums text-fg"
+    >
+      {formatDurationMs(Math.max(0, now - started))}
+    </span>
   )
 }
 
