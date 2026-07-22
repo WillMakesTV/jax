@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"sort"
@@ -35,9 +36,10 @@ const (
 	videoStyleError    = "error"
 )
 
-// videoStyleMaxSources caps how many takeaways one style is built from — a
-// long enough brief to be specific, short enough to stay one prompt.
-const videoStyleMaxSources = 40
+// videoStyleMaxSources is a safety stop on how many takeaways one build
+// reads. Every takeaway the library holds goes into a style; this only keeps
+// an enormous library from becoming a prompt that cannot be answered.
+const videoStyleMaxSources = 200
 
 // VideoStyleSource is one takeaway a style was built from, snapshotted so the
 // style still says where its advice came from after the library moves on.
@@ -51,8 +53,17 @@ type VideoStyleSource struct {
 	VideoURL   string `json:"videoUrl"`
 }
 
-// VideoStyle is one written style: the takeaways it was built from and the
-// document the model wrote out of them.
+// VideoStyleDirective is one rule of our own: a takeaway turned into an
+// instruction for our videos. Takeaways describe what someone else did;
+// directives say what we do, and they are what the style is actually held to.
+type VideoStyleDirective struct {
+	Kind   string `json:"kind"` // pacing | sound | look | structure | packaging | other
+	Title  string `json:"title"`
+	Detail string `json:"detail"`
+}
+
+// VideoStyle is one written style: the takeaways it was built from, the
+// directives derived from them, and the document the model wrote.
 type VideoStyle struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -62,6 +73,8 @@ type VideoStyle struct {
 	StatusDetail string `json:"statusDetail"`
 	// Sources are the takeaways the build read, in the order they were given.
 	Sources []VideoStyleSource `json:"sources"`
+	// Directives are our own rules, derived from those takeaways.
+	Directives []VideoStyleDirective `json:"directives"`
 	// Body is the style itself, markdown.
 	Body      string `json:"body"`
 	CreatedAt string `json:"createdAt"`
@@ -72,6 +85,9 @@ type VideoStyle struct {
 func fillVideoStyle(s *VideoStyle) {
 	if s.Sources == nil {
 		s.Sources = []VideoStyleSource{}
+	}
+	if s.Directives == nil {
+		s.Directives = []VideoStyleDirective{}
 	}
 }
 
@@ -309,17 +325,19 @@ func (a *App) buildVideoStyle(id string) {
 		return
 	}
 	a.setVideoStyleStatus(id, videoStyleBuilding, "Writing the style")
-	body, err := a.askAIText(videoStyleInstructions, videoStylePrompt(style))
+	written, err := a.askAIText(videoStyleInstructions, videoStylePrompt(style))
 	if err != nil {
 		a.setVideoStyleStatus(id, videoStyleError, err.Error())
 		return
 	}
+	body, directives := parseVideoStyleAnswer(written)
 	current, err := a.GetVideoStyle(id)
 	if err != nil {
 		// Deleted while it was being written; nothing to store.
 		return
 	}
 	current.Body = body
+	current.Directives = directives
 	current.Status = videoStyleReady
 	current.StatusDetail = ""
 	saved, err := a.saveVideoStyle(current)
@@ -354,28 +372,34 @@ func (a *App) emitVideoStyleStatus(s VideoStyle) {
 	wruntime.EventsEmit(a.ctx, "videostyle:status", s.ID, s.Name, s.Status, s.StatusDetail)
 }
 
-// EditVideoStyle rewrites a style's document to an instruction — "cut the
-// rules about music", "make the structure section shorter" — against the body
-// as it currently stands. The takeaways it was built from ride along, so an
-// edit can reach back to the advice the style came out of rather than only
-// reshuffling the words already on the page. The rewritten markdown is
-// returned for the editor to accept or discard; nothing is stored here.
-func (a *App) EditVideoStyle(id, body, instruction string) (string, error) {
+// EditVideoStyle revises a style to an instruction — "cut the rules about
+// music", "make the directives shorter" — against the document and the
+// directives as they currently stand. The takeaways it was built from ride
+// along, so an edit can reach back to the advice the style came out of rather
+// than only reshuffling the words already on the page. The revision is stored
+// and the updated style returned.
+func (a *App) EditVideoStyle(id, body, instruction string) (VideoStyle, error) {
 	if strings.TrimSpace(instruction) == "" {
-		return "", fmt.Errorf("describe the edit you want")
+		return VideoStyle{}, fmt.Errorf("describe the edit you want")
 	}
 	style, err := a.GetVideoStyle(id)
 	if err != nil {
-		return "", err
+		return VideoStyle{}, err
 	}
+	// The caller passes the field's current text, which may hold keystrokes
+	// that were never saved; fall back to what is stored.
 	if strings.TrimSpace(body) == "" {
 		body = style.Body
 	}
 	if strings.TrimSpace(body) == "" {
-		return "", fmt.Errorf("there is no style to edit yet")
+		return VideoStyle{}, fmt.Errorf("there is no style to edit yet")
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Style\nName: %s\n\n## The style as it stands\n%s\n", style.Name, body)
+	b.WriteString("\n## Its directives\n")
+	for _, d := range style.Directives {
+		fmt.Fprintf(&b, "- [%s] %s — %s\n", d.Kind, d.Title, d.Detail)
+	}
 	b.WriteString("\n## The takeaways it was built from\n")
 	for _, src := range style.Sources {
 		fmt.Fprintf(&b, "- %s", src.Title)
@@ -385,7 +409,43 @@ func (a *App) EditVideoStyle(id, body, instruction string) (string, error) {
 		b.WriteString("\n")
 	}
 	fmt.Fprintf(&b, "\n## Instruction\n%s\n", instruction)
-	return a.askAIText(videoStyleEditInstructions, b.String())
+
+	written, err := a.askAIText(videoStyleEditInstructions, b.String())
+	if err != nil {
+		return VideoStyle{}, err
+	}
+	revised, directives := parseVideoStyleAnswer(written)
+	style.Body = revised
+	if len(directives) > 0 {
+		style.Directives = directives
+	}
+	return a.saveVideoStyle(style)
+}
+
+// parseVideoStyleAnswer reads the model's answer: the JSON object it is asked
+// for, carrying the document and the directives derived from the takeaways.
+// An answer that is plain markdown instead (a model that ignored the shape)
+// is kept as the document, so a style is never lost to a parse.
+func parseVideoStyleAnswer(text string) (string, []VideoStyleDirective) {
+	var out struct {
+		Body       string                `json:"body"`
+		Directives []VideoStyleDirective `json:"directives"`
+	}
+	if err := json.Unmarshal([]byte(extractJSONObject(text)), &out); err != nil ||
+		strings.TrimSpace(out.Body) == "" {
+		return strings.TrimSpace(text), nil
+	}
+	kept := []VideoStyleDirective{}
+	for _, d := range out.Directives {
+		d.Title = strings.TrimSpace(d.Title)
+		if d.Title == "" {
+			continue
+		}
+		d.Kind = strings.TrimSpace(strings.ToLower(d.Kind))
+		d.Detail = strings.TrimSpace(d.Detail)
+		kept = append(kept, d)
+	}
+	return strings.TrimSpace(out.Body), kept
 }
 
 // videoStylePrompt lays the style's name and its takeaways out for the model.
@@ -416,7 +476,14 @@ const videoStyleInstructions = `You are writing a video style guide for one crea
 
 The takeaways are observations about how other creators work. Your job is to turn them into rules this creator's own videos are held to — not a summary of what was observed, and never a list of who does what.
 
-Respond with markdown and nothing else — no preamble, no code fences. Follow this shape:
+Respond with one JSON object and nothing else — no preamble, no code fences:
+
+{
+  "body": "<the style guide, markdown>",
+  "directives": [{"kind": "<pacing|sound|look|structure|packaging|other>", "title": "<the rule in a few words>", "detail": "<one or two sentences saying exactly what to do>"}]
+}
+
+"body" follows this shape:
 
 ## What this style is
 <Two or three sentences: what a video made to this style feels like to watch.>
@@ -430,11 +497,20 @@ Respond with markdown and nothing else — no preamble, no code fences. Follow t
 ## Avoid
 - <Three to five things this style deliberately does not do.>
 
+"directives" is the same advice as discrete rules — six to fifteen of them, each one a single instruction this creator's edit either follows or breaks. A directive is our own version of a takeaway: written as what WE do, never as what someone else did.
+
 Write in the second person, plainly, with no marketing tone. Where the takeaways disagree, pick the position that suits a creator building a recognisable style and say so in one clause. Where they are vague, leave the rule out rather than inventing a number.`
 
 // videoStyleEditInstructions brief the model that edits a written style.
 const videoStyleEditInstructions = `You are editing a creator's video style guide to their instruction.
 
-Return the complete style document with the edit applied — markdown, nothing else, no preamble and no code fences. Keep everything the instruction did not ask you to change, including the headings and the order they are in.
+Return one JSON object and nothing else — no preamble, no code fences:
+
+{
+  "body": "<the complete style guide with the edit applied, markdown>",
+  "directives": [{"kind": "<pacing|sound|look|structure|packaging|other>", "title": "<the rule in a few words>", "detail": "<one or two sentences saying exactly what to do>"}]
+}
+
+Keep everything the instruction did not ask you to change, including the headings and the order they are in, and return the directives in full — the edited ones and the untouched ones together, since what you return replaces the set.
 
 The takeaways the style was built from are given for reference: when the instruction asks for something the style does not currently cover, take it from that advice rather than inventing it. Keep the rules specific — numbers, lengths, placements — and keep the second-person, plain voice.`

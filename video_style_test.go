@@ -74,3 +74,28 @@ func TestVideoStyleSuggestAndStore(t *testing.T) {
 		t.Fatal("style not deleted")
 	}
 }
+
+func TestParseVideoStyleAnswer(t *testing.T) {
+	// The shape the model is asked for: the document plus our own directives.
+	body, directives := parseVideoStyleAnswer(`Here you go:
+{"body": "## What this style is\nFast.", "directives": [
+  {"kind": " Pacing ", "title": " Cut on the beat ", "detail": " Hold nothing past its point. "},
+  {"kind": "sound", "title": "", "detail": "dropped — no title"}
+]}`)
+	if body != "## What this style is\nFast." {
+		t.Fatalf("body = %q", body)
+	}
+	if len(directives) != 1 {
+		t.Fatalf("a titleless directive should be dropped: %+v", directives)
+	}
+	if directives[0].Kind != "pacing" || directives[0].Title != "Cut on the beat" ||
+		directives[0].Detail != "Hold nothing past its point." {
+		t.Fatalf("directive not normalised: %+v", directives[0])
+	}
+
+	// A model that answered in plain markdown still leaves a usable style.
+	body, directives = parseVideoStyleAnswer("## What this style is\nSlow.\n")
+	if body != "## What this style is\nSlow." || directives != nil {
+		t.Fatalf("markdown fallback: %q %+v", body, directives)
+	}
+}

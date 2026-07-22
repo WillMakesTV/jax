@@ -138,7 +138,7 @@ export function DisconnectService(arg1:string):Promise<void>;
 
 export function EditPlanDescription(arg1:string,arg2:string,arg3:string):Promise<string>;
 
-export function EditVideoStyle(arg1:string,arg2:string,arg3:string):Promise<string>;
+export function EditVideoStyle(arg1:string,arg2:string,arg3:string):Promise<main.VideoStyle>;
 
 export function EndStreamSession():Promise<void>;
 

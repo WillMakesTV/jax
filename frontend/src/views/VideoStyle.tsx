@@ -190,6 +190,9 @@ function StyleCard({
             {style.name}
           </span>
           <span className="mt-0.5 block text-xs text-fg-muted">
+            {style.directives.length > 0
+              ? `${style.directives.length} directives · `
+              : ''}
             {style.sources.length}{' '}
             {style.sources.length === 1 ? 'takeaway' : 'takeaways'}
             {style.status === 'error' && style.statusDetail
@@ -257,10 +260,10 @@ function StyleCard({
 }
 
 /**
- * The written style, in the markdown editor: edits are typed straight into it
- * and saved on Done, or asked for in words — the model rewrites the document
- * against the takeaways it was built from, and the result lands in the same
- * field to accept or keep editing.
+ * The style itself: its directives — our own rules, derived from the
+ * takeaways — above the document in the markdown editor. Edits are typed
+ * straight in and saved on Done, or asked for in words, which revises the
+ * document and the directives together against the advice they came from.
  */
 function StyleBody({
   style,
@@ -294,6 +297,8 @@ function StyleBody({
     }
   }
 
+  // The edit revises the document and the directives together, and is stored
+  // by the backend — the page just shows what came back.
   const applyEdit = async () => {
     if (!instruction.trim()) {
       setError('Describe the edit you want.')
@@ -303,10 +308,10 @@ function StyleBody({
     setError('')
     try {
       const next = await EditVideoStyle(style.id, body, instruction.trim())
-      setBody(next)
+      setBody(next.body)
       setInstruction('')
       setEditOpen(false)
-      await save(next)
+      onSaved()
     } catch (err) {
       setError(inspirationError(err, 'Could not apply the edit.'))
     } finally {
@@ -316,6 +321,40 @@ function StyleBody({
 
   return (
     <div className="flex flex-col gap-3">
+      {style.directives.length > 0 && (
+        <section>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+            Directives
+          </h3>
+          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {style.directives.map((d, i) => (
+              <li
+                key={`${d.title}-${i}`}
+                className="rounded-lg border border-edge bg-bg p-3"
+              >
+                <div className="flex items-start gap-2">
+                  {d.kind && (
+                    <span className="mt-0.5 shrink-0 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
+                      {d.kind}
+                    </span>
+                  )}
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-fg">
+                      {d.title}
+                    </span>
+                    {d.detail && (
+                      <span className="mt-0.5 block text-xs text-fg-muted">
+                        {d.detail}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <MarkdownField
         id={`video-style-${style.id}`}
         value={body}
@@ -345,9 +384,9 @@ function StyleBody({
       {editOpen && (
         <div className="flex flex-col gap-2 rounded-lg border border-edge bg-bg p-3">
           <p className="text-xs text-fg-muted">
-            The style as it stands and the {style.sources.length} takeaways it
-            was built from are both sent, so an edit can reach back to the
-            original advice.
+            The style, its {style.directives.length} directives and the{' '}
+            {style.sources.length} takeaways they came from are all sent, so an
+            edit can reach back to the original advice.
           </p>
           <input
             value={instruction}
@@ -506,8 +545,9 @@ function StyleBuilderModal({
         ) : (
           <div>
             <p className="mb-2 text-sm text-fg-muted">
-              {picked.size} of {sources.length} takeaways included. Untick
-              anything that does not belong in this style.
+              Every takeaway the library holds is included — {picked.size} of{' '}
+              {sources.length}, ranked by how well each speaks to the name.
+              Untick anything that does not belong in this style.
             </p>
             <ul className="flex max-h-72 flex-col gap-2 overflow-y-auto pr-1">
               {sources.map((s, i) => (

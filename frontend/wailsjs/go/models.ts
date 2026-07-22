@@ -2603,12 +2603,29 @@ export class RoutineStep {
 	        this.videoUrl = source["videoUrl"];
 	    }
 	}
+	export class VideoStyleDirective {
+	    kind: string;
+	    title: string;
+	    detail: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VideoStyleDirective(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.title = source["title"];
+	        this.detail = source["detail"];
+	    }
+	}
 	export class VideoStyle {
 	    id: string;
 	    name: string;
 	    status: string;
 	    statusDetail: string;
 	    sources: VideoStyleSource[];
+	    directives: VideoStyleDirective[];
 	    body: string;
 	    createdAt: string;
 	    updatedAt: string;
@@ -2624,6 +2641,7 @@ export class RoutineStep {
 	        this.status = source["status"];
 	        this.statusDetail = source["statusDetail"];
 	        this.sources = this.convertValues(source["sources"], VideoStyleSource);
+	        this.directives = this.convertValues(source["directives"], VideoStyleDirective);
 	        this.body = source["body"];
 	        this.createdAt = source["createdAt"];
 	        this.updatedAt = source["updatedAt"];
