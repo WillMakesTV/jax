@@ -31,31 +31,14 @@ import {PageHeader} from '../components/PageHeader'
 import {openExternal} from '../lib/browser'
 import {useDataChanged} from '../lib/dataChanged'
 import {formatCompact, formatDate} from '../lib/format'
-import {clock, inspirationError, videoMeta} from './Inspiration'
+import {
+  clock,
+  inspirationError,
+  isWorking,
+  StatusPill,
+  videoMeta,
+} from './Inspiration'
 import {InspirationPicker} from './InspirationPicker'
-
-/** How each pipeline state reads on a card. */
-const STATUS_LABELS: Record<string, string> = {
-  tracked: 'Not processed',
-  queued: 'Queued',
-  downloading: 'Downloading',
-  transcribing: 'Transcribing',
-  analyzing: 'Studying',
-  extracting: 'Extracting takeaways',
-  ready: 'Studied',
-  error: 'Failed',
-}
-
-/** True while the pipeline is working on this video. */
-export function isWorking(status: string): boolean {
-  return (
-    status === 'queued' ||
-    status === 'downloading' ||
-    status === 'transcribing' ||
-    status === 'analyzing' ||
-    status === 'extracting'
-  )
-}
 
 type ChannelTab = 'videos' | 'takeaways' | 'options'
 
@@ -722,37 +705,5 @@ function VideoCard({
         </div>
       </div>
     </li>
-  )
-}
-
-/** The pipeline's state as a pill, with progress while it runs. */
-export function StatusPill({video}: {video: main.InspirationVideo}) {
-  const label = STATUS_LABELS[video.status] ?? video.status
-  const working = isWorking(video.status)
-  const detail =
-    video.status === 'downloading' && video.progress > 0
-      ? ` ${video.progress}%`
-      : video.status === 'transcribing' && video.progress > 0
-        ? ` ${clock(video.progress)}`
-        : ''
-
-  return (
-    <span
-      title={video.statusDetail || undefined}
-      className={clsx(
-        'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium',
-        video.status === 'ready' && 'bg-accent/15 text-accent',
-        video.status === 'error' &&
-          'bg-red-500/15 text-red-600 dark:text-red-400',
-        working && 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
-        video.status === 'tracked' && 'border border-edge bg-bg text-fg-muted',
-      )}
-    >
-      {working && <Loader2 size={11} aria-hidden className="animate-spin" />}
-      {video.status === 'ready' && <Sparkles size={11} aria-hidden />}
-      {video.status === 'error' && <AlertTriangle size={11} aria-hidden />}
-      {label}
-      {detail}
-    </span>
   )
 }

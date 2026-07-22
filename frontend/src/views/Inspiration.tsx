@@ -1,9 +1,12 @@
+import clsx from 'clsx'
 import {
+  AlertTriangle,
   Clapperboard,
   Layers,
   Lightbulb,
   Loader2,
   Plus,
+  Sparkles,
   Trash2,
 } from 'lucide-react'
 import {useCallback, useEffect, useState} from 'react'
@@ -19,6 +22,61 @@ import {Modal} from '../components/Modal'
 import {PageHeader} from '../components/PageHeader'
 import {useDataChanged} from '../lib/dataChanged'
 import {formatCompact, formatDate} from '../lib/format'
+
+/** How each pipeline state reads on a card. */
+const STATUS_LABELS: Record<string, string> = {
+  tracked: 'Not processed',
+  queued: 'Queued',
+  downloading: 'Downloading',
+  transcribing: 'Transcribing',
+  analyzing: 'Studying',
+  extracting: 'Extracting takeaways',
+  ready: 'Studied',
+  error: 'Failed',
+}
+
+/** True while the pipeline is working on this video. */
+export function isWorking(status: string): boolean {
+  return (
+    status === 'queued' ||
+    status === 'downloading' ||
+    status === 'transcribing' ||
+    status === 'analyzing' ||
+    status === 'extracting'
+  )
+}
+
+/** The pipeline's state as a pill, with progress while it runs. */
+export function StatusPill({video}: {video: main.InspirationVideo}) {
+  const label = STATUS_LABELS[video.status] ?? video.status
+  const working = isWorking(video.status)
+  const detail =
+    video.status === 'downloading' && video.progress > 0
+      ? ` ${video.progress}%`
+      : video.status === 'transcribing' && video.progress > 0
+        ? ` ${clock(video.progress)}`
+        : ''
+
+  return (
+    <span
+      title={video.statusDetail || undefined}
+      className={clsx(
+        'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium',
+        video.status === 'ready' && 'bg-accent/15 text-accent',
+        video.status === 'error' &&
+          'bg-red-500/15 text-red-600 dark:text-red-400',
+        working && 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+        video.status === 'tracked' && 'border border-edge bg-bg text-fg-muted',
+      )}
+    >
+      {working && <Loader2 size={11} aria-hidden className="animate-spin" />}
+      {video.status === 'ready' && <Sparkles size={11} aria-hidden />}
+      {video.status === 'error' && <AlertTriangle size={11} aria-hidden />}
+      {label}
+      {detail}
+    </span>
+  )
+}
 
 /** Message text from a rejected binding call. */
 export function inspirationError(err: unknown, fallback: string): string {
@@ -58,6 +116,9 @@ export function Inspiration({
   useDataChanged(['inspiration'], load)
 
   const [addOpen, setAddOpen] = useState(false)
+  // Whatever the pipeline is holding right now, oldest queued last — the page
+  // that took the paste is the page that shows it moving.
+  const working = videos.filter((v) => isWorking(v.status))
 
   return (
     <div className="flex flex-1 flex-col">
@@ -87,6 +148,35 @@ export function Inspiration({
           </div>
         }
       />
+
+      {working.length > 0 && (
+        <section className="mb-4 rounded-xl border border-edge bg-surface p-4">
+          <h2 className="text-sm font-semibold text-fg">
+            Processing {working.length}{' '}
+            {working.length === 1 ? 'video' : 'videos'}
+          </h2>
+          <ul className="mt-3 flex flex-col gap-2">
+            {working.map((v) => (
+              <li
+                key={v.id}
+                className="flex min-w-0 items-center gap-3 rounded-lg border border-edge bg-bg px-3 py-2"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-fg">
+                    {v.title || v.url || 'Inspiration video'}
+                  </span>
+                  {v.statusDetail && (
+                    <span className="block truncate text-xs text-fg-muted">
+                      {v.statusDetail}
+                    </span>
+                  )}
+                </span>
+                <StatusPill video={v} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {channels.length === 0 ? (
         <button
@@ -296,14 +386,12 @@ export function AddInspirationModal({
   const [mode, setMode] = useState<'video' | 'channel'>('video')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [note, setNote] = useState('')
 
   useEffect(() => {
     if (!open) return
     setUrl(channelURL ?? '')
     setMode(channelURL ? 'channel' : 'video')
     setError('')
-    setNote('')
   }, [open, channelURL])
 
   const submit = async () => {
@@ -314,18 +402,16 @@ export function AddInspirationModal({
     }
     setBusy(true)
     setError('')
-    setNote('')
     try {
       if (mode === 'video') {
         await AddInspirationVideo(value)
-        setNote('Queued — the video appears in its channel as it processes.')
       } else {
-        const channel = await AddInspirationChannel(value)
-        setNote(
-          `Indexed ${channel.name || 'the channel'} — its videos are queued, newest first.`,
-        )
+        await AddInspirationChannel(value)
       }
       setUrl('')
+      // Nothing left to read here: the queue's progress is on the page
+      // behind this form, so the form gets out of the way.
+      onClose()
     } catch (err) {
       setError(
         inspirationError(
@@ -411,7 +497,6 @@ export function AddInspirationModal({
         {error && (
           <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
         )}
-        {note && <p className="text-sm text-fg-muted">{note}</p>}
 
         <div className="flex items-center gap-3">
           <button

@@ -24,7 +24,7 @@ import {openExternal} from '../lib/browser'
 import {useDataChanged} from '../lib/dataChanged'
 import {formatCompact, formatDate} from '../lib/format'
 import {clock, inspirationError} from './Inspiration'
-import {isWorking, StatusPill} from './InspirationChannelDetails'
+import {isWorking, StatusPill} from './Inspiration'
 
 type VideoTab = 'overview' | 'takeaways' | 'outline' | 'manifest' | 'transcript'
 
