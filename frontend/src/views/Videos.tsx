@@ -5,6 +5,7 @@ import {
   Eye,
   Film,
   Link2,
+  Palette,
   Plus,
   Radio,
   RefreshCw,
@@ -35,6 +36,8 @@ interface VideosProps {
   onOpenVideoPlan: (plan: main.VideoPlan) => void
   /** Start planning a new video. */
   onPlanVideo: () => void
+  /** Open the video style reference. */
+  onVideoStyle: () => void
 }
 
 /** Visibility filter options; "public" is the default view. */
@@ -278,7 +281,12 @@ function groupShorts(
  * Results come from the backend's 1-hour API cache; the refresh CTA forces a
  * fresh fetch.
  */
-export function Videos({onOpenVideo, onOpenVideoPlan, onPlanVideo}: VideosProps) {
+export function Videos({
+  onOpenVideo,
+  onOpenVideoPlan,
+  onPlanVideo,
+  onVideoStyle,
+}: VideosProps) {
   const {statuses} = useServices()
   const [list, setList] = useState<main.VideoList | null>(null)
   const [loading, setLoading] = useState(true)
@@ -375,7 +383,6 @@ export function Videos({onOpenVideo, onOpenVideoPlan, onPlanVideo}: VideosProps)
   return (
     <div className="flex flex-col">
       <PageHeader
-        description="Your published catalogue: long-form videos on YouTube, and short-form from every channel."
         actions={
           <div className="flex items-center gap-3">
             {list?.fetchedAt && (
@@ -397,6 +404,23 @@ export function Videos({onOpenVideo, onOpenVideoPlan, onPlanVideo}: VideosProps)
               />
               Refresh
             </button>
+            <button
+              type="button"
+              onClick={onVideoStyle}
+              title="How our videos are meant to look and sound"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-3 py-1.5 text-xs font-semibold text-fg transition-colors hover:bg-surface-hover"
+            >
+              <Palette size={14} aria-hidden />
+              Video Style
+            </button>
+            <button
+              type="button"
+              onClick={onPlanVideo}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90"
+            >
+              <Plus size={14} aria-hidden />
+              Plan a video
+            </button>
           </div>
         }
       />
@@ -411,17 +435,11 @@ export function Videos({onOpenVideo, onOpenVideoPlan, onPlanVideo}: VideosProps)
       {plans.length > 0 && (
         <section aria-label="Planned videos" className="mb-6">
           <div className="mb-3 flex items-center justify-between gap-3">
+            {/* The CTA that used to sit here now leads the page's header, so
+                it is reachable with nothing planned yet. */}
             <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
               Planned Videos
             </h2>
-            <button
-              type="button"
-              onClick={onPlanVideo}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90"
-            >
-              <Plus size={14} aria-hidden />
-              Plan a video
-            </button>
           </div>
           {/* Three across on medium viewports, five at full width. */}
           <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">

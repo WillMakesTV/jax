@@ -43,6 +43,7 @@ import {Sponsors} from './views/Sponsors'
 import {StreamDetails, type StreamTab} from './views/StreamDetails'
 import {StreamWidgetDetails, type WidgetTab} from './views/StreamWidgetDetails'
 import {Videos} from './views/Videos'
+import {VideoStyle} from './views/VideoStyle'
 import {VideoDetails} from './views/VideoDetails'
 import {VideoPlanDetails, type VideoPlanTab} from './views/VideoPlanDetails'
 import {Settings, type SettingsTab} from './views/Settings'
@@ -576,6 +577,8 @@ function App() {
         return 'OBS Studio'
       case 'videos':
         return 'Videos'
+      case 'video-style':
+        return 'Video Style'
       case 'settings':
         return 'Settings'
       case 'profile':
@@ -688,7 +691,8 @@ function App() {
                     ? 'obs'
                     : view === 'video-details' ||
                         view === 'plan-video' ||
-                        view === 'video-plan'
+                        view === 'video-plan' ||
+                        view === 'video-style'
                       ? 'videos'
                       : view === 'channel-details'
                         ? 'dashboard'
@@ -840,8 +844,10 @@ function App() {
                 onOpenVideo={openVideoDetails}
                 onOpenVideoPlan={openVideoPlanDetails}
                 onPlanVideo={() => openPlanVideo(null)}
+                onVideoStyle={() => navigate({view: 'video-style'})}
               />
             )}
+            {view === 'video-style' && <VideoStyle />}
             {view === 'video-plan' && cur.videoPlan && (
               <VideoPlanDetails
                 plan={cur.videoPlan}

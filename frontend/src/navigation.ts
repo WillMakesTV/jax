@@ -33,6 +33,7 @@ export type ViewId =
   | 'live-details'
   | 'channel-details'
   | 'videos'
+  | 'video-style'
   | 'video-details'
   | 'download-video'
   | 'plan-stream'
