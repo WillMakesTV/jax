@@ -23,6 +23,56 @@ import {PageHeader} from '../components/PageHeader'
 import {useDataChanged} from '../lib/dataChanged'
 import {formatCompact, formatDate} from '../lib/format'
 
+/** How each takeaway kind reads on a chip. */
+export const TAKEAWAY_KINDS: Record<string, string> = {
+  tip: 'Tip',
+  technique: 'Technique',
+  concept: 'Concept',
+  hook: 'Hook',
+  format: 'Format',
+  other: 'Note',
+}
+
+/** The section's tabs, drawn by every page that belongs to it. */
+export function InspirationTabs({
+  active,
+  onOverview,
+  onTakeaways,
+}: {
+  active: 'overview' | 'takeaways'
+  onOverview: () => void
+  onTakeaways: () => void
+}) {
+  const tabs = [
+    {id: 'overview' as const, label: 'Overview', open: onOverview},
+    {id: 'takeaways' as const, label: 'Takeaways', open: onTakeaways},
+  ]
+  return (
+    <div
+      role="tablist"
+      aria-label="Inspiration sections"
+      className="mb-4 flex w-fit items-center gap-1 rounded-lg border border-edge bg-surface p-1"
+    >
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          role="tab"
+          aria-selected={active === t.id}
+          onClick={t.open}
+          className={
+            active === t.id
+              ? 'rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg'
+              : 'rounded-md px-3 py-1.5 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg'
+          }
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 /** How each pipeline state reads on a card. */
 const STATUS_LABELS: Record<string, string> = {
   tracked: 'Not processed',
@@ -92,11 +142,14 @@ export function inspirationError(err: unknown, fallback: string): string {
 export function Inspiration({
   onOpenChannel,
   onOpenTypes,
+  onOpenTakeaways,
 }: {
   /** Open a channel's page. */
   onOpenChannel: (channel: main.InspirationChannel) => void
   /** Open the inspiration types listing. */
   onOpenTypes: () => void
+  /** Open the all-channel takeaways page. */
+  onOpenTakeaways: () => void
 }) {
   const [channels, setChannels] = useState<main.InspirationChannel[]>([])
   const [videos, setVideos] = useState<main.InspirationVideo[]>([])
@@ -147,6 +200,12 @@ export function Inspiration({
             )}
           </div>
         }
+      />
+
+      <InspirationTabs
+        active="overview"
+        onOverview={() => {}}
+        onTakeaways={onOpenTakeaways}
       />
 
       {working.length > 0 && (

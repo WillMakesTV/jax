@@ -19,6 +19,7 @@ export type ViewId =
   | 'broadcast-plan'
   | 'broadcasting'
   | 'inspiration'
+  | 'inspiration-takeaways'
   | 'inspiration-channel'
   | 'inspiration-video'
   | 'inspiration-types'

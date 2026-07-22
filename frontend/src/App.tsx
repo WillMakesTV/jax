@@ -28,6 +28,7 @@ import {EditRoutine} from './views/EditRoutine'
 import {EditSeries} from './views/EditSeries'
 import {Inspiration} from './views/Inspiration'
 import {InspirationChannelDetails} from './views/InspirationChannelDetails'
+import {InspirationTakeaways} from './views/InspirationTakeaways'
 import {InspirationTypeDetails} from './views/InspirationTypeDetails'
 import {InspirationTypes} from './views/InspirationTypes'
 import {InspirationVideoDetails} from './views/InspirationVideoDetails'
@@ -613,6 +614,8 @@ function App() {
         return 'Sponsors'
       case 'inspiration':
         return 'Inspiration'
+      case 'inspiration-takeaways':
+        return 'Takeaways'
       case 'inspiration-channel':
         return cur.inspirationChannel?.name || 'Channel'
       case 'inspiration-video':
@@ -769,6 +772,15 @@ function App() {
               <Inspiration
                 onOpenChannel={openInspirationChannel}
                 onOpenTypes={openInspirationTypes}
+                onOpenTakeaways={() =>
+                  navigate({view: 'inspiration-takeaways'})
+                }
+              />
+            )}
+            {view === 'inspiration-takeaways' && (
+              <InspirationTakeaways
+                onOpenOverview={() => navigate({view: 'inspiration'})}
+                onOpenVideo={openInspirationVideo}
               />
             )}
             {view === 'inspiration-types' && (
