@@ -45,6 +45,47 @@ func TestSystemWidgets(t *testing.T) {
 	}
 }
 
+func TestSponsorsWidgetEndpoints(t *testing.T) {
+	a := newTestApp(t)
+	a.mediaBaseURL = "http://127.0.0.1:9999"
+	h := mediaHandler{app: a}
+
+	if _, err := a.SaveSponsor(Sponsor{Name: "Acme", Website: "https://acme.example"}); err != nil {
+		t.Fatalf("save sponsor: %v", err)
+	}
+
+	// The page serves, and the feed carries the sponsor's name and website.
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/sponsors", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "Sponsors") {
+		t.Fatalf("page: code %d", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/sponsors/data", nil))
+	if rec.Code != 200 {
+		t.Fatalf("data: code %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"Acme"`) || !strings.Contains(body, "acme.example") {
+		t.Fatalf("data should carry the sponsor: %q", body)
+	}
+
+	// Unknown actions 404, and disabling 404s the whole widget.
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/sponsors/nope", nil))
+	if rec.Code != 404 {
+		t.Fatalf("unknown action: code %d", rec.Code)
+	}
+	if _, err := a.SetSystemWidgetEnabled(systemWidgetSponsors, false); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/sponsors", nil))
+	if rec.Code != 404 {
+		t.Fatalf("disabled widget page: code %d", rec.Code)
+	}
+}
+
 func TestUnifiedChatEndpoints(t *testing.T) {
 	a := newTestApp(t)
 	a.mediaBaseURL = "http://127.0.0.1:9999"

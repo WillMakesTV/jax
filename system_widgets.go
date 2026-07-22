@@ -20,7 +20,9 @@ import (
 //
 // The first system widget is Unified Chat: the same merged all-channel chat
 // the Broadcasting page shows, as an overlay, with an input that sends a
-// reply to every connected channel at once (SendBroadcastChat).
+// reply to every connected channel at once (SendBroadcastChat). The second is
+// Sponsors: the saved brand partners on rotation, each with its logo, name,
+// and website.
 // ---------------------------------------------------------------------------
 
 // systemWidgetPrefix serves the built-in widget pages and their endpoints.
@@ -28,6 +30,9 @@ const systemWidgetPrefix = "/syswidget/"
 
 // systemWidgetUnifiedChat identifies the built-in unified chat overlay.
 const systemWidgetUnifiedChat = "unified-chat"
+
+// systemWidgetSponsors identifies the built-in sponsors overlay.
+const systemWidgetSponsors = "sponsors"
 
 // SystemWidget is one built-in Browser Source.
 type SystemWidget struct {
@@ -48,6 +53,12 @@ var systemWidgetCatalog = []SystemWidget{
 		Name: "Unified Chat",
 		Description: "Every connected channel's chat merged into one overlay — the same feed as the " +
 			"Broadcasting page — with a box that sends your reply to all channels at once.",
+	},
+	{
+		ID:   systemWidgetSponsors,
+		Name: "Sponsors",
+		Description: "Your sponsors on rotation — each one's logo, name, and website — so the " +
+			"partners behind the stream stay on screen without a manual overlay.",
 	},
 }
 
@@ -140,6 +151,8 @@ func (a *App) serveSystemWidget(w http.ResponseWriter, r *http.Request) {
 	switch id {
 	case systemWidgetUnifiedChat:
 		a.serveUnifiedChat(w, r, action)
+	case systemWidgetSponsors:
+		a.serveSponsorsWidget(w, r, action)
 	default:
 		http.NotFound(w, r)
 	}
@@ -980,6 +993,224 @@ const unifiedChatPage = `<!DOCTYPE html>
 
   tick()
   setInterval(tick, 2000)
+})()
+</script>
+</body>
+</html>
+`
+
+// serveSponsorsWidget is the sponsors overlay: the page and the sponsor feed
+// behind it.
+func (a *App) serveSponsorsWidget(w http.ResponseWriter, r *http.Request, action string) {
+	switch action {
+	case "":
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(sponsorsPage))
+	case "data":
+		// Only what the overlay draws: the sponsor's logo (its chosen
+		// branding file), its name, and its website. Sponsors without a
+		// logo still show — the page draws their initial instead.
+		type sponsorCard struct {
+			ID      string `json:"id"`
+			Name    string `json:"name"`
+			Website string `json:"website"`
+			LogoURL string `json:"logoUrl"`
+		}
+		cards := []sponsorCard{}
+		for _, s := range a.GetSponsors() {
+			cards = append(cards, sponsorCard{
+				ID:      s.ID,
+				Name:    s.Name,
+				Website: s.Website,
+				LogoURL: s.LogoURL,
+			})
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]any{"sponsors": cards})
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+// sponsorsPage is the sponsors overlay: one sponsor at a time on a dark card
+// — its logo (or its initial, when no branding file is the logo), its name,
+// and its website — cross-fading to the next every few seconds, with a dot
+// per sponsor underneath. Sponsor text is written as text nodes only, so a
+// stored name or address never becomes markup.
+const sponsorsPage = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Sponsors</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    /* Dark gray edge to edge, like the unified chat overlay: a transparent
+       page shows white corners in a browser. */
+    background: #1f2937;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  #wrap {
+    display: flex; flex-direction: column; height: 100vh;
+    box-sizing: border-box; padding: 16px; gap: 12px;
+  }
+  #label {
+    font-size: 11px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: 0.14em; color: #93c5fd;
+  }
+  #card {
+    flex: 1; display: flex; align-items: center; gap: 18px;
+    box-sizing: border-box; padding: 18px 20px; border-radius: 14px;
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 10px 36px rgba(0, 0, 0, 0.5);
+    color: #fff; opacity: 1; transition: opacity 0.4s ease;
+  }
+  #card.fading { opacity: 0; }
+  #logo {
+    width: 96px; height: 96px; flex: none; border-radius: 12px;
+    object-fit: contain; background: rgba(255, 255, 255, 0.9); padding: 8px;
+    box-sizing: border-box;
+  }
+  #initial {
+    width: 96px; height: 96px; flex: none; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    font-size: 40px; font-weight: 800; color: #e2e8f0;
+  }
+  #body { min-width: 0; }
+  #name {
+    font-size: 26px; font-weight: 700; line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+  #site {
+    margin-top: 6px; font-size: 15px; font-weight: 600; color: #93c5fd;
+    overflow-wrap: anywhere;
+  }
+  #site:empty { display: none; }
+  #dots { display: flex; justify-content: center; gap: 6px; }
+  #dots:empty { display: none; }
+  .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: rgba(255, 255, 255, 0.25);
+  }
+  .dot.on { background: #93c5fd; }
+  #empty {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    color: rgba(255, 255, 255, 0.45); font-size: 14px; text-align: center;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="label">Sponsored by</div>
+  <div id="card"></div>
+  <div id="empty" style="display: none">Sponsors you add in Jax appear here.</div>
+  <div id="dots"></div>
+</div>
+<script>
+(function () {
+  'use strict'
+  var base = location.pathname.replace(/\/$/, '')
+  var label = document.getElementById('label')
+  var card = document.getElementById('card')
+  var empty = document.getElementById('empty')
+  var dots = document.getElementById('dots')
+  var sponsors = []
+  var index = 0
+  var lastJSON = ''
+
+  // The address as a viewer reads it: no scheme, no trailing slash.
+  function prettySite(url) {
+    return (url || '').replace(/^[a-z]+:\/\//i, '').replace(/\/+$/, '')
+  }
+
+  function draw() {
+    var s = sponsors[index]
+    card.textContent = ''
+    if (!s) return
+    if (s.logoUrl) {
+      var img = document.createElement('img')
+      img.id = 'logo'
+      img.src = s.logoUrl
+      img.alt = ''
+      card.appendChild(img)
+    } else {
+      var mark = document.createElement('div')
+      mark.id = 'initial'
+      mark.textContent = (s.name || '?').charAt(0).toUpperCase()
+      card.appendChild(mark)
+    }
+    var body = document.createElement('div')
+    body.id = 'body'
+    var name = document.createElement('div')
+    name.id = 'name'
+    name.textContent = s.name || 'Sponsor'
+    body.appendChild(name)
+    var site = document.createElement('div')
+    site.id = 'site'
+    site.textContent = prettySite(s.website)
+    body.appendChild(site)
+    card.appendChild(body)
+
+    dots.textContent = ''
+    if (sponsors.length > 1) {
+      sponsors.forEach(function (_, i) {
+        var dot = document.createElement('span')
+        dot.className = i === index ? 'dot on' : 'dot'
+        dots.appendChild(dot)
+      })
+    }
+  }
+
+  // Advance to the next sponsor behind a short fade, so the card changes
+  // rather than flickering.
+  function advance() {
+    if (sponsors.length < 2) return
+    card.className = 'fading'
+    window.setTimeout(function () {
+      index = (index + 1) % sponsors.length
+      draw()
+      card.className = ''
+    }, 400)
+  }
+
+  function render(data) {
+    var next = data.sponsors || []
+    // Keep showing the same sponsor across polls when the list is unchanged
+    // in length; a real edit restarts at the first card.
+    if (next.length !== sponsors.length) index = 0
+    sponsors = next
+    if (sponsors.length === 0) {
+      label.style.display = 'none'
+      card.style.display = 'none'
+      dots.style.display = 'none'
+      empty.style.display = 'flex'
+      return
+    }
+    label.style.display = ''
+    card.style.display = 'flex'
+    dots.style.display = ''
+    empty.style.display = 'none'
+    if (index >= sponsors.length) index = 0
+    draw()
+  }
+
+  function tick() {
+    fetch(base + '/data', {cache: 'no-store'})
+      .then(function (res) { return res.text() })
+      .then(function (text) {
+        if (text === lastJSON) return
+        lastJSON = text
+        render(JSON.parse(text))
+      })
+      .catch(function () {})
+  }
+
+  tick()
+  setInterval(tick, 10000)
+  setInterval(advance, 8000)
 })()
 </script>
 </body>
