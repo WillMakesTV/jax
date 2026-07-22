@@ -199,7 +199,11 @@ function KindChip({
   )
 }
 
-/** The cards: two across on a medium viewport, four at full width. */
+/**
+ * The cards, in a masonry layout — two columns on a medium viewport, four at
+ * full width — so a short takeaway does not leave a tall neighbour's gap, the
+ * same as the per-channel takeaway lists.
+ */
 function TakeawayGrid({
   takeaways,
   onOpenVideo,
@@ -208,11 +212,11 @@ function TakeawayGrid({
   onOpenVideo: (videoId: string) => void
 }) {
   return (
-    <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+    <ul className="columns-1 gap-3 md:columns-2 xl:columns-4">
       {takeaways.map((t, i) => (
         <li
           key={`${t.videoId}-${t.title}-${i}`}
-          className="flex flex-col gap-2 rounded-xl border border-edge bg-surface p-4"
+          className="mb-3 flex break-inside-avoid flex-col gap-2 rounded-xl border border-edge bg-surface p-4"
         >
           <div className="flex items-center gap-2">
             <span className="rounded-full border border-edge bg-bg px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">
