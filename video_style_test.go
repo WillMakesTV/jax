@@ -135,3 +135,32 @@ func TestVideoStyleContext(t *testing.T) {
 		}
 	}
 }
+
+func TestEditPromptCarriesTheStyle(t *testing.T) {
+	a := newTestApp(t)
+	style, err := a.saveVideoStyle(VideoStyle{
+		Name: "Fast Cuts", Status: videoStyleReady,
+		Body: "## What this style is\nQuick.",
+		Directives: []VideoStyleDirective{
+			{Kind: "pacing", Title: "Cut on the beat", Detail: "Never hold past the point."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("save style: %v", err)
+	}
+
+	// A plan with no style leaves the edit prompt free of a style block.
+	plain := a.editPrompt(VideoPlan{Title: "Untitled", Format: "long"}, "")
+	if strings.Contains(plain, "Video style") {
+		t.Fatalf("a styleless plan should carry no style: %q", plain)
+	}
+
+	// A plan cut to the style hands the cut its directives, not just the
+	// script that was written from it.
+	styled := a.editPrompt(VideoPlan{Title: "Boss fight", Format: "long", StyleID: style.ID}, "")
+	for _, want := range []string{"Video style: Fast Cuts", "Cut on the beat"} {
+		if !strings.Contains(styled, want) {
+			t.Fatalf("edit prompt missing %q:\n%s", want, styled)
+		}
+	}
+}

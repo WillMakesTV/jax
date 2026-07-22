@@ -1029,6 +1029,14 @@ func (a *App) editPrompt(plan VideoPlan, instruction string) string {
 		b.WriteString(rules)
 		b.WriteString("\n")
 	}
+	// The video style the plan is cut to, when it names one (see
+	// video_style.go): the document and every directive, so the cut itself is
+	// held to the style — not just the script that was written from it.
+	if style := a.videoStyleContext(plan.StyleID); style != "" {
+		b.WriteString("\n")
+		b.WriteString(style)
+		b.WriteString("\n")
+	}
 	// A saved timeline means the producer has already cut this video by hand;
 	// their pass is the approval, and the timeline skill says so.
 	if a.GetPlanTimeline(plan.ID).File != "" {
