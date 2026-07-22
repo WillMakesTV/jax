@@ -1035,10 +1035,10 @@ func (a *App) serveSponsorsWidget(w http.ResponseWriter, r *http.Request, action
 // sponsorsPage is the sponsors overlay, built for a 250 × 190 Browser Source
 // with a 20px margin all round: one sponsor at a time on a dark card — its
 // name on one line across the top, set down in size until it fits, with its
-// logo and website inline on the bottom edge — cross-fading to the next
-// every few seconds, with a dot per sponsor at the end of that row. Sponsor
-// text is written as text nodes only, so a stored name or address never
-// becomes markup.
+// logo and website inline on the bottom edge — holding for three minutes
+// before it fades to the next, with a dot per sponsor at the end of that
+// row. Sponsor text is written as text nodes only, so a stored name or
+// address never becomes markup.
 const sponsorsPage = `<!DOCTYPE html>
 <html>
 <head>
@@ -1137,6 +1137,10 @@ const sponsorsPage = `<!DOCTYPE html>
   var sponsors = []
   var index = 0
   var lastJSON = ''
+  // How long a sponsor holds the card before the next one takes it. Three
+  // minutes: long enough that a viewer joining mid-stream reads the whole
+  // slide rather than catching it mid-fade.
+  var SLIDE_MS = 3 * 60 * 1000
 
   // The address as a viewer reads it: no scheme, no trailing slash.
   function prettySite(url) {
@@ -1232,7 +1236,7 @@ const sponsorsPage = `<!DOCTYPE html>
 
   tick()
   setInterval(tick, 10000)
-  setInterval(advance, 8000)
+  setInterval(advance, SLIDE_MS)
 })()
 </script>
 </body>
