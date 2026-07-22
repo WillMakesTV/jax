@@ -5,6 +5,7 @@ import {
   Clapperboard,
   Film,
   MonitorPlay,
+  Play,
   Trash2,
   Upload,
   X,
@@ -25,6 +26,7 @@ import {
 import {main} from '../../wailsjs/go/models'
 import {EpisodeThumb} from '../components/EpisodeThumb'
 import {MarkdownField} from '../components/markdown/MarkdownField'
+import {Modal} from '../components/Modal'
 import {formatDate} from '../lib/format'
 import {ObsRecordPanel} from '../obs/ObsRecordPanel'
 
@@ -101,6 +103,10 @@ export function PlanVideo({
     plan?.files ?? [],
   )
   const [pendingPaths, setPendingPaths] = useState<string[]>([])
+  // The imported clip open in the player ({name, url}); null when none.
+  const [playing, setPlaying] = useState<{name: string; url: string} | null>(
+    null,
+  )
   // The Record-from-OBS panel (footage tab): an OBS preview with record
   // controls; stopped recordings join pendingPaths like picked files.
   const [obsRecordOpen, setObsRecordOpen] = useState(false)
@@ -311,6 +317,12 @@ export function PlanVideo({
   }
 
   const fileName = (path: string) => path.split(/[\\/]/).pop() || path
+  // Imported footage is served by the media server, index-aligned with the
+  // plan's files — that address is both the thumbnail and the player's source.
+  const footageURL = (name: string): string => {
+    const i = (draft?.files ?? []).indexOf(name)
+    return i >= 0 ? (draft?.fileUrls?.[i] ?? '') : ''
+  }
 
   return (
     <div className="flex flex-col">
@@ -570,28 +582,71 @@ export function PlanVideo({
               <>
                 {importedFiles.length + pendingPaths.length > 0 && (
                   <ul className="mb-2 flex flex-col gap-1.5">
-                    {importedFiles.map((name) => (
-                      <li
-                        key={`imported-${name}`}
-                        className="flex items-center gap-2 rounded-lg border border-edge bg-surface px-3 py-2 text-sm text-fg"
-                      >
-                        <Film
-                          size={14}
-                          aria-hidden
-                          className="shrink-0 text-fg-muted"
-                        />
-                        <span className="min-w-0 flex-1 truncate">{name}</span>
-                        <button
-                          type="button"
-                          onClick={() => void removeImported(name)}
-                          title="Remove footage"
-                          aria-label={`Remove ${name}`}
-                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                    {importedFiles.map((name) => {
+                      const url = footageURL(name)
+                      return (
+                        <li
+                          key={`imported-${name}`}
+                          className="flex items-center gap-3 rounded-lg border border-edge bg-surface px-3 py-2 text-sm text-fg"
                         >
-                          <Trash2 size={13} aria-hidden />
-                        </button>
-                      </li>
-                    ))}
+                          {url ? (
+                            <button
+                              type="button"
+                              onClick={() => setPlaying({name, url})}
+                              title="Play this footage"
+                              aria-label={`Play ${name}`}
+                              className="group relative aspect-video h-12 shrink-0 overflow-hidden rounded bg-black"
+                            >
+                              {/* The clip itself, seeked to a frame, is the
+                                  thumbnail — no separate poster to generate. */}
+                              <video
+                                src={`${url}#t=1`}
+                                muted
+                                preload="metadata"
+                                className="h-full w-full object-cover"
+                              />
+                              <span className="absolute inset-0 flex items-center justify-center bg-black/25 opacity-0 transition-opacity group-hover:opacity-100">
+                                <Play
+                                  size={16}
+                                  aria-hidden
+                                  className="text-white"
+                                  fill="currentColor"
+                                />
+                              </span>
+                            </button>
+                          ) : (
+                            <Film
+                              size={14}
+                              aria-hidden
+                              className="shrink-0 text-fg-muted"
+                            />
+                          )}
+                          <span className="min-w-0 flex-1 truncate">
+                            {name}
+                          </span>
+                          {url && (
+                            <button
+                              type="button"
+                              onClick={() => setPlaying({name, url})}
+                              title="Play this footage"
+                              aria-label={`Play ${name}`}
+                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                            >
+                              <Play size={13} aria-hidden />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => void removeImported(name)}
+                            title="Remove footage"
+                            aria-label={`Remove ${name}`}
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                          >
+                            <Trash2 size={13} aria-hidden />
+                          </button>
+                        </li>
+                      )
+                    })}
                     {pendingPaths.map((path) => (
                       <li
                         key={`pending-${path}`}
@@ -740,6 +795,25 @@ export function PlanVideo({
           </div>
         </form>
       )}
+
+      {/* Play a piece of imported footage; the modal unmounts the player on
+          close, which stops playback. */}
+      <Modal
+        open={playing !== null}
+        onClose={() => setPlaying(null)}
+        title={playing?.name || 'Footage'}
+        maxWidthClass="max-w-3xl"
+      >
+        {playing && (
+          <video
+            key={playing.url}
+            controls
+            autoPlay
+            src={playing.url}
+            className="aspect-video w-full rounded-lg bg-black"
+          />
+        )}
+      </Modal>
     </div>
   )
 }
