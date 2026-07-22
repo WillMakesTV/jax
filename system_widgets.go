@@ -57,8 +57,9 @@ var systemWidgetCatalog = []SystemWidget{
 	{
 		ID:   systemWidgetSponsors,
 		Name: "Sponsors",
-		Description: "Your sponsors on rotation — each one's name across the top, with its logo and " +
-			"website inline beneath. Built for a 250 × 190 Browser Source.",
+		Description: "Your sponsors on rotation under a \"Sponsored By\" label — each one's name " +
+			"across the top, with its logo and website inline beneath. Built for a 250px-wide " +
+			"Browser Source; the card's height follows its content.",
 	},
 }
 
@@ -1032,13 +1033,13 @@ func (a *App) serveSponsorsWidget(w http.ResponseWriter, r *http.Request, action
 	}
 }
 
-// sponsorsPage is the sponsors overlay, built for a 250 × 190 Browser Source
-// with a 20px margin all round: one sponsor at a time on a dark card — its
-// name on one line across the top, set down in size until it fits, with its
-// logo and website inline on the bottom edge — holding for three minutes
-// before it fades to the next, with a dot per sponsor at the end of that
-// row. Sponsor text is written as text nodes only, so a stored name or
-// address never becomes markup.
+// sponsorsPage is the sponsors overlay, built for a 250px-wide Browser Source
+// with a 20px margin all round and a card whose height follows its content:
+// one sponsor at a time under a "Sponsored By" label — its name on one line,
+// set down in size until it fits, with its logo and website inline beneath —
+// holding for three minutes before it fades to the next, with a dot per
+// sponsor at the end of that row. Sponsor text is written as text nodes
+// only, so a stored name or address never becomes markup.
 const sponsorsPage = `<!DOCTYPE html>
 <html>
 <head>
@@ -1052,31 +1053,37 @@ const sponsorsPage = `<!DOCTYPE html>
     background: transparent; overflow: hidden;
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   }
-  /* Built for a 250 × 190 Browser Source: the margin is the wrap's padding,
-     leaving the card 210 × 150. */
+  /* Built for a 250px-wide Browser Source with a 20px margin — the margin is
+     the wrap's padding, leaving the card 210px across. The height is the
+     card's own: it grows and shrinks with what the sponsor carries rather
+     than being held at a fixed frame. */
   #wrap {
-    width: 250px; height: 190px; max-width: 100%; max-height: 100vh;
-    box-sizing: border-box; padding: 20px;
+    width: 250px; max-width: 100%; box-sizing: border-box; padding: 20px;
   }
   #card {
-    display: flex; flex-direction: column; width: 100%; height: 100%;
-    box-sizing: border-box; padding: 14px 16px; border-radius: 14px;
+    display: flex; flex-direction: column; width: 100%;
+    box-sizing: border-box; padding: 12px 16px 14px; border-radius: 14px;
     background: linear-gradient(135deg, #0f172a, #1e293b);
     border: 1px solid rgba(255, 255, 255, 0.14);
     box-shadow: 0 10px 36px rgba(0, 0, 0, 0.5);
     color: #fff; opacity: 1; transition: opacity 0.4s ease;
   }
   #card.fading { opacity: 0; }
+  /* Whose placement this is, above the sponsor itself. */
+  #label {
+    font-size: 10px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: 0.14em; color: #93c5fd; margin-bottom: 4px;
+  }
   /* The sponsor's name leads the card, always on one line: the JS shrinks
      its font until the whole name fits the card's width (see fitName). */
   #name {
     font-size: 20px; font-weight: 700; line-height: 1.2;
     white-space: nowrap; overflow: hidden;
   }
-  /* The logo and the website run inline beneath it, on the card's bottom
-     edge, with the rotation dots at the end of the row. */
+  /* The logo and the website run inline beneath it, with the rotation dots
+     at the end of the row. */
   #head {
-    margin-top: auto; display: flex; align-items: center; gap: 10px;
+    display: flex; align-items: center; gap: 10px;
     min-width: 0; padding-top: 10px;
   }
   #mark { flex: none; display: flex; }
@@ -1104,7 +1111,7 @@ const sponsorsPage = `<!DOCTYPE html>
   }
   .dot.on { background: #93c5fd; }
   #empty {
-    width: 100%; height: 100%; box-sizing: border-box; padding: 14px 16px;
+    width: 100%; box-sizing: border-box; padding: 18px 16px;
     display: flex; align-items: center; justify-content: center;
     border-radius: 14px; border: 1px dashed rgba(255, 255, 255, 0.18);
     background: rgba(15, 23, 42, 0.75);
@@ -1115,6 +1122,7 @@ const sponsorsPage = `<!DOCTYPE html>
 <body>
 <div id="wrap">
   <div id="card">
+    <div id="label">Sponsored By</div>
     <div id="name"></div>
     <div id="head">
       <div id="mark"></div>
