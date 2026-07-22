@@ -17,7 +17,6 @@ import {
   GetVideoStyles,
   RebuildVideoStyle,
   SaveVideoStyle,
-  SuggestVideoStyleTakeaways,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
 import {MarkdownField} from '../components/markdown/MarkdownField'
@@ -430,9 +429,10 @@ function StyleBody({
 }
 
 /**
- * The builder: name the style, then review the takeaways Jax gathered for it
- * before the writing starts. Submitting closes the dialog — the run reports
- * itself in the status bar and on the page behind.
+ * The builder: name the style, and that is the whole form. Every takeaway the
+ * library holds goes into the build — there is nothing to choose — so
+ * submitting starts the run and closes the dialog, which reports itself in
+ * the status bar and on the page behind.
  */
 function StyleBuilderModal({
   open,
@@ -443,25 +443,19 @@ function StyleBuilderModal({
   onClose: () => void
   onBuilding: (styleId: string) => void
 }) {
-  const [step, setStep] = useState<'name' | 'takeaways'>('name')
   const [name, setName] = useState('')
-  const [sources, setSources] = useState<main.VideoStyleSource[]>([])
-  const [picked, setPicked] = useState<Set<number>>(new Set())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
     if (!open) return
-    setStep('name')
     setName('')
-    setSources([])
-    setPicked(new Set())
     setError('')
   }, [open])
 
-  // Naming the style is the whole query: the takeaways that speak to it are
-  // gathered here, and every one is included unless it is unticked.
-  const next = async () => {
+  // No sources are passed: the backend takes every takeaway it holds, ranked
+  // by how well each speaks to the name (see CreateVideoStyle).
+  const build = async () => {
     const value = name.trim()
     if (!value) {
       setError('Name the style first.')
@@ -470,34 +464,7 @@ function StyleBuilderModal({
     setBusy(true)
     setError('')
     try {
-      const found = await SuggestVideoStyleTakeaways(value)
-      const list = found ?? []
-      if (list.length === 0) {
-        setError(
-          'There are no takeaways to build from yet — study an inspiration video first.',
-        )
-        return
-      }
-      setSources(list)
-      setPicked(new Set(list.map((_, i) => i)))
-      setStep('takeaways')
-    } catch (err) {
-      setError(inspirationError(err, 'Those takeaways could not be gathered.'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const build = async () => {
-    const chosen = sources.filter((_, i) => picked.has(i))
-    if (chosen.length === 0) {
-      setError('Keep at least one takeaway — the style is written from them.')
-      return
-    }
-    setBusy(true)
-    setError('')
-    try {
-      const style = await CreateVideoStyle(name.trim(), chosen)
+      const style = await CreateVideoStyle(value, [])
       onBuilding(style.id)
       onClose()
     } catch (err) {
@@ -511,82 +478,37 @@ function StyleBuilderModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={step === 'name' ? 'New style' : `Takeaways for ${name.trim()}`}
+      title="New style"
       icon={<Palette size={18} aria-hidden className="text-accent" />}
     >
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          void (step === 'name' ? next() : build())
+          void build()
         }}
         className="flex flex-col gap-4"
       >
-        {step === 'name' ? (
-          <div>
-            <label
-              htmlFor="video-style-name"
-              className="mb-1.5 block text-sm font-medium text-fg"
-            >
-              Style name
-            </label>
-            <input
-              id="video-style-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Fast-cut tutorials"
-              autoFocus
-              className="w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-            />
-            <p className="mt-1.5 text-xs text-fg-muted">
-              The name is the brief: Jax gathers the takeaways that speak to it,
-              then writes the style from their advice.
-            </p>
-          </div>
-        ) : (
-          <div>
-            <p className="mb-2 text-sm text-fg-muted">
-              Every takeaway the library holds is included — {picked.size} of{' '}
-              {sources.length}, ranked by how well each speaks to the name.
-              Untick anything that does not belong in this style.
-            </p>
-            <ul className="flex max-h-72 flex-col gap-2 overflow-y-auto pr-1">
-              {sources.map((s, i) => (
-                <li key={`${s.videoId}-${i}`}>
-                  <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-edge bg-bg p-3 transition-colors hover:bg-surface-hover">
-                    <input
-                      type="checkbox"
-                      checked={picked.has(i)}
-                      onChange={() =>
-                        setPicked((prev) => {
-                          const nextSet = new Set(prev)
-                          if (nextSet.has(i)) nextSet.delete(i)
-                          else nextSet.add(i)
-                          return nextSet
-                        })
-                      }
-                      className="mt-0.5 h-4 w-4 shrink-0 accent-accent"
-                    />
-                    <span className="min-w-0">
-                      <span className="block text-sm font-medium text-fg">
-                        {s.title}
-                      </span>
-                      {s.detail && (
-                        <span className="mt-0.5 block text-xs text-fg-muted">
-                          {s.detail}
-                        </span>
-                      )}
-                      {s.videoTitle && (
-                        <span className="mt-0.5 block truncate text-xs text-fg-muted">
-                          From {s.videoTitle}
-                        </span>
-                      )}
-                    </span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <div>
+          <label
+            htmlFor="video-style-name"
+            className="mb-1.5 block text-sm font-medium text-fg"
+          >
+            Style name
+          </label>
+          <input
+            id="video-style-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Fast-cut tutorials"
+            autoFocus
+            className="w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+          />
+          <p className="mt-1.5 text-xs text-fg-muted">
+            The name is the brief: every takeaway the library holds is read,
+            weighted by how well it speaks to that name, and the style and its
+            directives are written from their advice.
+          </p>
+        </div>
 
         {error && (
           <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
@@ -599,14 +521,14 @@ function StyleBuilderModal({
             className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-5 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {busy && <Loader2 size={14} aria-hidden className="animate-spin" />}
-            {step === 'name' ? 'Next' : 'Build style'}
+            Build style
           </button>
           <button
             type="button"
-            onClick={step === 'name' ? onClose : () => setStep('name')}
+            onClick={onClose}
             className="rounded-lg border border-edge bg-surface px-5 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
           >
-            {step === 'name' ? 'Cancel' : 'Back'}
+            Cancel
           </button>
         </div>
       </form>
