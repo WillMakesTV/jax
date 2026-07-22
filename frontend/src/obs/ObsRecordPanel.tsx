@@ -7,13 +7,17 @@ import {
   PinOff,
   Plug,
   ScrollText,
+  Settings2,
   Square,
 } from 'lucide-react'
 import {useEffect, useRef, useState} from 'react'
 import {
-  OpenScriptWindow,
-  SetScriptWindowTopmost,
+  GetTeleprompterSchemes,
+  GetTeleprompterSettings,
+  OpenTeleprompter,
+  SetTeleprompterSettings,
 } from '../../wailsjs/go/main/App'
+import {main} from '../../wailsjs/go/models'
 import {useCaptureHidden} from '../lib/captureHidden'
 import {formatDurationMs} from '../lib/format'
 import {SETTING_KEYS, loadSetting} from '../lib/settings'
@@ -52,8 +56,8 @@ export function ObsRecordPanel({
   /** When set, OBS records into this directory instead of its own default
    *  (restored once the recording stops). */
   recordDir?: string
-  /** When set, the panel offers the plan's script in its own side window —
-   *  the teleprompter while recording. */
+  /** When set, the panel offers the plan's spoken script in its own side
+   *  window — the teleprompter, while recording. */
   planId?: string
 }) {
   const {obsRequest} = useServices()
@@ -82,50 +86,62 @@ export function ObsRecordPanel({
     }
   }
 
-  const showScript = async () => {
+  const openPrompter = async () => {
     if (!planId) return
     setError('')
     try {
-      await OpenScriptWindow(planId)
+      await OpenTeleprompter(planId)
     } catch (err) {
       setError(
         err instanceof Error && err.message
           ? err.message
           : typeof err === 'string' && err
             ? err
-            : 'The script window could not be opened.',
+            : 'The teleprompter could not be opened.',
       )
     }
   }
 
-  // The script window's keep-on-top preference: persisted in the backend and
-  // applied immediately to an already-open window.
-  const [scriptOnTop, setScriptOnTop] = useState(false)
+  // The teleprompter's settings — colours, auto-scroll, keep-on-top — live
+  // in the backend so the window and this panel never disagree; a change is
+  // applied to an already-open window immediately.
+  const [settings, setSettings] = useState<main.TeleprompterSettings | null>(
+    null,
+  )
+  const [schemes, setSchemes] = useState<main.TeleprompterScheme[]>([])
+  const [settingsOpen, setSettingsOpen] = useState(false)
   useEffect(() => {
     if (!planId) return
     let cancelled = false
-    loadSetting(SETTING_KEYS.scriptWindowTopmost)
-      .then((v) => {
-        if (!cancelled) setScriptOnTop(v === 'true')
+    GetTeleprompterSettings()
+      .then((s) => {
+        if (!cancelled) setSettings(s)
+      })
+      .catch(() => {})
+    GetTeleprompterSchemes()
+      .then((s) => {
+        if (!cancelled) setSchemes(s ?? [])
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
   }, [planId])
-  const toggleScriptOnTop = async () => {
+
+  const applySettings = async (next: main.TeleprompterSettings) => {
+    setSettings(next)
     setError('')
     try {
-      await SetScriptWindowTopmost(!scriptOnTop)
-      setScriptOnTop((v) => !v)
+      setSettings(await SetTeleprompterSettings(next))
     } catch (err) {
       setError(
         err instanceof Error && err.message
           ? err.message
-          : 'The keep-on-top preference could not be changed.',
+          : 'The teleprompter settings could not be saved.',
       )
     }
   }
+
   // OBS's own record directory while we've pointed it at recordDir; restored
   // after the recording stops.
   const prevDir = useRef('')
@@ -294,30 +310,22 @@ export function ObsRecordPanel({
           <>
             <button
               type="button"
-              onClick={() => void showScript()}
-              title="Open the plan's script in its own window beside the app — it follows the hide-from-capture setting"
+              onClick={() => void openPrompter()}
+              title="Open the plan's spoken script in its own window beside the app — it follows the hide-from-capture setting"
               className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
             >
               <ScrollText size={13} aria-hidden />
-              Show script
+              Teleprompter
             </button>
             <button
               type="button"
-              onClick={() => void toggleScriptOnTop()}
-              aria-pressed={scriptOnTop}
-              title={
-                scriptOnTop
-                  ? 'The script window stays above every other window — click to let it fall behind again'
-                  : 'Keep the script window above every other window, so the teleprompter stays readable over OBS or a game'
-              }
+              onClick={() => setSettingsOpen((open) => !open)}
+              aria-pressed={settingsOpen}
+              title="Colours, auto-scroll and keep-on-top for the teleprompter"
               className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
             >
-              {scriptOnTop ? (
-                <Pin size={13} aria-hidden />
-              ) : (
-                <PinOff size={13} aria-hidden />
-              )}
-              {scriptOnTop ? 'Kept on top' : 'Keep on top'}
+              <Settings2 size={13} aria-hidden />
+              Prompter settings
             </button>
           </>
         )}
@@ -343,6 +351,110 @@ export function ObsRecordPanel({
             ? "Records OBS's program output straight into the plan's sources folder; the file is added to the plan when the recording stops."
             : "Records OBS's program output to its configured recording folder; the file is added to the plan when the recording stops."}
         </p>
+        {planId && settingsOpen && settings && (
+          <div className="w-full rounded-lg border border-edge bg-bg p-3">
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-2 text-sm text-fg">
+                Colours
+                <select
+                  value={settings.scheme}
+                  onChange={(e) =>
+                    void applySettings(
+                      main.TeleprompterSettings.createFrom({
+                        ...settings,
+                        scheme: e.target.value,
+                      }),
+                    )
+                  }
+                  className="rounded-lg border border-edge bg-surface px-2 py-1 text-sm text-fg outline-none focus:border-accent"
+                >
+                  {schemes.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex items-center gap-2 text-sm text-fg">
+                <input
+                  type="checkbox"
+                  checked={settings.scroll}
+                  onChange={(e) =>
+                    void applySettings(
+                      main.TeleprompterSettings.createFrom({
+                        ...settings,
+                        scroll: e.target.checked,
+                      }),
+                    )
+                  }
+                  className="h-4 w-4 accent-accent"
+                />
+                Scroll while reading
+              </label>
+
+              {/* The speed only means anything while the scroll is on. */}
+              <label
+                className={
+                  settings.scroll
+                    ? 'flex items-center gap-2 text-sm text-fg'
+                    : 'flex items-center gap-2 text-sm text-fg-muted'
+                }
+              >
+                Speed
+                <input
+                  type="range"
+                  min={6}
+                  max={120}
+                  step={2}
+                  value={settings.speed}
+                  disabled={!settings.scroll}
+                  onChange={(e) =>
+                    void applySettings(
+                      main.TeleprompterSettings.createFrom({
+                        ...settings,
+                        speed: Number(e.target.value),
+                      }),
+                    )
+                  }
+                  className="accent-accent"
+                />
+                <span className="w-24 tabular-nums text-xs text-fg-muted">
+                  {settings.speed} lines/min
+                </span>
+              </label>
+
+              <button
+                type="button"
+                onClick={() =>
+                  void applySettings(
+                    main.TeleprompterSettings.createFrom({
+                      ...settings,
+                      topmost: !settings.topmost,
+                    }),
+                  )
+                }
+                aria-pressed={settings.topmost}
+                title={
+                  settings.topmost
+                    ? 'The teleprompter stays above every other window — click to let it fall behind again'
+                    : 'Keep the teleprompter above every other window, so it stays readable over OBS or a game'
+                }
+                className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-3 py-1.5 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+              >
+                {settings.topmost ? (
+                  <Pin size={13} aria-hidden />
+                ) : (
+                  <PinOff size={13} aria-hidden />
+                )}
+                {settings.topmost ? 'Kept on top' : 'Keep on top'}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-fg-muted">
+              Changes apply to an open teleprompter straight away.
+            </p>
+          </div>
+        )}
         {error && (
           <p className="w-full text-sm text-red-600 dark:text-red-400">
             {error}

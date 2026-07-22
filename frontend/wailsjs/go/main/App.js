@@ -342,6 +342,10 @@ export function GenerateStreamThumbnail(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['GenerateStreamThumbnail'](arg1, arg2, arg3, arg4);
 }
 
+export function GenerateVideoScript(arg1, arg2) {
+  return window['go']['main']['App']['GenerateVideoScript'](arg1, arg2);
+}
+
 export function GenerateVideoPlanThumbnail(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['GenerateVideoPlanThumbnail'](arg1, arg2, arg3, arg4, arg5);
 }
@@ -626,6 +630,14 @@ export function GetTikTokPublish(arg1) {
   return window['go']['main']['App']['GetTikTokPublish'](arg1);
 }
 
+export function GetTeleprompterSchemes() {
+  return window['go']['main']['App']['GetTeleprompterSchemes']();
+}
+
+export function GetTeleprompterSettings() {
+  return window['go']['main']['App']['GetTeleprompterSettings']();
+}
+
 export function GetTrackedVideos() {
   return window['go']['main']['App']['GetTrackedVideos']();
 }
@@ -648,6 +660,10 @@ export function GetVideoPlans() {
 
 export function GetVideoPublish(arg1) {
   return window['go']['main']['App']['GetVideoPublish'](arg1);
+}
+
+export function GetVideoScript(arg1) {
+  return window['go']['main']['App']['GetVideoScript'](arg1);
 }
 
 export function GetVideos(arg1) {
@@ -722,6 +738,10 @@ export function MarkAllLiveEventsRead() {
   return window['go']['main']['App']['MarkAllLiveEventsRead']();
 }
 
+export function OpenTeleprompter(arg1) {
+  return window['go']['main']['App']['OpenTeleprompter'](arg1);
+}
+
 export function MoveDownloadFolder(arg1) {
   return window['go']['main']['App']['MoveDownloadFolder'](arg1);
 }
@@ -732,10 +752,6 @@ export function MoveEditWorkspaceFolder(arg1) {
 
 export function NextEpisodeNumber(arg1) {
   return window['go']['main']['App']['NextEpisodeNumber'](arg1);
-}
-
-export function OpenScriptWindow(arg1) {
-  return window['go']['main']['App']['OpenScriptWindow'](arg1);
 }
 
 export function OutlineInProgress(arg1) {
@@ -918,6 +934,10 @@ export function SaveStreams(arg1) {
   return window['go']['main']['App']['SaveStreams'](arg1);
 }
 
+export function SaveVideoScript(arg1, arg2) {
+  return window['go']['main']['App']['SaveVideoScript'](arg1, arg2);
+}
+
 export function SaveVideoPlan(arg1) {
   return window['go']['main']['App']['SaveVideoPlan'](arg1);
 }
@@ -964,6 +984,10 @@ export function SendBroadcastChat(arg1) {
 
 export function SuggestVideoStyleTakeaways(arg1) {
   return window['go']['main']['App']['SuggestVideoStyleTakeaways'](arg1);
+}
+
+export function SetTeleprompterSettings(arg1) {
+  return window['go']['main']['App']['SetTeleprompterSettings'](arg1);
 }
 
 export function SetDefaultContentSeries(arg1) {

@@ -40,6 +40,8 @@ var (
 	procUpdateWindow        = user32.NewProc("UpdateWindow")
 	procLoadCursorW         = user32.NewProc("LoadCursorW")
 	procInvalidateRect      = user32.NewProc("InvalidateRect")
+	procSetTimer            = user32.NewProc("SetTimer")
+	procKillTimer           = user32.NewProc("KillTimer")
 	procFillRect            = user32.NewProc("FillRect")
 	procSetWindowPos        = user32.NewProc("SetWindowPos")
 	procGetModuleHandleW    = kernel32.NewProc("GetModuleHandleW")
@@ -65,6 +67,10 @@ const (
 	wmClose            = 0x0010
 	wmEraseBkgnd       = 0x0014
 	wmSetfont          = 0x0030
+	wmTimer            = 0x0113
+	emLineScroll       = 0x00B6
+	emGetFirstVisible  = 0x00CE
+	emGetLineCount     = 0x00BA
 	wmCtlColorEdit     = 0x0133
 	wmCtlColorStatic   = 0x0138
 	swShow             = 5
@@ -97,6 +103,33 @@ const (
 	scriptDarkFg  = 0x00f5f5f5
 	scriptLightBg = 0x00ffffff
 	scriptLightFg = 0x001a1a1a
+)
+
+// ScriptWindowOptions is how the teleprompter is dressed and driven: the
+// colours it paints in, whether it stays above other windows, and whether it
+// scrolls itself while the talent reads.
+type ScriptWindowOptions struct {
+	// Foreground and Background are COLORREFs (0x00BBGGRR).
+	Foreground uint32
+	Background uint32
+	// Dark asks Windows for a dark title bar; it does not pick the colours.
+	Dark    bool
+	Topmost bool
+	// Scroll turns the auto-scroll on; Speed is in lines per minute, and is
+	// clamped to something a person can read.
+	Scroll bool
+	Speed  int
+}
+
+// Auto-scroll bounds, in lines per minute: slow enough to read, fast enough
+// to be worth automating.
+const (
+	scriptSpeedMin     = 6
+	scriptSpeedMax     = 240
+	scriptSpeedDefault = 30
+
+	// scriptScrollTimer identifies the window's scroll timer.
+	scriptScrollTimer = 1
 )
 
 type wndclassexw struct {
@@ -134,42 +167,60 @@ var (
 	scriptHwnd uintptr
 	scriptEdit uintptr
 	scriptDark bool
+	scriptOpts ScriptWindowOptions
 
 	scriptClassOnce sync.Once
 	scriptClassErr  error
 	scriptFont      uintptr
 
-	// Lazily created background brushes, one per theme; GDI brushes are
-	// process-lifetime here so repainting never races a DeleteObject.
-	scriptBrushes [2]uintptr
+	// The background brush for the colours currently set, rebuilt whenever
+	// they change. Kept until then so repainting never races a DeleteObject.
+	scriptBrush   uintptr
+	scriptBrushBg uint32
 
 	// One permanent callback: syscall.NewCallback allocations never free.
 	scriptWndProc = syscall.NewCallback(func(hwnd, msg, wparam, lparam uintptr) uintptr {
 		switch msg {
 		case wmCtlColorEdit, wmCtlColorStatic:
 			// The read-only EDIT asks its parent for colors (readonly sends
-			// CTLCOLORSTATIC); answer with the app palette for the theme.
+			// CTLCOLORSTATIC); answer with the scheme's palette.
 			scriptMu.Lock()
-			dark := scriptDark
+			fg, bg := scriptOpts.Foreground, scriptOpts.Background
 			scriptMu.Unlock()
-			fg, bg := uintptr(scriptLightFg), uintptr(scriptLightBg)
-			if dark {
-				fg, bg = scriptDarkFg, scriptDarkBg
-			}
-			_, _, _ = procSetTextColor.Call(wparam, fg)
-			_, _, _ = procSetBkColor.Call(wparam, bg)
-			return scriptBrushFor(dark)
+			_, _, _ = procSetTextColor.Call(wparam, uintptr(fg))
+			_, _, _ = procSetBkColor.Call(wparam, uintptr(bg))
+			return scriptBrushFor(bg)
 		case wmEraseBkgnd:
-			// Erase the frame in the theme background so no white flashes
+			// Erase the frame in the scheme's background so no white flashes
 			// behind the EDIT while it catches up to the client size.
 			scriptMu.Lock()
-			dark := scriptDark
+			bg := scriptOpts.Background
 			scriptMu.Unlock()
 			var rc winRect
 			if r, _, _ := procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc))); r != 0 {
-				_, _, _ = procFillRect.Call(wparam, uintptr(unsafe.Pointer(&rc)), scriptBrushFor(dark))
+				_, _, _ = procFillRect.Call(wparam, uintptr(unsafe.Pointer(&rc)), scriptBrushFor(bg))
 			}
 			return 1
+		case wmTimer:
+			// One line down per tick, stopping at the end rather than
+			// hammering a scroll that can no longer move.
+			if wparam != scriptScrollTimer {
+				break
+			}
+			scriptMu.Lock()
+			edit := scriptEdit
+			scriptMu.Unlock()
+			if edit == 0 {
+				return 0
+			}
+			first, _, _ := procSendMessageW.Call(edit, emGetFirstVisible, 0, 0)
+			_, _, _ = procSendMessageW.Call(edit, emLineScroll, 0, 1)
+			after, _, _ := procSendMessageW.Call(edit, emGetFirstVisible, 0, 0)
+			if after == first {
+				// The last line is on screen; nothing left to scroll to.
+				_, _, _ = procKillTimer.Call(hwnd, scriptScrollTimer)
+			}
+			return 0
 		case wmSize:
 			scriptMu.Lock()
 			edit := scriptEdit
@@ -219,20 +270,49 @@ func SystemPrefersDark() bool {
 	return r == 0 && val == 0
 }
 
-// scriptBrushFor returns the background brush for the theme, creating it on
-// first use. Brushes live for the process so a repaint never races a delete.
-func scriptBrushFor(dark bool) uintptr {
-	i, bg := 0, uintptr(scriptLightBg)
-	if dark {
-		i, bg = 1, scriptDarkBg
-	}
+// scriptBrushFor returns the background brush for a colour, rebuilding it
+// when the scheme changes. The previous brush is released only once the new
+// one exists, so a repaint never finds nothing to paint with.
+func scriptBrushFor(bg uint32) uintptr {
 	scriptMu.Lock()
 	defer scriptMu.Unlock()
-	if scriptBrushes[i] == 0 {
-		b, _, _ := procCreateSolidBrush.Call(bg)
-		scriptBrushes[i] = b
+	if scriptBrush != 0 && scriptBrushBg == bg {
+		return scriptBrush
 	}
-	return scriptBrushes[i]
+	b, _, _ := procCreateSolidBrush.Call(uintptr(bg))
+	if b == 0 {
+		return scriptBrush
+	}
+	old := scriptBrush
+	scriptBrush, scriptBrushBg = b, bg
+	if old != 0 {
+		_, _, _ = procDeleteObject.Call(old)
+	}
+	return scriptBrush
+}
+
+// scriptScrollInterval turns lines per minute into a timer period.
+func scriptScrollInterval(speed int) uintptr {
+	if speed < scriptSpeedMin {
+		speed = scriptSpeedMin
+	}
+	if speed > scriptSpeedMax {
+		speed = scriptSpeedMax
+	}
+	return uintptr(60_000 / speed)
+}
+
+// applyScriptScroll starts, restarts, or stops the window's auto-scroll.
+func applyScriptScroll(hwnd uintptr, opts ScriptWindowOptions) {
+	if hwnd == 0 {
+		return
+	}
+	if !opts.Scroll {
+		_, _, _ = procKillTimer.Call(hwnd, scriptScrollTimer)
+		return
+	}
+	// SetTimer with an existing id replaces the period in place.
+	_, _, _ = procSetTimer.Call(hwnd, scriptScrollTimer, scriptScrollInterval(opts.Speed), 0)
 }
 
 // applyScriptTopmost moves the window into or out of the topmost band
@@ -251,10 +331,31 @@ func applyScriptTopmost(hwnd uintptr, onTop bool) {
 func SetScriptWindowTopmost(onTop bool) error {
 	scriptMu.Lock()
 	hwnd := scriptHwnd
+	scriptOpts.Topmost = onTop
 	scriptMu.Unlock()
 	if hwnd != 0 {
 		applyScriptTopmost(hwnd, onTop)
 	}
+	return nil
+}
+
+// SetScriptWindowOptions applies a fresh set of teleprompter settings to the
+// window that is already open — the colours repaint, the scroll restarts at
+// the new speed (or stops), and the title bar follows the scheme. With no
+// window open the settings are simply remembered for the next one.
+func SetScriptWindowOptions(opts ScriptWindowOptions) error {
+	scriptMu.Lock()
+	hwnd, edit := scriptHwnd, scriptEdit
+	scriptOpts = opts
+	scriptMu.Unlock()
+	if hwnd == 0 {
+		return nil
+	}
+	applyScriptTheme(hwnd, opts.Dark)
+	applyScriptTopmost(hwnd, opts.Topmost)
+	applyScriptScroll(hwnd, opts)
+	_, _, _ = procInvalidateRect.Call(hwnd, 0, 1)
+	_, _, _ = procInvalidateRect.Call(edit, 0, 1)
 	return nil
 }
 
@@ -296,22 +397,26 @@ func registerScriptClass() error {
 
 // OpenScriptWindow shows the plan's script in the process-owned side window,
 // creating it (on a dedicated message-loop thread) or updating the one
-// already open. The window follows the app's resolved theme via dark and the
-// keep-on-top preference via topmost. The caller re-applies the capture
-// affinity afterwards.
-func OpenScriptWindow(title, text string, dark, topmost bool) error {
+// already open. The window is dressed and driven by opts — its colours,
+// whether it keeps above other windows, and the auto-scroll. The caller
+// re-applies the capture affinity afterwards.
+func OpenScriptWindow(title, text string, opts ScriptWindowOptions) error {
 	// The EDIT control needs CRLF line endings.
 	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\n", "\r\n")
 
 	scriptMu.Lock()
 	hwnd, edit := scriptHwnd, scriptEdit
+	scriptOpts = opts
 	scriptMu.Unlock()
 	if hwnd != 0 {
-		applyScriptTheme(hwnd, dark)
-		applyScriptTopmost(hwnd, topmost)
+		applyScriptTheme(hwnd, opts.Dark)
+		applyScriptTopmost(hwnd, opts.Topmost)
 		_, _, _ = procSetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(utf16Ptr(title))))
 		_, _, _ = procSetWindowTextW.Call(edit, uintptr(unsafe.Pointer(utf16Ptr(text))))
 		_, _, _ = procInvalidateRect.Call(edit, 0, 1)
+		// A re-opened prompter reads from the top again.
+		_, _, _ = procSendMessageW.Call(edit, emLineScroll, 0, 0)
+		applyScriptScroll(hwnd, opts)
 		_, _, _ = procShowWindow.Call(hwnd, swRestore)
 		_, _, _ = procSetForegroundWindow.Call(hwnd)
 		return nil
@@ -342,7 +447,7 @@ func OpenScriptWindow(title, text string, dark, topmost bool) error {
 		}
 		// Theme before first paint: dark title bar plus the palette the
 		// WM_CTLCOLOR*/WM_ERASEBKGND handlers answer with.
-		applyScriptTheme(hwnd, dark)
+		applyScriptTheme(hwnd, opts.Dark)
 		edit, _, callErr := procCreateWindowExW.Call(
 			0,
 			uintptr(unsafe.Pointer(utf16Ptr("EDIT"))),
@@ -376,9 +481,10 @@ func OpenScriptWindow(title, text string, dark, topmost bool) error {
 			_, _, _ = procMoveWindow.Call(edit, 0, 0,
 				uintptr(rc.right-rc.left), uintptr(rc.bottom-rc.top), 1)
 		}
-		if topmost {
+		if opts.Topmost {
 			applyScriptTopmost(hwnd, true)
 		}
+		applyScriptScroll(hwnd, opts)
 		_, _, _ = procShowWindow.Call(hwnd, swShow)
 		_, _, _ = procUpdateWindow.Call(hwnd)
 		created <- nil

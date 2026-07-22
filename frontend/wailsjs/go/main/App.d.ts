@@ -174,6 +174,8 @@ export function GenerateStreamThumbnail(arg1:string,arg2:string,arg3:string,arg4
 
 export function GenerateVideoPlanThumbnail(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string):Promise<main.PlanThumbnail>;
 
+export function GenerateVideoScript(arg1:string,arg2:string):Promise<string>;
+
 export function GenerateVideoPublishFields(arg1:string,arg2:main.VideoPublishDraft,arg3:Array<string>,arg4:string):Promise<main.VideoPublishSuggestion>;
 
 export function GenerateWidgetFieldImage(arg1:string,arg2:string,arg3:string):Promise<main.StreamWidget>;
@@ -314,6 +316,10 @@ export function GetSystemWidgets():Promise<Array<main.SystemWidget>>;
 
 export function GetTikTokPublish(arg1:string):Promise<main.TikTokPublishRecord>;
 
+export function GetTeleprompterSchemes():Promise<Array<main.TeleprompterScheme>>;
+
+export function GetTeleprompterSettings():Promise<main.TeleprompterSettings>;
+
 export function GetTrackedVideos():Promise<Array<main.TrackedVideo>>;
 
 export function GetTranscribeJobs():Promise<Array<main.TranscribeJob>>;
@@ -325,6 +331,8 @@ export function GetVideoDetails(arg1:string,arg2:string,arg3:boolean):Promise<ma
 export function GetVideoPlans():Promise<Array<main.VideoPlan>>;
 
 export function GetVideoPublish(arg1:string):Promise<main.VideoPublishState>;
+
+export function GetVideoScript(arg1:string):Promise<string>;
 
 export function GetVideoStyle(arg1:string):Promise<main.VideoStyle>;
 
@@ -364,13 +372,13 @@ export function MarkAllChatRead():Promise<void>;
 
 export function MarkAllLiveEventsRead():Promise<void>;
 
+export function OpenTeleprompter(arg1:string):Promise<void>;
+
 export function MoveDownloadFolder(arg1:string):Promise<number>;
 
 export function MoveEditWorkspaceFolder(arg1:string):Promise<number>;
 
 export function NextEpisodeNumber(arg1:string):Promise<number>;
-
-export function OpenScriptWindow(arg1:string):Promise<void>;
 
 export function OutlineInProgress(arg1:string):Promise<boolean>;
 
@@ -466,6 +474,8 @@ export function SaveVideoPlan(arg1:main.VideoPlan):Promise<main.VideoPlan>;
 
 export function SaveVideoPublishDraft(arg1:string,arg2:main.VideoPublishDraft):Promise<void>;
 
+export function SaveVideoScript(arg1:string,arg2:string):Promise<void>;
+
 export function SaveVideoStyle(arg1:main.VideoStyle):Promise<main.VideoStyle>;
 
 export function SaveWidgetFieldType(arg1:main.WidgetFieldType):Promise<main.WidgetFieldType>;
@@ -485,6 +495,8 @@ export function SelectFacebookPage(arg1:string):Promise<main.ServiceStatus>;
 export function SendBroadcastChat(arg1:string):Promise<Array<main.BroadcastSendResult>>;
 
 export function SuggestVideoStyleTakeaways(arg1:string):Promise<Array<main.VideoStyleSource>>;
+
+export function SetTeleprompterSettings(arg1:main.TeleprompterSettings):Promise<main.TeleprompterSettings>;
 
 export function SetDefaultContentSeries(arg1:string):Promise<void>;
 

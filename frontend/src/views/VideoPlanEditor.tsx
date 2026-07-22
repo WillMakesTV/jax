@@ -21,6 +21,7 @@ import clsx from 'clsx'
 import {useCallback, useEffect, useRef, useState} from 'react'
 import {
   ApplyChangesToSkill,
+  GenerateVideoScript,
   GetEditRuns,
   GetEditScript,
   GetEditVersions,
@@ -28,8 +29,10 @@ import {
   GetEditorTools,
   GetPlanChanges,
   InstallEditorTools,
+  GetVideoScript,
   RestoreEditVersion,
   SaveEditScript,
+  SaveVideoScript,
   StopEditRun,
   SummarizePlanChanges,
 } from '../../wailsjs/go/main/App'
@@ -469,8 +472,10 @@ export function VideoPlanEditor({
       )}
 
       {/* ---------------------------------------------------------------
-          The script: written by AI from the sources, saved automatically,
-          then handed to the background session.
+          The edit directions: written by AI from the sources, saved
+          automatically, then handed to the background session. They say how
+          the video is assembled — the words the talent says are the spoken
+          script below.
           --------------------------------------------------------------- */}
       <section aria-labelledby="editor-script-heading">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -478,7 +483,7 @@ export function VideoPlanEditor({
             id="editor-script-heading"
             className="text-sm font-semibold uppercase tracking-wide text-fg-muted"
           >
-            Script
+            Edit directions
           </h2>
           {/* With a script in place, generation reads as requesting edits to
               it — the revision folds the current script and the request in. */}
@@ -542,7 +547,7 @@ export function VideoPlanEditor({
                 id="editor-script"
                 value={script}
                 onChange={setScript}
-                placeholder="The script the edit session executes."
+                placeholder="The directions the edit session executes."
               />
               {/* The fade tells you there is more without stealing the clicks
                   of the editor underneath it. */}
@@ -574,22 +579,27 @@ export function VideoPlanEditor({
                     scriptOpen && 'rotate-180',
                   )}
                 />
-                {scriptOpen ? 'Show less' : 'Show the full script'}
+                {scriptOpen ? 'Show less' : 'Show the full directions'}
               </button>
             </div>
           </>
         ) : (
           <p className="text-sm text-fg-muted">
-            Generate the script and the AI reviews every source stream&apos;s
-            transcript and outline, then writes the{' '}
+            Generate the directions and the AI reviews every source
+            stream&apos;s transcript and outline, then writes how this{' '}
             {plan.format === 'short'
-              ? 'short-form script (30–60 seconds)'
-              : 'long-form script (8–15 minutes)'}{' '}
-            for this video. It saves itself, and you can edit it before
+              ? 'short-form video (30–60 seconds)'
+              : 'long-form video (8–15 minutes)'}{' '}
+            is cut. They save themselves, and you can edit them before
             processing.
           </p>
         )}
       </section>
+
+      {/* The spoken script: what the talent says, and what is on screen while
+          they say it. Separate from the directions above — this is the
+          document the teleprompter reads. */}
+      <SpokenScript plan={plan} aiConnected={aiConnected} />
 
       {/* The primary action: run the edit in the background. */}
       <div className="flex flex-wrap items-center gap-2">
@@ -1119,6 +1129,162 @@ export function VideoPlanEditor({
         </div>
       </Modal>
     </div>
+  )
+}
+
+/**
+ * The spoken script: the words the talent says and what is on screen while
+ * they say them. It is its own document — the directions above say how the
+ * video is cut, this says what is in it — and it is what the teleprompter
+ * reads while recording (see video_script.go / script_window.go).
+ */
+function SpokenScript({
+  plan,
+  aiConnected,
+}: {
+  plan: main.VideoPlan
+  aiConnected: boolean
+}) {
+  const [script, setScript] = useState('')
+  const [loaded, setLoaded] = useState(false)
+  const [draftRound, setDraftRound] = useState(0)
+  const [notes, setNotes] = useState('')
+  const [notesOpen, setNotesOpen] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    setLoaded(false)
+    GetVideoScript(plan.id)
+      .then((s) => setScript(s ?? ''))
+      .catch(() => {})
+      .finally(() => setLoaded(true))
+  }, [plan.id])
+
+  // Hand edits save themselves, like the directions above.
+  useEffect(() => {
+    if (!loaded) return
+    const id = window.setTimeout(() => {
+      void SaveVideoScript(plan.id, script).catch(() => {})
+    }, 800)
+    return () => window.clearTimeout(id)
+  }, [plan.id, script, loaded])
+
+  const has = script.trim() !== ''
+
+  const generate = async () => {
+    setGenerating(true)
+    setError('')
+    try {
+      // The backend saves what it writes, so a reload finds the same text.
+      const next = await GenerateVideoScript(plan.id, notes.trim())
+      setScript(next)
+      setDraftRound((n) => n + 1)
+      setNotes('')
+      setNotesOpen(false)
+    } catch (err) {
+      setError(messageOf(err, 'The script could not be written.'))
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  return (
+    <section aria-labelledby="editor-spoken-heading">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h2
+          id="editor-spoken-heading"
+          className="text-sm font-semibold uppercase tracking-wide text-fg-muted"
+        >
+          Script
+        </h2>
+        <button
+          type="button"
+          onClick={() =>
+            has ? setNotesOpen((open) => !open) : void generate()
+          }
+          disabled={generating || !aiConnected}
+          title={
+            !aiConnected
+              ? 'Connect Anthropic or OpenAI in Settings → AI to write the script'
+              : has
+                ? 'Describe what should change and the AI rewrites the script, keeping the rest'
+                : "Write what the talent says, and what is on screen while they say it, from the plan's idea, its style and the edit directions"
+          }
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {generating ? (
+            <Loader2 size={14} aria-hidden className="animate-spin" />
+          ) : has ? (
+            <Pencil size={14} aria-hidden />
+          ) : (
+            <Sparkles size={14} aria-hidden />
+          )}
+          {generating ? 'Writing…' : has ? 'Request Edits' : 'Generate with AI'}
+        </button>
+      </div>
+
+      {notesOpen && has && (
+        <div className="mb-3 flex flex-col gap-2 rounded-lg border border-edge bg-surface p-3">
+          <MarkdownField
+            id="spoken-script-notes"
+            value={notes}
+            onChange={setNotes}
+            placeholder="e.g. tighten the intro and add a line about the new preset"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void generate()}
+              disabled={generating || !notes.trim()}
+              className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {generating ? 'Rewriting…' : 'Rewrite the script'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setNotesOpen(false)
+                setNotes('')
+              }}
+              className="rounded-lg border border-edge bg-bg px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {has || generating ? (
+        <div
+          className={clsx(generating && 'pointer-events-none opacity-60')}
+          aria-busy={generating}
+        >
+          <MarkdownField
+            key={draftRound}
+            id="editor-spoken-script"
+            value={script}
+            onChange={setScript}
+            placeholder="What the talent says, and what is on screen."
+          />
+          <p className="mt-1.5 text-xs text-fg-muted">
+            Saved automatically. This is what the Teleprompter reads while you
+            record from OBS.
+          </p>
+        </div>
+      ) : (
+        <p className="text-sm text-fg-muted">
+          The directions above say how the video is cut; this is what is
+          actually said on camera, with a note of what is on screen for each
+          section. Generate it and read it off the Teleprompter while you
+          record.
+        </p>
+      )}
+
+      {error && (
+        <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </section>
   )
 }
 

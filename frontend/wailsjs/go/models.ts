@@ -2579,6 +2579,38 @@ export class RoutineStep {
 	        this.title = source["title"];
 	    }
 	}
+	export class TeleprompterScheme {
+	    id: string;
+	    label: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TeleprompterScheme(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.label = source["label"];
+	    }
+	}
+	export class TeleprompterSettings {
+	    scheme: string;
+	    scroll: boolean;
+	    speed: number;
+	    topmost: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new TeleprompterSettings(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.scheme = source["scheme"];
+	        this.scroll = source["scroll"];
+	        this.speed = source["speed"];
+	        this.topmost = source["topmost"];
+	    }
+	}
 	export class VideoStyleSource {
 	    kind: string;
 	    title: string;

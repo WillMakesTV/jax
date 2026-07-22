@@ -1048,8 +1048,16 @@ func (a *App) editPrompt(plan VideoPlan, instruction string) string {
 		b.WriteString("\n")
 	}
 
-	if script := strings.TrimSpace(a.GetEditScript(plan.ID)); script != "" {
-		b.WriteString("\n# The script\n\nThe producer approved this script for the video. It is what the first cut executes, and what every later cut is a revision of.\n\n")
+	if directions := strings.TrimSpace(a.GetEditScript(plan.ID)); directions != "" {
+		b.WriteString("\n# The edit directions\n\nThe producer approved these directions for the video. They are what the first cut executes, and what every later cut is a revision of.\n\n")
+		b.WriteString(directions)
+		b.WriteString("\n")
+	}
+	// The spoken script, when one was written (see video_script.go): the words
+	// on the recorded footage, so the cut is made around what is actually
+	// being said rather than guessed at from the directions alone.
+	if script := strings.TrimSpace(a.GetVideoScript(plan.ID)); script != "" {
+		b.WriteString("\n# The spoken script\n\nThis is what the talent says to camera, and what is on screen while they say it. The footage was recorded to it.\n\n")
 		b.WriteString(script)
 		b.WriteString("\n")
 	}
