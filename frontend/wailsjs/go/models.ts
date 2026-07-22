@@ -2579,6 +2579,74 @@ export class RoutineStep {
 	        this.title = source["title"];
 	    }
 	}
+	export class VideoStyleSource {
+	    kind: string;
+	    title: string;
+	    detail: string;
+	    apply: string;
+	    videoId: string;
+	    videoTitle: string;
+	    videoUrl: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VideoStyleSource(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.title = source["title"];
+	        this.detail = source["detail"];
+	        this.apply = source["apply"];
+	        this.videoId = source["videoId"];
+	        this.videoTitle = source["videoTitle"];
+	        this.videoUrl = source["videoUrl"];
+	    }
+	}
+	export class VideoStyle {
+	    id: string;
+	    name: string;
+	    status: string;
+	    statusDetail: string;
+	    sources: VideoStyleSource[];
+	    body: string;
+	    createdAt: string;
+	    updatedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VideoStyle(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.status = source["status"];
+	        this.statusDetail = source["statusDetail"];
+	        this.sources = this.convertValues(source["sources"], VideoStyleSource);
+	        this.body = source["body"];
+	        this.createdAt = source["createdAt"];
+	        this.updatedAt = source["updatedAt"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class VideoPlan {
 	    id: string;
 	    title: string;

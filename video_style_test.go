@@ -1,0 +1,76 @@
+package main
+
+import "testing"
+
+func TestVideoStyleSuggestAndStore(t *testing.T) {
+	a := newTestApp(t)
+
+	// With nothing studied there is nothing to build a style from.
+	if got := a.SuggestVideoStyleTakeaways("fast cuts"); len(got) != 0 {
+		t.Fatalf("empty library should suggest nothing: %+v", got)
+	}
+	if _, err := a.CreateVideoStyle("Fast Cuts", nil); err == nil {
+		t.Fatal("want an error when the library has no takeaways")
+	}
+
+	lib := a.getInspiration()
+	lib.Videos = append(lib.Videos,
+		InspirationVideo{ID: "v1", Title: "Colour grading", Status: inspirationReady,
+			Takeaways: []InspirationTakeaway{
+				{Kind: "technique", Title: "Grade for skin first", Detail: "Warm the mids"},
+			}},
+		InspirationVideo{ID: "v2", Title: "Pacing", Status: inspirationReady,
+			Takeaways: []InspirationTakeaway{
+				{Kind: "technique", Title: "Cut on the beat", Detail: "Fast cuts under music"},
+				{Kind: "hook", Title: "Open on the result", Apply: "Show the finish first"},
+			}},
+	)
+	if err := a.saveInspiration(lib); err != nil {
+		t.Fatalf("save library: %v", err)
+	}
+
+	// The name steers the ranking: the takeaway that speaks to it leads.
+	got := a.SuggestVideoStyleTakeaways("fast cuts")
+	if len(got) != 3 {
+		t.Fatalf("every takeaway should be offered: %+v", got)
+	}
+	if got[0].Title != "Cut on the beat" {
+		t.Fatalf("the matching takeaway should lead: %+v", got)
+	}
+
+	// A style stores its sources and starts out building; the run itself
+	// needs the AI runner, so only the record is asserted here.
+	style, err := a.saveVideoStyle(VideoStyle{
+		Name: "Fast Cuts", Status: videoStyleBuilding,
+		StatusDetail: videoStyleReadingDetail(len(got)), Sources: got,
+	})
+	if err != nil {
+		t.Fatalf("save style: %v", err)
+	}
+	if style.ID == "" || style.CreatedAt == "" {
+		t.Fatalf("save should assign an id and a created time: %+v", style)
+	}
+	if inFlight := a.VideoStylesInFlight(); len(inFlight) != 1 || inFlight[0].ID != style.ID {
+		t.Fatalf("a building style should be in flight: %+v", inFlight)
+	}
+	if style.StatusDetail != "Reading 3 takeaways" {
+		t.Fatalf("status detail = %q", style.StatusDetail)
+	}
+
+	// Editing keeps the build's own fields; deleting removes it.
+	style.Name = "Fast Cuts v2"
+	style.Sources = nil
+	edited, err := a.SaveVideoStyle(style)
+	if err != nil {
+		t.Fatalf("edit style: %v", err)
+	}
+	if edited.Name != "Fast Cuts v2" || len(edited.Sources) != 3 {
+		t.Fatalf("edit should keep the sources: %+v", edited)
+	}
+	if err := a.DeleteVideoStyle(style.ID); err != nil {
+		t.Fatalf("delete style: %v", err)
+	}
+	if len(a.GetVideoStyles()) != 0 {
+		t.Fatal("style not deleted")
+	}
+}

@@ -126,6 +126,10 @@ export function CompleteVideoPlan(arg1) {
   return window['go']['main']['App']['CompleteVideoPlan'](arg1);
 }
 
+export function CreateVideoStyle(arg1, arg2) {
+  return window['go']['main']['App']['CreateVideoStyle'](arg1, arg2);
+}
+
 export function ConcludePlannedStream(arg1) {
   return window['go']['main']['App']['ConcludePlannedStream'](arg1);
 }
@@ -250,6 +254,10 @@ export function DeleteVideoPlan(arg1) {
   return window['go']['main']['App']['DeleteVideoPlan'](arg1);
 }
 
+export function DeleteVideoStyle(arg1) {
+  return window['go']['main']['App']['DeleteVideoStyle'](arg1);
+}
+
 export function DeleteWidgetFieldType(arg1) {
   return window['go']['main']['App']['DeleteWidgetFieldType'](arg1);
 }
@@ -264,6 +272,10 @@ export function DisconnectService(arg1) {
 
 export function EditPlanDescription(arg1, arg2, arg3) {
   return window['go']['main']['App']['EditPlanDescription'](arg1, arg2, arg3);
+}
+
+export function EditVideoStyle(arg1, arg2, arg3) {
+  return window['go']['main']['App']['EditVideoStyle'](arg1, arg2, arg3);
 }
 
 export function EndStreamSession() {
@@ -642,6 +654,14 @@ export function GetVideos(arg1) {
   return window['go']['main']['App']['GetVideos'](arg1);
 }
 
+export function GetVideoStyle(arg1) {
+  return window['go']['main']['App']['GetVideoStyle'](arg1);
+}
+
+export function GetVideoStyles() {
+  return window['go']['main']['App']['GetVideoStyles']();
+}
+
 export function GetWidgetFieldTypes() {
   return window['go']['main']['App']['GetWidgetFieldTypes']();
 }
@@ -786,6 +806,10 @@ export function RemoveVideoPlanFootage(arg1, arg2) {
   return window['go']['main']['App']['RemoveVideoPlanFootage'](arg1, arg2);
 }
 
+export function RebuildVideoStyle(arg1) {
+  return window['go']['main']['App']['RebuildVideoStyle'](arg1);
+}
+
 export function RemoveWidgetField(arg1, arg2) {
   return window['go']['main']['App']['RemoveWidgetField'](arg1, arg2);
 }
@@ -902,6 +926,10 @@ export function SaveVideoPublishDraft(arg1, arg2) {
   return window['go']['main']['App']['SaveVideoPublishDraft'](arg1, arg2);
 }
 
+export function SaveVideoStyle(arg1) {
+  return window['go']['main']['App']['SaveVideoStyle'](arg1);
+}
+
 export function SaveWidgetFieldType(arg1) {
   return window['go']['main']['App']['SaveWidgetFieldType'](arg1);
 }
@@ -932,6 +960,10 @@ export function SelectFacebookPage(arg1) {
 
 export function SendBroadcastChat(arg1) {
   return window['go']['main']['App']['SendBroadcastChat'](arg1);
+}
+
+export function SuggestVideoStyleTakeaways(arg1) {
+  return window['go']['main']['App']['SuggestVideoStyleTakeaways'](arg1);
 }
 
 export function SetDefaultContentSeries(arg1) {
@@ -1137,6 +1169,10 @@ export function UploadWidgetFieldSound(arg1, arg2) {
 
 export function UsedEpisodeNumbers(arg1) {
   return window['go']['main']['App']['UsedEpisodeNumbers'](arg1);
+}
+
+export function VideoStylesInFlight() {
+  return window['go']['main']['App']['VideoStylesInFlight']();
 }
 
 export function XRedirectURI() {

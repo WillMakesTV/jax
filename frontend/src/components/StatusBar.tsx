@@ -14,6 +14,7 @@ import {
   MicOff,
   Music,
   NotebookText,
+  Palette,
   ScrollText,
   Sparkles,
   Users,
@@ -50,6 +51,10 @@ import {useCaptureHidden} from '../lib/captureHidden'
 import {formatCompact, formatDurationMs, formatKbps} from '../lib/format'
 import {aggregateLive, useLiveData} from '../live/LiveDataProvider'
 import {
+  useVideoStyleJobs,
+  type VideoStyleJob,
+} from '../style/VideoStyleProvider'
+import {
   useOutlineJobs,
   type OutlineJob,
   type OutlineNotice,
@@ -81,6 +86,7 @@ interface StatusBarProps {
   onOpenPostStream: (startedAt: string, tab: StreamTab | null) => void
   /** Open the inspiration video being downloaded/transcribed/studied. */
   onOpenInspiration: (videoId: string) => void
+  onOpenVideoStyle: (styleId: string) => void
 }
 
 /**
@@ -98,6 +104,7 @@ export function StatusBar({
   onOpenEditSession,
   onOpenPostStream,
   onOpenInspiration,
+  onOpenVideoStyle,
 }: StatusBarProps) {
   const {platforms, obs, mics, music, camera, micSourceName, obsConnected} =
     useLiveData()
@@ -109,6 +116,7 @@ export function StatusBar({
   const aiQueue = useAiQueue()
   const editSession = useEditSession()
   const inspiration = useInspirationJobs()
+  const videoStyle = useVideoStyleJobs()
 
   // Prefer the designated primary mic; otherwise "on" when any mic is
   // unmuted. Hidden entirely when OBS is away or has no mic devices.
@@ -291,6 +299,9 @@ export function StatusBar({
       {/* Inspiration pipeline (download → transcribe → study); click through
           to the video being processed. */}
       <InspirationStatus jobs={inspiration.jobs} onOpen={onOpenInspiration} />
+
+      {/* Video style builds; click through to the style being written. */}
+      <VideoStyleStatus jobs={videoStyle.jobs} onOpen={onOpenVideoStyle} />
 
       {/* Outline generation; click through to the stream's Outline tab. */}
       <OutlineStatus
@@ -845,6 +856,57 @@ const INSPIRATION_LABELS: Record<string, string> = {
   extracting: 'Extracting takeaways',
   ready: 'Studied',
   error: 'Failed',
+}
+
+/**
+ * Video style builds: one chip for the style being written, with a count when
+ * others are behind it. A finished or failed build lingers briefly (see
+ * VideoStyleProvider), and either way the chip opens the style's page.
+ */
+function VideoStyleStatus({
+  jobs,
+  onOpen,
+}: {
+  jobs: VideoStyleJob[]
+  onOpen: (styleId: string) => void
+}) {
+  if (jobs.length === 0) return null
+  const working = jobs.filter((j) => j.status === 'building')
+  const job = working[0] ?? jobs[jobs.length - 1]
+  const done = job.status === 'ready'
+  const failed = job.status === 'error'
+  const step = failed
+    ? 'Style failed'
+    : done
+      ? 'Style ready'
+      : job.detail || 'Building style'
+  const queued = working.length > 1 ? ` · ${working.length - 1} more` : ''
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(job.id)}
+      title={job.detail || 'Open the style being built'}
+      className={
+        failed
+          ? 'inline-flex min-w-0 items-center gap-1.5 font-medium text-red-500 transition-colors hover:text-accent dark:text-red-400'
+          : done
+            ? 'inline-flex min-w-0 items-center gap-1.5 font-medium text-green-600 transition-colors hover:text-accent dark:text-green-400'
+            : 'inline-flex min-w-0 items-center gap-1.5 font-medium text-fg transition-colors hover:text-accent'
+      }
+    >
+      {done || failed ? (
+        <Palette size={12} aria-hidden />
+      ) : (
+        <Loader2 size={12} aria-hidden className="animate-spin" />
+      )}
+      <span className="max-w-[22rem] truncate">
+        {done ? '✓ ' : ''}
+        {step} — {job.name}
+        {queued}
+      </span>
+    </button>
+  )
 }
 
 /**

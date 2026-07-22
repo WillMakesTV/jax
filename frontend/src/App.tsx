@@ -101,6 +101,8 @@ interface NavState {
   inspirationVideo: main.InspirationVideo | null
   /** The inspiration type being edited; null = a new one. */
   inspirationType: main.InspirationType | null
+  /** The video style to open on the Video Style page; "" = none. */
+  videoStyleId: string
   /** Tab to land on when opening Settings; null = default. */
   settingsTab: SettingsTab | null
 }
@@ -128,6 +130,7 @@ const INITIAL_NAV: NavState = {
   inspirationChannel: null,
   inspirationVideo: null,
   inspirationType: null,
+  videoStyleId: '',
   settingsTab: null,
 }
 
@@ -154,6 +157,7 @@ const sameNav = (a: NavState, b: NavState) =>
   a.inspirationChannel === b.inspirationChannel &&
   a.inspirationVideo === b.inspirationVideo &&
   a.inspirationType === b.inspirationType &&
+  a.videoStyleId === b.videoStyleId &&
   a.settingsTab === b.settingsTab
 
 function App() {
@@ -844,10 +848,14 @@ function App() {
                 onOpenVideo={openVideoDetails}
                 onOpenVideoPlan={openVideoPlanDetails}
                 onPlanVideo={() => openPlanVideo(null)}
-                onVideoStyle={() => navigate({view: 'video-style'})}
+                onVideoStyle={() =>
+                  navigate({view: 'video-style', videoStyleId: ''})
+                }
               />
             )}
-            {view === 'video-style' && <VideoStyle />}
+            {view === 'video-style' && (
+              <VideoStyle styleId={cur.videoStyleId || undefined} />
+            )}
             {view === 'video-plan' && cur.videoPlan && (
               <VideoPlanDetails
                 plan={cur.videoPlan}
@@ -899,6 +907,9 @@ function App() {
           void openStreamByStart(startedAt, streamTab)
         }
         onOpenInspiration={(videoId) => void openInspirationVideoById(videoId)}
+        onOpenVideoStyle={(styleId) =>
+          navigate({view: 'video-style', videoStyleId: styleId})
+        }
       />
     </div>
   )

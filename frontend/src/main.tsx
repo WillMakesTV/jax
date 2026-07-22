@@ -19,6 +19,7 @@ import {ProjectThumbsProvider} from './projects/ProjectThumbsProvider'
 import {SponsorAiProvider} from './sponsors/SponsorAiProvider'
 import {EditSessionProvider} from './editor/EditSessionProvider'
 import {InspirationProvider} from './inspiration/InspirationProvider'
+import {VideoStyleProvider} from './style/VideoStyleProvider'
 
 const container = document.getElementById('root')
 
@@ -43,7 +44,9 @@ root.render(
                                                                 <SponsorAiProvider>
                                                                     <EditSessionProvider>
                                                                         <InspirationProvider>
-                                                                            <App/>
+                                                                            <VideoStyleProvider>
+                                                                                <App/>
+                                                                            </VideoStyleProvider>
                                                                         </InspirationProvider>
                                                                     </EditSessionProvider>
                                                                 </SponsorAiProvider>

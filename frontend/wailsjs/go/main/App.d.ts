@@ -64,6 +64,8 @@ export function ClipIdeasInProgress(arg1:string,arg2:string):Promise<boolean>;
 
 export function CompleteVideoPlan(arg1:string):Promise<main.VideoPlan>;
 
+export function CreateVideoStyle(arg1:string,arg2:Array<main.VideoStyleSource>):Promise<main.VideoStyle>;
+
 export function ConcludePlannedStream(arg1:string):Promise<void>;
 
 export function ConnectAnthropicAPIKey(arg1:string):Promise<main.ServiceStatus>;
@@ -126,6 +128,8 @@ export function DeleteStreamWidget(arg1:string):Promise<void>;
 
 export function DeleteVideoPlan(arg1:string):Promise<void>;
 
+export function DeleteVideoStyle(arg1:string):Promise<void>;
+
 export function DeleteWidgetFieldType(arg1:string):Promise<void>;
 
 export function DisconnectGitHub():Promise<void>;
@@ -133,6 +137,8 @@ export function DisconnectGitHub():Promise<void>;
 export function DisconnectService(arg1:string):Promise<void>;
 
 export function EditPlanDescription(arg1:string,arg2:string,arg3:string):Promise<string>;
+
+export function EditVideoStyle(arg1:string,arg2:string,arg3:string):Promise<string>;
 
 export function EndStreamSession():Promise<void>;
 
@@ -320,6 +326,12 @@ export function GetVideoPlans():Promise<Array<main.VideoPlan>>;
 
 export function GetVideoPublish(arg1:string):Promise<main.VideoPublishState>;
 
+export function GetVideoStyle(arg1:string):Promise<main.VideoStyle>;
+
+export function GetVideoStyles():Promise<Array<main.VideoStyle>>;
+
+export function VideoStylesInFlight():Promise<Array<main.VideoStyle>>;
+
 export function GetVideos(arg1:boolean):Promise<main.VideoList>;
 
 export function GetWidgetFieldTypes():Promise<Array<main.WidgetFieldType>>;
@@ -398,6 +410,8 @@ export function RemoveWidgetField(arg1:string,arg2:string):Promise<main.StreamWi
 
 export function RemoveWidgetItem(arg1:string,arg2:string):Promise<main.StreamWidget>;
 
+export function RebuildVideoStyle(arg1:string):Promise<main.VideoStyle>;
+
 export function ReopenVideoPlan(arg1:string):Promise<main.VideoPlan>;
 
 export function ResetAppSkill(arg1:string):Promise<main.AppSkill>;
@@ -452,6 +466,8 @@ export function SaveVideoPlan(arg1:main.VideoPlan):Promise<main.VideoPlan>;
 
 export function SaveVideoPublishDraft(arg1:string,arg2:main.VideoPublishDraft):Promise<void>;
 
+export function SaveVideoStyle(arg1:main.VideoStyle):Promise<main.VideoStyle>;
+
 export function SaveWidgetFieldType(arg1:main.WidgetFieldType):Promise<main.WidgetFieldType>;
 
 export function SearchDebugReports(arg1:string):Promise<Array<main.DebugReport>>;
@@ -467,6 +483,8 @@ export function SelectDirectory(arg1:string):Promise<string>;
 export function SelectFacebookPage(arg1:string):Promise<main.ServiceStatus>;
 
 export function SendBroadcastChat(arg1:string):Promise<Array<main.BroadcastSendResult>>;
+
+export function SuggestVideoStyleTakeaways(arg1:string):Promise<Array<main.VideoStyleSource>>;
 
 export function SetDefaultContentSeries(arg1:string):Promise<void>;
 
