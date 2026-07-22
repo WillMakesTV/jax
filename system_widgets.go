@@ -57,9 +57,9 @@ var systemWidgetCatalog = []SystemWidget{
 	{
 		ID:   systemWidgetSponsors,
 		Name: "Sponsors",
-		Description: "Your sponsors on rotation under a \"Sponsored By\" label — each one's name " +
-			"across the top, with its logo and website inline beneath. Built for a 250px-wide " +
-			"Browser Source; the card's height follows its content.",
+		Description: "Your sponsors on rotation under a \"Sponsored By\" heading — each one's logo, " +
+			"with its name and website beside it. Built for a 250px-wide Browser Source; the " +
+			"card's height follows its content.",
 	},
 }
 
@@ -1035,10 +1035,10 @@ func (a *App) serveSponsorsWidget(w http.ResponseWriter, r *http.Request, action
 
 // sponsorsPage is the sponsors overlay, built for a 250px-wide Browser Source
 // with a 20px margin all round and a card whose height follows its content:
-// one sponsor at a time under a "Sponsored By" label — its name on one line,
-// set down in size until it fits, with its logo and website inline beneath —
-// holding for three minutes before it fades to the next, with a dot per
-// sponsor at the end of that row. Sponsor text is written as text nodes
+// one sponsor at a time under a "Sponsored By" heading — its logo, with the
+// name (on one line, set down in size until it fits) and the website stacked
+// beside it, and a dot per sponsor ending the row — holding for three
+// minutes before it fades to the next. Sponsor text is written as text nodes
 // only, so a stored name or address never becomes markup.
 const sponsorsPage = `<!DOCTYPE html>
 <html>
@@ -1062,45 +1062,45 @@ const sponsorsPage = `<!DOCTYPE html>
   }
   #card {
     display: flex; flex-direction: column; width: 100%;
-    box-sizing: border-box; padding: 12px 16px 14px; border-radius: 14px;
+    box-sizing: border-box; padding: 14px 16px 16px; border-radius: 14px;
     background: linear-gradient(135deg, #0f172a, #1e293b);
     border: 1px solid rgba(255, 255, 255, 0.14);
     box-shadow: 0 10px 36px rgba(0, 0, 0, 0.5);
     color: #fff; opacity: 1; transition: opacity 0.4s ease;
   }
   #card.fading { opacity: 0; }
-  /* Whose placement this is, above the sponsor itself. */
+  /* Whose placement this is: the card's own heading, above the sponsor. */
   #label {
     font-size: 10px; font-weight: 800; text-transform: uppercase;
-    letter-spacing: 0.14em; color: #93c5fd; margin-bottom: 4px;
+    letter-spacing: 0.14em; color: #93c5fd; margin-bottom: 8px;
   }
-  /* The sponsor's name leads the card, always on one line: the JS shrinks
-     its font until the whole name fits the card's width (see fitName). */
-  #name {
-    font-size: 20px; font-weight: 700; line-height: 1.2;
-    white-space: nowrap; overflow: hidden;
-  }
-  /* The logo and the website run inline beneath it, with the rotation dots
-     at the end of the row. */
+  /* The sponsor itself is the card's content: its logo, with the name and
+     the website stacked beside it and the rotation dots ending the row. */
   #head {
-    display: flex; align-items: center; gap: 10px;
-    min-width: 0; padding-top: 10px;
+    display: flex; align-items: center; gap: 12px; min-width: 0;
   }
   #mark { flex: none; display: flex; }
   #logo {
-    width: 48px; height: 48px; flex: none; border-radius: 10px;
-    object-fit: contain; background: rgba(255, 255, 255, 0.9); padding: 5px;
+    width: 56px; height: 56px; flex: none; border-radius: 10px;
+    object-fit: contain; background: rgba(255, 255, 255, 0.9); padding: 6px;
     box-sizing: border-box;
   }
   #initial {
-    width: 48px; height: 48px; flex: none; border-radius: 10px;
+    width: 56px; height: 56px; flex: none; border-radius: 10px;
     display: flex; align-items: center; justify-content: center;
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.16);
-    font-size: 22px; font-weight: 800; color: #e2e8f0;
+    font-size: 24px; font-weight: 800; color: #e2e8f0;
+  }
+  #body { flex: 1; min-width: 0; }
+  /* The name stays on one line: the JS shrinks its font until the whole
+     name fits the space beside the logo (see fitName). */
+  #name {
+    font-size: 18px; font-weight: 700; line-height: 1.2;
+    white-space: nowrap; overflow: hidden;
   }
   #site {
-    flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: #93c5fd;
+    margin-top: 2px; font-size: 12px; font-weight: 600; color: #93c5fd;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   #dots { display: flex; gap: 4px; flex: none; }
@@ -1123,10 +1123,12 @@ const sponsorsPage = `<!DOCTYPE html>
 <div id="wrap">
   <div id="card">
     <div id="label">Sponsored By</div>
-    <div id="name"></div>
     <div id="head">
       <div id="mark"></div>
-      <div id="site"></div>
+      <div id="body">
+        <div id="name"></div>
+        <div id="site"></div>
+      </div>
       <div id="dots"></div>
     </div>
   </div>
@@ -1158,7 +1160,7 @@ const sponsorsPage = `<!DOCTYPE html>
   // The name stays on one line whatever its length: start from the card's
   // full type size and step down until it fits, so a long sponsor is set
   // smaller rather than clipped or wrapped.
-  var NAME_MAX = 20
+  var NAME_MAX = 18
   var NAME_MIN = 9
 
   function fitName() {
