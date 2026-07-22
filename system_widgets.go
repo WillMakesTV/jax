@@ -57,8 +57,8 @@ var systemWidgetCatalog = []SystemWidget{
 	{
 		ID:   systemWidgetSponsors,
 		Name: "Sponsors",
-		Description: "Your sponsors on rotation — each one's logo, name, and website — so the " +
-			"partners behind the stream stay on screen without a manual overlay.",
+		Description: "Your sponsors on rotation — each one's logo and name inline, with its website " +
+			"along the bottom. Built for a 250 × 190 Browser Source.",
 	},
 }
 
@@ -1032,11 +1032,12 @@ func (a *App) serveSponsorsWidget(w http.ResponseWriter, r *http.Request, action
 	}
 }
 
-// sponsorsPage is the sponsors overlay: one sponsor at a time on a dark card
-// — its logo (or its initial, when no branding file is the logo), its name,
-// and its website — cross-fading to the next every few seconds, with a dot
-// per sponsor underneath. Sponsor text is written as text nodes only, so a
-// stored name or address never becomes markup.
+// sponsorsPage is the sponsors overlay, built for a 250 × 190 Browser Source
+// with a 20px margin all round: one sponsor at a time on a dark card — its
+// logo and name inline across the top, its website along the bottom edge —
+// cross-fading to the next every few seconds, with a dot per sponsor beside
+// the address. Sponsor text is written as text nodes only, so a stored name
+// or address never becomes markup.
 const sponsorsPage = `<!DOCTYPE html>
 <html>
 <head>
@@ -1045,76 +1046,88 @@ const sponsorsPage = `<!DOCTYPE html>
 <style>
   html, body {
     margin: 0; padding: 0; height: 100%;
-    /* Dark gray edge to edge, like the unified chat overlay: a transparent
-       page shows white corners in a browser. */
-    background: #1f2937;
+    /* Transparent, so the 20px margin around the card is see-through and the
+       card floats over whatever the scene puts behind it. */
+    background: transparent; overflow: hidden;
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   }
+  /* Built for a 250 × 190 Browser Source: the margin is the wrap's padding,
+     leaving the card 210 × 150. */
   #wrap {
-    display: flex; flex-direction: column; height: 100vh;
-    box-sizing: border-box; padding: 16px; gap: 12px;
-  }
-  #label {
-    font-size: 11px; font-weight: 800; text-transform: uppercase;
-    letter-spacing: 0.14em; color: #93c5fd;
+    width: 250px; height: 190px; max-width: 100%; max-height: 100vh;
+    box-sizing: border-box; padding: 20px;
   }
   #card {
-    flex: 1; display: flex; align-items: center; gap: 18px;
-    box-sizing: border-box; padding: 18px 20px; border-radius: 14px;
+    display: flex; flex-direction: column; width: 100%; height: 100%;
+    box-sizing: border-box; padding: 14px 16px; border-radius: 14px;
     background: linear-gradient(135deg, #0f172a, #1e293b);
     border: 1px solid rgba(255, 255, 255, 0.14);
     box-shadow: 0 10px 36px rgba(0, 0, 0, 0.5);
     color: #fff; opacity: 1; transition: opacity 0.4s ease;
   }
   #card.fading { opacity: 0; }
+  /* Logo and name run inline across the top. */
+  #head { display: flex; align-items: center; gap: 12px; min-width: 0; }
   #logo {
-    width: 96px; height: 96px; flex: none; border-radius: 12px;
-    object-fit: contain; background: rgba(255, 255, 255, 0.9); padding: 8px;
+    width: 48px; height: 48px; flex: none; border-radius: 10px;
+    object-fit: contain; background: rgba(255, 255, 255, 0.9); padding: 5px;
     box-sizing: border-box;
   }
   #initial {
-    width: 96px; height: 96px; flex: none; border-radius: 12px;
+    width: 48px; height: 48px; flex: none; border-radius: 10px;
     display: flex; align-items: center; justify-content: center;
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.16);
-    font-size: 40px; font-weight: 800; color: #e2e8f0;
+    font-size: 22px; font-weight: 800; color: #e2e8f0;
   }
-  #body { min-width: 0; }
   #name {
-    font-size: 26px; font-weight: 700; line-height: 1.2;
-    overflow-wrap: anywhere;
+    font-size: 17px; font-weight: 700; line-height: 1.25; min-width: 0;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden; overflow-wrap: anywhere;
+  }
+  /* The address sits on the card's bottom edge, the rotation dots beside it. */
+  #foot {
+    margin-top: auto; display: flex; align-items: center; gap: 8px;
+    padding-top: 8px;
   }
   #site {
-    margin-top: 6px; font-size: 15px; font-weight: 600; color: #93c5fd;
-    overflow-wrap: anywhere;
+    flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: #93c5fd;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  #site:empty { display: none; }
-  #dots { display: flex; justify-content: center; gap: 6px; }
+  #dots { display: flex; gap: 4px; flex: none; }
   #dots:empty { display: none; }
   .dot {
-    width: 6px; height: 6px; border-radius: 50%;
+    width: 5px; height: 5px; border-radius: 50%;
     background: rgba(255, 255, 255, 0.25);
   }
   .dot.on { background: #93c5fd; }
   #empty {
-    flex: 1; display: flex; align-items: center; justify-content: center;
-    color: rgba(255, 255, 255, 0.45); font-size: 14px; text-align: center;
+    width: 100%; height: 100%; box-sizing: border-box; padding: 14px 16px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 14px; border: 1px dashed rgba(255, 255, 255, 0.18);
+    background: rgba(15, 23, 42, 0.75);
+    color: rgba(255, 255, 255, 0.45); font-size: 12px; text-align: center;
   }
 </style>
 </head>
 <body>
 <div id="wrap">
-  <div id="label">Sponsored by</div>
-  <div id="card"></div>
+  <div id="card">
+    <div id="head"></div>
+    <div id="foot">
+      <div id="site"></div>
+      <div id="dots"></div>
+    </div>
+  </div>
   <div id="empty" style="display: none">Sponsors you add in Jax appear here.</div>
-  <div id="dots"></div>
 </div>
 <script>
 (function () {
   'use strict'
   var base = location.pathname.replace(/\/$/, '')
-  var label = document.getElementById('label')
   var card = document.getElementById('card')
+  var head = document.getElementById('head')
+  var site = document.getElementById('site')
   var empty = document.getElementById('empty')
   var dots = document.getElementById('dots')
   var sponsors = []
@@ -1128,33 +1141,28 @@ const sponsorsPage = `<!DOCTYPE html>
 
   function draw() {
     var s = sponsors[index]
-    card.textContent = ''
+    head.textContent = ''
+    site.textContent = ''
+    dots.textContent = ''
     if (!s) return
     if (s.logoUrl) {
       var img = document.createElement('img')
       img.id = 'logo'
       img.src = s.logoUrl
       img.alt = ''
-      card.appendChild(img)
+      head.appendChild(img)
     } else {
       var mark = document.createElement('div')
       mark.id = 'initial'
       mark.textContent = (s.name || '?').charAt(0).toUpperCase()
-      card.appendChild(mark)
+      head.appendChild(mark)
     }
-    var body = document.createElement('div')
-    body.id = 'body'
     var name = document.createElement('div')
     name.id = 'name'
     name.textContent = s.name || 'Sponsor'
-    body.appendChild(name)
-    var site = document.createElement('div')
-    site.id = 'site'
+    head.appendChild(name)
     site.textContent = prettySite(s.website)
-    body.appendChild(site)
-    card.appendChild(body)
 
-    dots.textContent = ''
     if (sponsors.length > 1) {
       sponsors.forEach(function (_, i) {
         var dot = document.createElement('span')
@@ -1183,15 +1191,11 @@ const sponsorsPage = `<!DOCTYPE html>
     if (next.length !== sponsors.length) index = 0
     sponsors = next
     if (sponsors.length === 0) {
-      label.style.display = 'none'
       card.style.display = 'none'
-      dots.style.display = 'none'
       empty.style.display = 'flex'
       return
     }
-    label.style.display = ''
     card.style.display = 'flex'
-    dots.style.display = ''
     empty.style.display = 'none'
     if (index >= sponsors.length) index = 0
     draw()
