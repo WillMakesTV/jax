@@ -57,8 +57,8 @@ var systemWidgetCatalog = []SystemWidget{
 	{
 		ID:   systemWidgetSponsors,
 		Name: "Sponsors",
-		Description: "Your sponsors on rotation — each one's logo and name inline, with its website " +
-			"along the bottom. Built for a 250 × 190 Browser Source.",
+		Description: "Your sponsors on rotation — each one's name across the top, with its logo and " +
+			"website inline beneath. Built for a 250 × 190 Browser Source.",
 	},
 }
 
@@ -1034,10 +1034,11 @@ func (a *App) serveSponsorsWidget(w http.ResponseWriter, r *http.Request, action
 
 // sponsorsPage is the sponsors overlay, built for a 250 × 190 Browser Source
 // with a 20px margin all round: one sponsor at a time on a dark card — its
-// logo and name inline across the top, its website along the bottom edge —
-// cross-fading to the next every few seconds, with a dot per sponsor beside
-// the address. Sponsor text is written as text nodes only, so a stored name
-// or address never becomes markup.
+// name on one line across the top, set down in size until it fits, with its
+// logo and website inline on the bottom edge — cross-fading to the next
+// every few seconds, with a dot per sponsor at the end of that row. Sponsor
+// text is written as text nodes only, so a stored name or address never
+// becomes markup.
 const sponsorsPage = `<!DOCTYPE html>
 <html>
 <head>
@@ -1066,8 +1067,19 @@ const sponsorsPage = `<!DOCTYPE html>
     color: #fff; opacity: 1; transition: opacity 0.4s ease;
   }
   #card.fading { opacity: 0; }
-  /* Logo and name run inline across the top. */
-  #head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  /* The sponsor's name leads the card, always on one line: the JS shrinks
+     its font until the whole name fits the card's width (see fitName). */
+  #name {
+    font-size: 20px; font-weight: 700; line-height: 1.2;
+    white-space: nowrap; overflow: hidden;
+  }
+  /* The logo and the website run inline beneath it, on the card's bottom
+     edge, with the rotation dots at the end of the row. */
+  #head {
+    margin-top: auto; display: flex; align-items: center; gap: 10px;
+    min-width: 0; padding-top: 10px;
+  }
+  #mark { flex: none; display: flex; }
   #logo {
     width: 48px; height: 48px; flex: none; border-radius: 10px;
     object-fit: contain; background: rgba(255, 255, 255, 0.9); padding: 5px;
@@ -1079,16 +1091,6 @@ const sponsorsPage = `<!DOCTYPE html>
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.16);
     font-size: 22px; font-weight: 800; color: #e2e8f0;
-  }
-  #name {
-    font-size: 17px; font-weight: 700; line-height: 1.25; min-width: 0;
-    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
-    overflow: hidden; overflow-wrap: anywhere;
-  }
-  /* The address sits on the card's bottom edge, the rotation dots beside it. */
-  #foot {
-    margin-top: auto; display: flex; align-items: center; gap: 8px;
-    padding-top: 8px;
   }
   #site {
     flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: #93c5fd;
@@ -1113,8 +1115,9 @@ const sponsorsPage = `<!DOCTYPE html>
 <body>
 <div id="wrap">
   <div id="card">
-    <div id="head"></div>
-    <div id="foot">
+    <div id="name"></div>
+    <div id="head">
+      <div id="mark"></div>
       <div id="site"></div>
       <div id="dots"></div>
     </div>
@@ -1126,7 +1129,8 @@ const sponsorsPage = `<!DOCTYPE html>
   'use strict'
   var base = location.pathname.replace(/\/$/, '')
   var card = document.getElementById('card')
-  var head = document.getElementById('head')
+  var name = document.getElementById('name')
+  var mark = document.getElementById('mark')
   var site = document.getElementById('site')
   var empty = document.getElementById('empty')
   var dots = document.getElementById('dots')
@@ -1139,9 +1143,25 @@ const sponsorsPage = `<!DOCTYPE html>
     return (url || '').replace(/^[a-z]+:\/\//i, '').replace(/\/+$/, '')
   }
 
+  // The name stays on one line whatever its length: start from the card's
+  // full type size and step down until it fits, so a long sponsor is set
+  // smaller rather than clipped or wrapped.
+  var NAME_MAX = 20
+  var NAME_MIN = 9
+
+  function fitName() {
+    var size = NAME_MAX
+    name.style.fontSize = size + 'px'
+    while (size > NAME_MIN && name.scrollWidth > name.clientWidth) {
+      size -= 1
+      name.style.fontSize = size + 'px'
+    }
+  }
+
   function draw() {
     var s = sponsors[index]
-    head.textContent = ''
+    mark.textContent = ''
+    name.textContent = ''
     site.textContent = ''
     dots.textContent = ''
     if (!s) return
@@ -1150,17 +1170,15 @@ const sponsorsPage = `<!DOCTYPE html>
       img.id = 'logo'
       img.src = s.logoUrl
       img.alt = ''
-      head.appendChild(img)
+      mark.appendChild(img)
     } else {
-      var mark = document.createElement('div')
-      mark.id = 'initial'
-      mark.textContent = (s.name || '?').charAt(0).toUpperCase()
-      head.appendChild(mark)
+      var initial = document.createElement('div')
+      initial.id = 'initial'
+      initial.textContent = (s.name || '?').charAt(0).toUpperCase()
+      mark.appendChild(initial)
     }
-    var name = document.createElement('div')
-    name.id = 'name'
     name.textContent = s.name || 'Sponsor'
-    head.appendChild(name)
+    fitName()
     site.textContent = prettySite(s.website)
 
     if (sponsors.length > 1) {
