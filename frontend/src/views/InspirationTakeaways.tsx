@@ -199,7 +199,7 @@ function KindChip({
   )
 }
 
-/** The cards: four across on a medium viewport, six at full width. */
+/** The cards: two across on a medium viewport, four at full width. */
 function TakeawayGrid({
   takeaways,
   onOpenVideo,
@@ -208,7 +208,7 @@ function TakeawayGrid({
   onOpenVideo: (videoId: string) => void
 }) {
   return (
-    <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-6">
+    <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
       {takeaways.map((t, i) => (
         <li
           key={`${t.videoId}-${t.title}-${i}`}
