@@ -2862,6 +2862,7 @@ export class RoutineStep {
 	    videos: Video[];
 	    fetchedAt: string;
 	    fromCache: boolean;
+	    refreshing: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new VideoList(source);
@@ -2872,6 +2873,7 @@ export class RoutineStep {
 	        this.videos = this.convertValues(source["videos"], Video);
 	        this.fetchedAt = source["fetchedAt"];
 	        this.fromCache = source["fromCache"];
+	        this.refreshing = source["refreshing"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

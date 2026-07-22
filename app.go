@@ -63,6 +63,11 @@ type App struct {
 	ytLiveResult   *LiveStream
 	ytLiveResultAt time.Time
 
+	// videosRefreshing is set while the video catalogue is being re-fetched
+	// behind a stale cache the page is already showing (guarded by mu; see
+	// GetVideos in videos.go).
+	videosRefreshing bool
+
 	// Transcriber sidecar process (guarded by mu; see transcriber.go).
 	transcribeCmd   *exec.Cmd
 	transcribeStdin io.WriteCloser

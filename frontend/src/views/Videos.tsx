@@ -21,6 +21,7 @@ import {
   GetVideos,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
+import {EventsOn} from '../../wailsjs/runtime/runtime'
 import {PageHeader} from '../components/PageHeader'
 import {PlatformPill} from '../components/PlatformPill'
 import {TrackedSharesModal} from '../components/TrackedSharesModal'
@@ -352,7 +353,18 @@ export function Videos({
     void load(false)
   }, [load])
 
+  // A stale catalogue is drawn straight from the database and re-read from
+  // the platforms behind the page (see GetVideos); this is the backend saying
+  // the fresh copy has landed.
+  useEffect(() => {
+    const off = EventsOn('videos:refreshed', () => void load(false))
+    return () => off()
+  }, [load])
+
   const oauthConnected = anyChannelConnected(statuses)
+  // Either kind of fetch spins the Refresh button: the one this page asked
+  // for, and the one running behind a stale copy it is already showing.
+  const busy = loading || (list?.refreshing ?? false)
   // Everything this page will ever show: the YouTube long-form catalogue, and
   // short-form from wherever it was posted.
   const allVideos = (list?.videos ?? []).filter(
@@ -387,20 +399,22 @@ export function Videos({
           <div className="flex items-center gap-3">
             {list?.fetchedAt && (
               <span className="text-xs text-fg-muted">
-                Updated {formatAgo(list.fetchedAt)}
+                {list.refreshing
+                  ? 'Refreshing…'
+                  : `Updated ${formatAgo(list.fetchedAt)}`}
               </span>
             )}
             <button
               type="button"
               onClick={() => void load(true)}
-              disabled={loading}
+              disabled={busy}
               title="Fetch the latest data from the platforms"
               className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-3 py-1.5 text-xs font-semibold text-fg transition-colors hover:bg-surface-hover disabled:opacity-50"
             >
               <RefreshCw
                 size={14}
                 aria-hidden
-                className={clsx(loading && 'animate-spin')}
+                className={clsx(busy && 'animate-spin')}
               />
               Refresh
             </button>

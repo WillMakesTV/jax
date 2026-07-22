@@ -63,6 +63,24 @@ func cachedJSON[T any](a *App, key string, ttl time.Duration, force bool, fetch 
 	return fresh, time.Now(), false, nil
 }
 
+// cachedValue reads whatever is stored for key without touching the
+// platforms and without judging its age — the caller decides whether a stale
+// copy is worth showing while a refresh runs behind it.
+func cachedValue[T any](a *App, key string) (val T, fetchedAt time.Time, ok bool) {
+	var out T
+	if a.store == nil {
+		return out, time.Time{}, false
+	}
+	raw, at, found, err := a.store.getCacheEntry(key)
+	if err != nil || !found {
+		return out, time.Time{}, false
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return out, time.Time{}, false
+	}
+	return out, at, true
+}
+
 // connsCacheKey scopes a cache key to the set of connected OAuth services, so
 // connecting or disconnecting a platform naturally invalidates cached lists
 // instead of hiding the new platform's content for up to a TTL.

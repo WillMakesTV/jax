@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // ---------------------------------------------------------------------------
@@ -64,6 +66,11 @@ type VideoList struct {
 	Videos    []Video `json:"videos"`
 	FetchedAt string  `json:"fetchedAt"` // RFC3339; when the data left the APIs
 	FromCache bool    `json:"fromCache"`
+	// Refreshing is true when this is a stale copy served straight from the
+	// database while the platforms are being re-read behind it. The page
+	// shows the videos it already has and says it is refreshing rather than
+	// making the producer wait on seven APIs (see GetVideos).
+	Refreshing bool `json:"refreshing"`
 }
 
 // VideoComment is one viewer comment on a video.
@@ -183,19 +190,39 @@ func (a *App) GetChannelVideos(platform string) []Video {
 }
 
 // GetVideos returns every video on the connected channels, newest first, with
-// past-stream broadcasts removed (they have their own section). Results are
-// cached for apiCacheTTL; forceRefresh bypasses the cache. Never returns a nil
+// past-stream broadcasts removed (they have their own section).
+//
+// A stored copy is served immediately, however old: opening the page should
+// draw the catalogue that is already known rather than block on seven
+// platform APIs. When that copy is past apiCacheTTL the read starts a refresh
+// behind it and comes back with Refreshing set, so the page can say so and
+// re-read when "videos:refreshed" lands. Only a cold cache (or forceRefresh,
+// the page's Refresh button) waits on the platforms. Never returns a nil
 // Videos slice.
 func (a *App) GetVideos(forceRefresh bool) VideoList {
+	if !forceRefresh {
+		if cached, at, ok := cachedValue[[]Video](a, a.connsCacheKey("videos_v7")); ok {
+			stale := time.Since(at) >= apiCacheTTL
+			if stale {
+				a.refreshVideosBehind()
+			}
+			return a.videoList(cached, at, true, stale)
+		}
+	}
+
 	videos, at, cached, err := a.allVideos(forceRefresh)
 	if err != nil {
 		log.Printf("jax: GetVideos: %v", err)
 		return VideoList{Videos: []Video{}}
 	}
+	return a.videoList(videos, at, cached, false)
+}
 
-	// Belt and suspenders: drop anything that also surfaces as a past stream
-	// (its own section). The per-platform fetches already exclude live VODs,
-	// but this guarantees no overlap even if a broadcast slips the heuristic.
+// videoList wraps a catalogue for the frontend, dropping anything that also
+// surfaces as a past stream (its own section). The per-platform fetches
+// already exclude live VODs; this guarantees no overlap even if a broadcast
+// slips the heuristic.
+func (a *App) videoList(videos []Video, at time.Time, cached, refreshing bool) VideoList {
 	pastURLs := a.pastBroadcastURLs()
 	filtered := make([]Video, 0, len(videos))
 	for _, v := range videos {
@@ -204,13 +231,41 @@ func (a *App) GetVideos(forceRefresh bool) VideoList {
 		}
 		filtered = append(filtered, v)
 	}
-	videos = filtered
-
 	return VideoList{
-		Videos:    videos,
-		FetchedAt: at.Format(time.RFC3339),
-		FromCache: cached,
+		Videos:     filtered,
+		FetchedAt:  at.Format(time.RFC3339),
+		FromCache:  cached,
+		Refreshing: refreshing,
 	}
+}
+
+// refreshVideosBehind re-reads the platforms while the page shows the stale
+// copy, then tells it to come back for the new one. One refresh at a time: a
+// page opened twice, or re-read on a data change, must not fan out into
+// several rounds of platform calls.
+func (a *App) refreshVideosBehind() {
+	a.mu.Lock()
+	if a.videosRefreshing {
+		a.mu.Unlock()
+		return
+	}
+	a.videosRefreshing = true
+	a.mu.Unlock()
+
+	go func() {
+		defer func() {
+			a.mu.Lock()
+			a.videosRefreshing = false
+			a.mu.Unlock()
+		}()
+		if _, _, _, err := a.allVideos(true); err != nil {
+			log.Printf("jax: refresh videos: %v", err)
+			return
+		}
+		if a.ctx != nil {
+			wruntime.EventsEmit(a.ctx, "videos:refreshed")
+		}
+	}()
 }
 
 // GetVideoDetails returns analytics and comments for one video. Cached for
