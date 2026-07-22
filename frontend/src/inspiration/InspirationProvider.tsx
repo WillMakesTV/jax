@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import {InspirationInFlight} from '../../wailsjs/go/main/App'
 import {EventsOn} from '../../wailsjs/runtime/runtime'
 
 /** One inspiration video moving through the pipeline. */
@@ -77,6 +78,30 @@ export function InspirationProvider({children}: {children: ReactNode}) {
       timers.current.forEach((t) => window.clearTimeout(t))
       timers.current.clear()
     }
+  }, [])
+
+  // A run that was interrupted by the app closing is put back in line at
+  // startup (see resumeInspirationQueue), and those videos were queued before
+  // this listener existed — so seed from what the pipeline is holding rather
+  // than showing nothing until the next step lands.
+  useEffect(() => {
+    InspirationInFlight()
+      .then((videos) => {
+        setJobs((prev) => {
+          const seen = new Set(prev.map((j) => j.id))
+          const seeded = (videos ?? [])
+            .filter((v) => !seen.has(v.id))
+            .map((v) => ({
+              id: v.id,
+              title: v.title || 'Inspiration video',
+              status: v.status,
+              detail: v.statusDetail,
+              progress: v.progress,
+            }))
+          return seeded.length > 0 ? [...prev, ...seeded] : prev
+        })
+      })
+      .catch(() => {})
   }, [])
 
   return (

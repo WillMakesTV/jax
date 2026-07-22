@@ -185,3 +185,30 @@ func TestInspirationLibrary(t *testing.T) {
 		t.Fatal("video not deleted")
 	}
 }
+
+func TestInspirationInFlight(t *testing.T) {
+	a := newTestApp(t)
+
+	lib := a.getInspiration()
+	lib.Videos = append(lib.Videos,
+		InspirationVideo{ID: "v1", Title: "Tracked", Status: inspirationTracked},
+		InspirationVideo{ID: "v2", Title: "Waiting", Status: inspirationQueued},
+		InspirationVideo{ID: "v3", Title: "Mid-run", Status: inspirationTranscribing,
+			StatusDetail: "00:04:10", Progress: 250},
+		InspirationVideo{ID: "v4", Title: "Studied", Status: inspirationReady},
+		InspirationVideo{ID: "v5", Title: "Failed", Status: inspirationError},
+	)
+	if err := a.saveInspiration(lib); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	// Only the videos the pipeline still owes work, carrying the detail the
+	// status bar draws.
+	got := a.InspirationInFlight()
+	if len(got) != 2 || got[0].ID != "v2" || got[1].ID != "v3" {
+		t.Fatalf("in-flight videos: %+v", got)
+	}
+	if got[1].StatusDetail != "00:04:10" || got[1].Progress != 250 {
+		t.Fatalf("in-flight video should carry its progress: %+v", got[1])
+	}
+}

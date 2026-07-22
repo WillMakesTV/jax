@@ -658,6 +658,10 @@ export function GroupPastStreams(arg1) {
   return window['go']['main']['App']['GroupPastStreams'](arg1);
 }
 
+export function InspirationInFlight() {
+  return window['go']['main']['App']['InspirationInFlight']();
+}
+
 export function InspirationQueueLength() {
   return window['go']['main']['App']['InspirationQueueLength']();
 }

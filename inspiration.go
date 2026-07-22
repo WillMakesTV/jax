@@ -659,6 +659,61 @@ func (a *App) InspirationQueueLength() int {
 	return len(inspirationQueue.ids)
 }
 
+// inspirationWorking reports whether a stored status means the pipeline still
+// owes this video work.
+func inspirationWorking(status string) bool {
+	switch status {
+	case inspirationQueued, inspirationDownloading, inspirationTranscribing,
+		inspirationAnalyzing, inspirationExtracting:
+		return true
+	}
+	return false
+}
+
+// InspirationInFlight returns the videos the pipeline is holding — queued, or
+// part-way through a run — so a page can draw the queue on mount instead of
+// waiting for the next status event. Never nil.
+func (a *App) InspirationInFlight() []InspirationVideo {
+	out := []InspirationVideo{}
+	for _, v := range a.getInspiration().Videos {
+		if !inspirationWorking(v.Status) {
+			continue
+		}
+		a.fillInspirationURLs(&v)
+		out = append(out, v)
+	}
+	return out
+}
+
+// resumeInspirationQueue picks the queue back up where an abrupt close left
+// it. Each step of a run is written to the video as it happens, so a library
+// read after a crash still says who was queued and who was mid-run — but the
+// queue itself lives in memory and dies with the process. Every video left in
+// a working state is put back in line, the one that was actually being worked
+// on first, and a run that was interrupted part-way starts over from the
+// download rather than trusting a half-written folder.
+func (a *App) resumeInspirationQueue() {
+	if a.store == nil {
+		return
+	}
+	var midRun, waiting []string
+	for _, v := range a.getInspiration().Videos {
+		switch {
+		case v.Status == inspirationQueued:
+			waiting = append(waiting, v.ID)
+		case inspirationWorking(v.Status):
+			midRun = append(midRun, v.ID)
+		}
+	}
+	resumed := append(midRun, waiting...)
+	for _, id := range resumed {
+		a.enqueueInspirationVideo(id)
+	}
+	if len(resumed) > 0 {
+		log.Printf("jax: resumed %d inspiration video(s) from the last session", len(resumed))
+	}
+}
+
 // AddInspirationChannel indexes a YouTube channel: the channel itself plus
 // its most recent videos, tracked but not downloaded (download one from its
 // page when it is worth studying). Returns the stored channel.

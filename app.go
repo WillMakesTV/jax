@@ -210,6 +210,9 @@ func (a *App) startup(ctx context.Context) {
 	// existed, without waiting for someone to open its page (see
 	// inspiration.go).
 	go a.backfillInspirationTakeaways()
+	// Put the inspiration videos an abrupt close interrupted back in line, so
+	// a queue survives the app going away mid-run (see inspiration.go).
+	go a.resumeInspirationQueue()
 }
 
 // shutdown is called when the app closes. It ends the sidecar processes and
