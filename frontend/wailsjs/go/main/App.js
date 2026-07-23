@@ -298,8 +298,8 @@ export function ExtractInspirationTakeaways(arg1) {
   return window['go']['main']['App']['ExtractInspirationTakeaways'](arg1);
 }
 
-export function GenerateInspirationTypeBrief(arg1, arg2) {
-  return window['go']['main']['App']['GenerateInspirationTypeBrief'](arg1, arg2);
+export function GenerateInspirationTypeBrief(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['GenerateInspirationTypeBrief'](arg1, arg2, arg3, arg4);
 }
 
 export function GenerateClipIdeas(arg1, arg2, arg3) {

@@ -150,7 +150,7 @@ export function ExportPlanTimeline(arg1:string,arg2:main.PlanTimeline):Promise<m
 
 export function ExtractInspirationTakeaways(arg1:string):Promise<void>;
 
-export function GenerateInspirationTypeBrief(arg1:string,arg2:string):Promise<string>;
+export function GenerateInspirationTypeBrief(arg1:string,arg2:string,arg3:string,arg4:string):Promise<string>;
 
 export function GenerateClipIdeas(arg1:string,arg2:string,arg3:string):Promise<main.ClipIdeaSet>;
 

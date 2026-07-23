@@ -5,6 +5,24 @@ import (
 	"testing"
 )
 
+func TestInspirationTypeBriefSkill(t *testing.T) {
+	a := newTestApp(t)
+
+	// The brief-writing skill is in the catalog with its embedded default.
+	skill, err := a.getAppSkill(skillInspirationTypeBrief)
+	if err != nil {
+		t.Fatalf("get brief skill: %v", err)
+	}
+	if !strings.Contains(skill.Content, "Study this channel for") {
+		t.Fatalf("brief skill content unexpected: %q", skill.Content)
+	}
+
+	// An empty name is refused whatever the other arguments.
+	if _, err := a.GenerateInspirationTypeBrief("  ", "notes", "", ""); err == nil {
+		t.Fatal("want error generating a brief with no name")
+	}
+}
+
 func TestInspirationTypesSeedAndSave(t *testing.T) {
 	a := newTestApp(t)
 

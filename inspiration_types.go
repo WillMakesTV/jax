@@ -347,20 +347,37 @@ Skip:
 
 Keep it under 200 words. Write in the second person, plainly, with no marketing tone.`
 
-// GenerateInspirationTypeBrief drafts a type's brief with the connected AI.
-func (a *App) GenerateInspirationTypeBrief(name, notes string) (string, error) {
+// GenerateInspirationTypeBrief drafts or revises a type's brief with the
+// connected AI, guided by the "Inspiration type brief" skill. A fresh draft
+// passes an empty current brief; a "request edits" pass passes the current
+// brief and the requested change, so the model revises it in place rather than
+// starting over.
+func (a *App) GenerateInspirationTypeBrief(name, notes, current, request string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return "", fmt.Errorf("name the type first — the brief is written around it")
+	}
+	// The producer-editable skill is the brief-writing instructions; fall back
+	// to the built-in default if it can't be read.
+	system := inspirationTypeBriefInstructions
+	if skill, err := a.getAppSkill(skillInspirationTypeBrief); err == nil &&
+		strings.TrimSpace(skill.Content) != "" {
+		system = skill.Content
 	}
 	var in strings.Builder
 	fmt.Fprintf(&in, "# Type\nName: %s\n", name)
 	if strings.TrimSpace(notes) != "" {
 		fmt.Fprintf(&in, "\n## What the producer said it is for\n%s\n", notes)
 	}
+	if strings.TrimSpace(current) != "" {
+		fmt.Fprintf(&in, "\n## Current brief\n%s\n", current)
+	}
+	if strings.TrimSpace(request) != "" {
+		fmt.Fprintf(&in, "\n## Requested edits\n%s\n", strings.TrimSpace(request))
+	}
 	in.WriteString("\n## Types already defined\n")
 	for _, t := range a.getInspirationTypes() {
 		fmt.Fprintf(&in, "- %s: %s\n", t.Name, t.Summary)
 	}
-	return a.askAIText(inspirationTypeBriefInstructions, in.String())
+	return a.askAIText(system, in.String())
 }
