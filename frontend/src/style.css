@@ -98,3 +98,21 @@
     }
   }
 }
+
+/* A quick fade-in for the main content area when a view loads, so navigation
+   settles in rather than snapping. Respects reduced-motion via the base rule
+   above. */
+@keyframes content-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.content-fade-in {
+  animation: content-fade-in 0.22s ease-out both;
+}

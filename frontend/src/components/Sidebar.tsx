@@ -1,5 +1,6 @@
 import clsx from 'clsx'
 import {ChevronLeft, ChevronRight, Radio} from 'lucide-react'
+import {useLayoutEffect, useRef, useState} from 'react'
 import {PRIMARY_NAV, SETTINGS_NAV, type ViewId} from '../navigation'
 import {useProfile} from '../profile/ProfileProvider'
 import {Avatar} from './Avatar'
@@ -27,6 +28,19 @@ export function Sidebar({
   // Gravatar and name replace the default app mark.
   const {profile} = useProfile()
   const personalised = Boolean(profile.name.trim() || profile.email.trim())
+
+  // A single highlight behind the primary items that slides to the active one,
+  // so selecting a section reads as the highlight travelling to it rather than
+  // blinking on in place. Measured off the active button's box; hidden (faded)
+  // when no primary item is active (e.g. Settings, which keeps its own).
+  const listRef = useRef<HTMLDivElement>(null)
+  const [pill, setPill] = useState<{top: number; height: number} | null>(null)
+  useLayoutEffect(() => {
+    const el = listRef.current?.querySelector<HTMLElement>(
+      '[data-active="true"]',
+    )
+    setPill(el ? {top: el.offsetTop, height: el.offsetHeight} : null)
+  }, [activeView, collapsed])
 
   return (
     <nav
@@ -81,7 +95,21 @@ export function Sidebar({
 
       {/* Primary navigation. Extra right padding keeps the active item
           highlight clear of the chevron toggle that straddles the border. */}
-      <div className="flex flex-1 flex-col gap-1 overflow-y-auto py-2 pl-2 pr-4">
+      <div
+        ref={listRef}
+        className="relative flex flex-1 flex-col gap-1 overflow-y-auto py-2 pl-2 pr-4"
+      >
+        {/* The travelling highlight, behind the items. Always mounted so its
+            move is a transition; faded out when nothing here is active. */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute left-2 right-4 z-0 rounded-lg bg-accent transition-all duration-300 ease-out"
+          style={
+            pill
+              ? {top: pill.top, height: pill.height, opacity: 1}
+              : {top: 0, height: 0, opacity: 0}
+          }
+        />
         {PRIMARY_NAV.map((item) => (
           <NavItem
             key={item.id}
@@ -89,6 +117,7 @@ export function Sidebar({
             active={activeView === item.id}
             collapsed={collapsed}
             onSelect={() => onNavigate(item.id)}
+            flat
           />
         ))}
       </div>

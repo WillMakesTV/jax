@@ -745,7 +745,12 @@ function App() {
             }
             onOpenProfile={openProfile}
           />
-          <div className="flex-1 overflow-y-auto p-8">
+          {/* Keyed on the view so each navigation re-mounts the content region
+              and it quickly fades in rather than snapping into place. */}
+          <div
+            key={view}
+            className="content-fade-in flex-1 overflow-y-auto p-8"
+          >
             {view === 'dashboard' && (
               <Dashboard onOpenChannel={openChannelDetails} />
             )}
