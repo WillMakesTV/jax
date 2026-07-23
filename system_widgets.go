@@ -1267,51 +1267,113 @@ const sponsorsPage = `<!DOCTYPE html>
 </html>
 `
 
-// serveIssueTracker is the issue-tracker overlay: the page, and the live bug
-// queue behind it.
+// serveIssueTracker is the issue-tracker overlay. It uses the same display
+// pipeline as the producer's own stream widgets (see widget_source.go): the
+// page is the shared React shell, and the data feed carries a template, CSS
+// and JS plus the items to render — so a system widget gets the full display
+// feature, not a hand-written page.
+//
+// Its template/CSS/JS are adopted from the producer's "Issue Tracker" stream
+// widget when one exists, so the board on stream is the design they already
+// built; its items are the live bug queue rather than manually pushed
+// entries, so it can never fall out of date. Without that widget it falls
+// back to a built-in default display.
 func (a *App) serveIssueTracker(w http.ResponseWriter, r *http.Request, action string) {
 	switch action {
 	case "":
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(issueTrackerPage))
+		_ = widgetSourcePage.Execute(w, map[string]string{"Name": "Issue Tracker"})
 	case "data":
-		// One row per open report, newest first — the queue as it stands. A
-		// resolved report leaves the queue (it is deleted), so the overlay
-		// only ever shows live work and can never fall out of date.
-		type issue struct {
-			ID        int64  `json:"id"`
-			Message   string `json:"message"`
-			Status    string `json:"status"`
-			Route     string `json:"route"`
-			Issue     int64  `json:"issue"`
-			Working   bool   `json:"working"`
-			CreatedAt string `json:"createdAt"`
-		}
-		rows := []issue{}
-		for _, rep := range a.ListDebugReports() {
-			working := rep.CheckedOut || rep.IssueNumber > 0
-			status := "Queued"
-			if working {
-				status = "Working"
-			}
-			if rep.IssueNumber > 0 {
-				status = fmt.Sprintf("Working #%d", rep.IssueNumber)
-			}
-			rows = append(rows, issue{
-				ID:        rep.ID,
-				Message:   issueTrackerMessage(rep),
-				Status:    status,
-				Route:     rep.Route,
-				Issue:     rep.IssueNumber,
-				Working:   working,
-				CreatedAt: rep.CreatedAt,
-			})
-		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_ = json.NewEncoder(w).Encode(map[string]any{"issues": rows})
+		_ = json.NewEncoder(w).Encode(a.issueTrackerData())
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// issueTrackerData builds the display payload: the adopted (or default)
+// template/CSS/JS and its field schema, plus one item per open report keyed
+// by the display's message, status and image labels, newest first. A resolved
+// report leaves the queue (it is deleted), so only live work is ever shown.
+func (a *App) issueTrackerData() widgetSourceData {
+	data := widgetSourceData{
+		Name:   "Issue Tracker",
+		Fields: []widgetSourceField{},
+		Items:  []widgetSourceItem{},
+	}
+	msgLabel, statusLabel, imageLabel := "Message", "Status", "Image/Animation"
+	imageURL := ""
+
+	if cw, ok := a.issueTrackerTemplateWidget(); ok {
+		data.Template, data.CSS, data.JS = cw.Template, cw.CSS, cw.JS
+		kinds := map[string]string{}
+		for _, ft := range a.getWidgetFieldTypes() {
+			kinds[ft.ID] = ft.Kind
+		}
+		for _, f := range cw.Fields {
+			value := f.Value
+			if f.ValueURL != "" {
+				value = f.ValueURL
+			}
+			kind := kinds[f.TypeID]
+			data.Fields = append(data.Fields, widgetSourceField{
+				Label: f.Label, Kind: kind, Value: value,
+			})
+			switch kind {
+			case widgetFieldMessage:
+				msgLabel = f.Label
+			case widgetFieldStatus:
+				statusLabel = f.Label
+			case widgetFieldImage:
+				imageLabel, imageURL = f.Label, value
+			}
+		}
+	} else {
+		data.Template, data.CSS, data.JS = issueTrackerDefaultTemplate,
+			issueTrackerDefaultCSS, issueTrackerDefaultJS
+	}
+
+	for _, rep := range a.ListDebugReports() {
+		status := "Queued"
+		if rep.CheckedOut || rep.IssueNumber > 0 {
+			status = "Working"
+		}
+		if rep.IssueNumber > 0 {
+			status = fmt.Sprintf("Working #%d", rep.IssueNumber)
+		}
+		values := map[string]string{
+			msgLabel:    issueTrackerMessage(rep),
+			statusLabel: status,
+		}
+		if imageURL != "" {
+			values[imageLabel] = imageURL
+		}
+		data.Items = append(data.Items, widgetSourceItem{
+			ID:        fmt.Sprintf("report-%d", rep.ID),
+			CreatedAt: rep.CreatedAt,
+			Values:    values,
+		})
+	}
+	return data
+}
+
+// issueTrackerTemplateWidget finds the producer's Issue Tracker stream widget
+// (either the current or the former name), so the system widget can render
+// through the design they already built. URLs are filled so sound and image
+// fields resolve to served addresses.
+func (a *App) issueTrackerTemplateWidget() (*StreamWidget, bool) {
+	for _, sw := range a.getStreamWidgets() {
+		switch strings.ToLower(strings.TrimSpace(sw.Name)) {
+		case "issue tracker", "issue queue watcher":
+			if strings.TrimSpace(sw.Template) == "" {
+				continue
+			}
+			cp := sw
+			a.fillWidgetURLs(&cp)
+			return &cp, true
+		}
+	}
+	return nil, false
 }
 
 // issueTrackerMessage is the one-line summary a report shows on the tracker:
@@ -1328,209 +1390,66 @@ func issueTrackerMessage(r DebugReport) string {
 	return "Untitled report"
 }
 
-// issueTrackerPage is the overlay itself: the bug queue as a stack of cards,
-// newest first, each with its status - Queued, Working, or Working #N once an
-// issue is opened. It polls the queue and animates a card in when a report is
-// filed and out when one is resolved (leaves the queue), with a soft chime on
-// each, so the board on stream always matches the real queue. Report text is
-// rendered as text nodes only - a filed description never becomes markup.
-const issueTrackerPage = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>Issue Tracker</title>
-<style>
-  html, body {
-    margin: 0; padding: 0; height: 100%;
-    background: transparent; overflow: hidden;
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-  }
-  #wrap { box-sizing: border-box; padding: 24px; }
-  #list { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
-  .iqw {
-    position: relative; display: flex; align-items: center; gap: 16px;
-    max-width: 560px; box-sizing: border-box; padding: 16px 20px;
-    border-radius: 16px;
-    background: linear-gradient(135deg, rgba(15,23,42,0.94), rgba(30,41,59,0.94));
-    border: 1px solid rgba(255,255,255,0.14);
-    box-shadow: 0 10px 36px rgba(0,0,0,0.5);
-    color: #fff;
-  }
-  .iqw.compact { max-width: 460px; padding: 10px 16px; border-radius: 12px; gap: 12px; }
-  .iqw-body { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-  .iqw.compact .iqw-body { flex-direction: row; align-items: center; gap: 10px; }
-  .iqw-name {
-    font-size: 11px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.14em; color: #93c5fd;
-  }
-  .iqw.compact .iqw-name { display: none; }
-  .iqw-message {
-    font-size: 18px; font-weight: 700; line-height: 1.3;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.5);
-    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
-    overflow: hidden; overflow-wrap: anywhere;
-  }
-  .iqw.compact .iqw-message {
-    font-size: 14px; -webkit-line-clamp: 1; max-width: 300px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .iqw-status {
-    align-self: flex-start; display: inline-flex; align-items: center; gap: 6px;
-    padding: 4px 12px; border-radius: 999px;
-    font-size: 11px; font-weight: 800; text-transform: uppercase;
-    letter-spacing: 0.08em; white-space: nowrap;
-    background: #64748b; color: #04121f;
-  }
-  .iqw.compact .iqw-status { padding: 2px 10px; font-size: 10px; }
-  .iqw.working .iqw-status { background: #f59e0b; color: #1a1206; }
-  .iqw-icon { display: inline-flex; width: 12px; height: 12px; }
-  .iqw-icon svg { width: 100%; height: 100%; fill: currentColor; display: block; }
-  .iqw-gear { animation: iqw-spin 2.4s linear infinite; transform-origin: 50% 50%; }
-  @keyframes iqw-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
-  .iqw-route {
-    font-size: 11px; color: rgba(255,255,255,0.5); font-variant-numeric: tabular-nums;
-  }
-  .iqw.compact .iqw-route { display: none; }
-  #empty {
-    max-width: 560px; box-sizing: border-box; padding: 16px 20px;
-    border-radius: 16px; border: 1px dashed rgba(255,255,255,0.18);
-    background: rgba(15,23,42,0.75); color: rgba(255,255,255,0.5);
-    font-size: 14px; text-align: center;
-  }
-  .iqw-enter { animation: iqw-pop 0.6s cubic-bezier(0.2,0.9,0.3,1.2) both; }
-  @keyframes iqw-pop {
-    from { opacity: 0; transform: translateX(calc(100% + 48px)); }
-    to { opacity: 1; transform: translateX(0); }
-  }
-</style>
-</head>
-<body>
-<div id="wrap">
-  <div id="list"></div>
-  <div id="empty" style="display: none">No open issues - the queue is clear.</div>
-</div>
-<script>
-(function () {
-  'use strict'
-  var base = location.pathname.replace(/\/$/, '')
-  var list = document.getElementById('list')
-  var empty = document.getElementById('empty')
-  var lastJSON = ''
-  var seen = {}
-  var ready = false
-  var audio = null
+// The built-in Issue Tracker display, used when the producer has no "Issue
+// Tracker" stream widget of their own to adopt. A card per open report,
+// newest first, its status pill amber while worked; the newest leads full
+// size and the rest sit compact beneath. Rendered through the same React
+// display pipeline as a stream widget, so it is the full display feature.
+const issueTrackerDefaultTemplate = `<div className="iqw-wrap">
+  <div className="iqw-list">
+    {(items || []).slice(0, 8).map((item, i) => {
+      var status = (item.values['Status'] || '').trim()
+      var working = /\d|work/i.test(status)
+      return (
+        <div
+          key={item.id}
+          className={'iqw' + (i === 0 ? '' : ' compact') + (working ? ' working' : '')}
+        >
+          <div className="iqw-body">
+            <div className="iqw-name">{widget.name}</div>
+            <div className="iqw-message">{item.values['Message']}</div>
+          </div>
+          <div className="iqw-status">{status || 'Queued'}</div>
+        </div>
+      )
+    })}
+    {(items || []).length === 0 ? (
+      <div className="iqw-empty">No open issues - the queue is clear.</div>
+    ) : null}
+  </div>
+</div>`
 
-  var GEAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>'
+const issueTrackerDefaultCSS = `body { margin: 0; padding: 24px; background: transparent; overflow: hidden;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+.iqw-list { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.iqw { display: flex; align-items: center; gap: 16px; max-width: 560px;
+  box-sizing: border-box; padding: 16px 20px; border-radius: 16px;
+  background: linear-gradient(135deg, rgba(15,23,42,0.94), rgba(30,41,59,0.94));
+  border: 1px solid rgba(255,255,255,0.14); box-shadow: 0 10px 36px rgba(0,0,0,0.5);
+  color: #fff; }
+.iqw.compact { max-width: 460px; padding: 10px 16px; border-radius: 12px; gap: 12px; }
+.iqw-body { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.iqw.compact .iqw-body { flex-direction: row; align-items: center; gap: 10px; }
+.iqw-name { font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.14em; color: #93c5fd; }
+.iqw.compact .iqw-name { display: none; }
+.iqw-message { font-size: 18px; font-weight: 700; line-height: 1.3;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere; }
+.iqw.compact .iqw-message { font-size: 14px; -webkit-line-clamp: 1; max-width: 300px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.iqw-status { align-self: flex-start; display: inline-flex; align-items: center;
+  padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap;
+  background: #64748b; color: #04121f; }
+.iqw.compact .iqw-status { padding: 2px 10px; font-size: 10px; }
+.iqw.working .iqw-status { background: #f59e0b; color: #1a1206; }
+.iqw-empty { max-width: 560px; box-sizing: border-box; padding: 16px 20px;
+  border-radius: 16px; border: 1px dashed rgba(255,255,255,0.18);
+  background: rgba(15,23,42,0.75); color: rgba(255,255,255,0.5);
+  font-size: 14px; text-align: center; }`
 
-  function chime(up) {
-    try {
-      if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)()
-      var now = audio.currentTime
-      var notes = up ? [523, 784] : [659, 440]
-      notes.forEach(function (f, i) {
-        var o = audio.createOscillator()
-        var g = audio.createGain()
-        o.type = 'sine'
-        o.frequency.value = f
-        o.connect(g)
-        g.connect(audio.destination)
-        var t = now + i * 0.12
-        g.gain.setValueAtTime(0, t)
-        g.gain.linearRampToValueAtTime(0.15, t + 0.02)
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.3)
-        o.start(t)
-        o.stop(t + 0.32)
-      })
-    } catch (e) {}
-  }
-
-  function card(it, compact) {
-    var el = document.createElement('div')
-    el.className = 'iqw' + (compact ? ' compact' : '') + (it.working ? ' working' : '')
-    el.setAttribute('data-id', String(it.id))
-
-    var body = document.createElement('div')
-    body.className = 'iqw-body'
-    var name = document.createElement('div')
-    name.className = 'iqw-name'
-    name.textContent = 'Issue Tracker'
-    body.appendChild(name)
-    var msg = document.createElement('div')
-    msg.className = 'iqw-message'
-    msg.textContent = it.message
-    body.appendChild(msg)
-    if (!compact && it.route) {
-      var route = document.createElement('div')
-      route.className = 'iqw-route'
-      route.textContent = it.route
-      body.appendChild(route)
-    }
-    el.appendChild(body)
-
-    var status = document.createElement('div')
-    status.className = 'iqw-status'
-    if (it.working) {
-      var icon = document.createElement('span')
-      icon.className = 'iqw-icon'
-      icon.innerHTML = '<span class="iqw-gear">' + GEAR + '</span>'
-      status.appendChild(icon)
-    }
-    var label = document.createElement('span')
-    label.textContent = it.status
-    status.appendChild(label)
-    el.appendChild(status)
-    return el
-  }
-
-  function render(issues) {
-    if (issues.length === 0) {
-      list.textContent = ''
-      empty.style.display = 'block'
-      return
-    }
-    empty.style.display = 'none'
-    list.textContent = ''
-    issues.forEach(function (it, i) {
-      var el = card(it, i > 0)
-      if (ready && !seen[it.id]) el.classList.add('iqw-enter')
-      list.appendChild(el)
-    })
-  }
-
-  function diff(issues) {
-    var now = {}
-    var added = false
-    issues.forEach(function (it) {
-      now[it.id] = true
-      if (ready && !seen[it.id]) added = true
-    })
-    var resolved = false
-    Object.keys(seen).forEach(function (id) {
-      if (!now[id]) resolved = true
-    })
-    seen = now
-    if (added) chime(true)
-    if (resolved) chime(false)
-    ready = true
-  }
-
-  function tick() {
-    fetch(base + '/data', {cache: 'no-store'})
-      .then(function (r) { return r.text() })
-      .then(function (text) {
-        if (text === lastJSON) return
-        lastJSON = text
-        var issues = (JSON.parse(text).issues) || []
-        diff(issues)
-        render(issues)
-      })
-      .catch(function () {})
-  }
-
-  tick()
-  setInterval(tick, 3000)
-})()
-</script>
-</body>
-</html>
-`
+// The default display needs no custom logic — the template renders the items
+// straight through.
+const issueTrackerDefaultJS = ""

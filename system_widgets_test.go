@@ -157,14 +157,19 @@ func TestIssueTrackerEndpoints(t *testing.T) {
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "Issue Tracker") {
 		t.Fatalf("page: code %d", rec.Code)
 	}
+	// The data feed renders through the widget display pipeline: a template
+	// (the built-in default here, no custom Issue Tracker widget) and an
+	// empty item list.
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/issue-tracker/data", nil))
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"issues":[]`) {
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"items":[]`) ||
+		!strings.Contains(rec.Body.String(), `"template":`) {
 		t.Fatalf("empty data: %q", rec.Body.String())
 	}
 
 	// A filed report shows up right away, Queued; a checked-out one reads
-	// Working; recording an issue number reads Working #N.
+	// Working; recording an issue number reads Working #N. The values are
+	// keyed by the display's Message/Status labels.
 	queued, err := a.SaveDebugReport(DebugReport{Description: "cards overflow"})
 	if err != nil {
 		t.Fatalf("file report: %v", err)
@@ -183,9 +188,9 @@ func TestIssueTrackerEndpoints(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/issue-tracker/data", nil))
 	body := rec.Body.String()
 	for _, want := range []string{
-		"cards overflow", `"status":"Queued"`,
-		"banner clips", `"status":"Working"`,
-		"needs a fix", `"status":"Working #42"`,
+		"cards overflow", `"Status":"Queued"`,
+		"banner clips", `"Status":"Working"`,
+		"needs a fix", `"Status":"Working #42"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("data missing %q:\n%s", want, body)
@@ -201,5 +206,37 @@ func TestIssueTrackerEndpoints(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/issue-tracker", nil))
 	if rec.Code != 404 {
 		t.Fatalf("disabled page: code %d", rec.Code)
+	}
+}
+
+func TestIssueTrackerAdoptsCustomWidget(t *testing.T) {
+	a := newTestApp(t)
+	a.mediaBaseURL = "http://127.0.0.1:9999"
+	h := mediaHandler{app: a}
+
+	// A producer-built "Issue Tracker" widget with its own design.
+	if _, err := a.SaveStreamWidget(StreamWidget{
+		Name:     "Issue Tracker",
+		Template: "<div className=\"mine\">{items.length}</div>",
+		CSS:      ".mine { color: hotpink; }",
+		JS:       "/* custom logic */",
+	}); err != nil {
+		t.Fatalf("save custom widget: %v", err)
+	}
+	if _, err := a.SaveDebugReport(DebugReport{Description: "a bug"}); err != nil {
+		t.Fatalf("file report: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/issue-tracker/data", nil))
+	body := rec.Body.String()
+	// The system widget renders through the producer's template/CSS/JS, fed
+	// the live queue.
+	for _, want := range []string{
+		`className=\"mine\"`, "hotpink", "custom logic", "a bug",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("data should adopt the custom widget's design, missing %q:\n%s", want, body)
+		}
 	}
 }
