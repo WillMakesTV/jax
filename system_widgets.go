@@ -1341,9 +1341,17 @@ func (a *App) issueTrackerData() widgetSourceData {
 		Items:    []widgetSourceItem{},
 	}
 	reports := a.ListDebugReports()
-	// ListDebugReports is newest first; the queue is worked oldest first, so
-	// order the board to match — the id increases with filing time.
-	sort.Slice(reports, func(i, j int) bool { return reports[i].ID < reports[j].ID })
+	// The board reads top to bottom: the working (claimed or issue-opened)
+	// items sit at the top, the queued ones below, and within each group the
+	// oldest leads — so the oldest is worked first and a newly filed report
+	// lands at the very bottom. The id increases with filing time.
+	working := func(r DebugReport) bool { return r.CheckedOut || r.IssueNumber > 0 }
+	sort.SliceStable(reports, func(i, j int) bool {
+		if wi, wj := working(reports[i]), working(reports[j]); wi != wj {
+			return wi
+		}
+		return reports[i].ID < reports[j].ID
+	})
 	for _, rep := range reports {
 		status := "Queued"
 		if rep.CheckedOut || rep.IssueNumber > 0 {

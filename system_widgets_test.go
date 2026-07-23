@@ -198,9 +198,14 @@ func TestIssueTrackerEndpoints(t *testing.T) {
 			t.Fatalf("data missing %q:\n%s", want, body)
 		}
 	}
-	// Oldest first: the first-filed report leads, the newest trails.
-	if strings.Index(body, "cards overflow") > strings.Index(body, "needs a fix") {
-		t.Fatalf("items should be oldest-first:\n%s", body)
+	// Working items sit above queued ones, and the oldest working leads: the
+	// claimed "banner clips" comes before the issue-opened "needs a fix",
+	// both above the still-queued "cards overflow".
+	iBanner := strings.Index(body, "banner clips")
+	iFix := strings.Index(body, "needs a fix")
+	iCards := strings.Index(body, "cards overflow")
+	if !(iBanner < iFix && iFix < iCards) {
+		t.Fatalf("order should be working-first, oldest-first:\n%s", body)
 	}
 	_ = queued
 
