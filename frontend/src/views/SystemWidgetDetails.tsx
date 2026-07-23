@@ -19,6 +19,7 @@ import {useAiQueue} from '../ai/AiQueueProvider'
 import {JsxTemplateField} from '../components/JsxTemplateField'
 import {MarkdownField} from '../components/markdown/MarkdownField'
 import {Modal} from '../components/Modal'
+import {SystemWidgetAssets} from '../obs/SystemWidgetAssets'
 
 interface SystemWidgetDetailsProps {
   /** The system widget whose display is being edited. */
@@ -252,6 +253,8 @@ export function SystemWidgetDetails({
           />
         )}
       </div>
+
+      <SystemWidgetAssets widgetId={widget.id} widgetName={widget.name} />
 
       {/* Where the widget shows up in OBS: its locally served page. */}
       {widget.enabled && widget.sourceUrl && (

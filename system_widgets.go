@@ -1380,7 +1380,7 @@ func (a *App) issueTrackerData() widgetSourceData {
 		Template: disp.Template,
 		CSS:      disp.CSS,
 		JS:       disp.JS,
-		Fields:   []widgetSourceField{},
+		Fields:   a.systemWidgetSourceFields(systemWidgetIssueTracker),
 		Items:    []widgetSourceItem{},
 	}
 	reports := a.ListDebugReports()
@@ -1637,30 +1637,67 @@ func (a *App) systemWidgetDisplay(id string) storedDisplay {
 	return a.systemWidgetDefaultDisplay(id)
 }
 
-// systemWidgetPageInjection is the producer's CSS and JS for a page widget,
-// wrapped in the tags that layer it onto the built-in overlay. Empty when the
-// widget has no override (or is not a page widget), so the page is untouched.
+// assetSlug reduces an asset label to a CSS-identifier-safe token for its
+// custom property name.
+func assetSlug(label string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(label)) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('-')
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+// systemWidgetPageInjection is what a page widget layers onto its built-in
+// overlay: the producer's assets (image assets as CSS custom properties, all
+// assets as window.jaxAssets) followed by their CSS and JS override. Empty
+// when the widget is not a page widget and has nothing to add.
 func (a *App) systemWidgetPageInjection(id string) string {
 	if systemWidgetDisplayKind(id) != displayKindPage {
 		return ""
 	}
-	d, ok := a.storedSystemOverrides()[id]
-	if !ok {
-		return ""
-	}
 	var b strings.Builder
-	if strings.TrimSpace(d.CSS) != "" {
-		b.WriteString("\n<style>\n")
-		b.WriteString(d.CSS)
-		b.WriteString("\n</style>\n")
+
+	// Assets, so the injected CSS/JS below can reach them: images as
+	// --asset-<slug> custom properties, every asset as window.jaxAssets['Name'].
+	var cssVars, jsEntries []string
+	for _, f := range a.systemWidgetSourceFields(id) {
+		if strings.TrimSpace(f.Value) == "" {
+			continue
+		}
+		if f.Kind == widgetFieldImage {
+			cssVars = append(cssVars, fmt.Sprintf("  --asset-%s: url(%q);", assetSlug(f.Label), f.Value))
+		}
+		jsEntries = append(jsEntries, fmt.Sprintf("%q: %q", f.Label, f.Value))
 	}
-	if strings.TrimSpace(d.JS) != "" {
-		// Runs once after the built-in overlay's own scripts, so it can restyle
-		// or hook the DOM the overlay renders (an observer/interval for the
-		// parts that re-render later).
-		b.WriteString("\n<script>\n")
-		b.WriteString(d.JS)
-		b.WriteString("\n</script>\n")
+	if len(cssVars) > 0 {
+		b.WriteString("\n<style>\n:root {\n")
+		b.WriteString(strings.Join(cssVars, "\n"))
+		b.WriteString("\n}\n</style>\n")
+	}
+	if len(jsEntries) > 0 {
+		b.WriteString("\n<script>\nwindow.jaxAssets = {")
+		b.WriteString(strings.Join(jsEntries, ", "))
+		b.WriteString("};\n</script>\n")
+	}
+
+	if d, ok := a.storedSystemOverrides()[id]; ok {
+		if strings.TrimSpace(d.CSS) != "" {
+			b.WriteString("\n<style>\n")
+			b.WriteString(d.CSS)
+			b.WriteString("\n</style>\n")
+		}
+		if strings.TrimSpace(d.JS) != "" {
+			// Runs once after the built-in overlay's own scripts, so it can
+			// restyle or hook the DOM the overlay renders (an observer/interval
+			// for the parts that re-render later).
+			b.WriteString("\n<script>\n")
+			b.WriteString(d.JS)
+			b.WriteString("\n</script>\n")
+		}
 	}
 	return b.String()
 }
@@ -1802,13 +1839,16 @@ func (a *App) serveActiveProject(w http.ResponseWriter, r *http.Request, action 
 		if ov, ok := a.storedSystemOverrides()[systemWidgetActiveProject]; ok && strings.TrimSpace(ov.Template) != "" {
 			disp.Template, disp.CSS, disp.JS = ov.Template, ov.CSS, ov.JS
 		}
+		// The producer's own assets on this widget join the fields the adopted
+		// custom widget lends, so a customized template can draw on either.
+		fields := append(disp.Fields, a.systemWidgetSourceFields(systemWidgetActiveProject)...)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(widgetSourceData{
 			Name:     "Active Project",
 			Template: disp.Template,
 			CSS:      disp.CSS,
 			JS:       disp.JS,
-			Fields:   disp.Fields,
+			Fields:   fields,
 			Items:    []widgetSourceItem{},
 		})
 	default:

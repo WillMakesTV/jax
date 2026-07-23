@@ -38,6 +38,10 @@ export function AnalyzeInspirationVideo(arg1) {
   return window['go']['main']['App']['AnalyzeInspirationVideo'](arg1);
 }
 
+export function AddSystemWidgetField(arg1, arg2, arg3) {
+  return window['go']['main']['App']['AddSystemWidgetField'](arg1, arg2, arg3);
+}
+
 export function AddWidgetField(arg1, arg2, arg3) {
   return window['go']['main']['App']['AddWidgetField'](arg1, arg2, arg3);
 }
@@ -362,6 +366,14 @@ export function GenerateSystemWidgetDisplay(arg1, arg2) {
   return window['go']['main']['App']['GenerateSystemWidgetDisplay'](arg1, arg2);
 }
 
+export function GenerateSystemWidgetFieldImage(arg1, arg2, arg3) {
+  return window['go']['main']['App']['GenerateSystemWidgetFieldImage'](arg1, arg2, arg3);
+}
+
+export function GenerateSystemWidgetFieldSound(arg1, arg2, arg3) {
+  return window['go']['main']['App']['GenerateSystemWidgetFieldSound'](arg1, arg2, arg3);
+}
+
 export function GenerateWidgetFieldSound(arg1, arg2, arg3) {
   return window['go']['main']['App']['GenerateWidgetFieldSound'](arg1, arg2, arg3);
 }
@@ -630,6 +642,10 @@ export function GetSystemWidgetDisplay(arg1) {
   return window['go']['main']['App']['GetSystemWidgetDisplay'](arg1);
 }
 
+export function GetSystemWidgetFields(arg1) {
+  return window['go']['main']['App']['GetSystemWidgetFields'](arg1);
+}
+
 export function GetSystemWidgets() {
   return window['go']['main']['App']['GetSystemWidgets']();
 }
@@ -832,6 +848,10 @@ export function RemoveVideoPlanFootage(arg1, arg2) {
 
 export function RebuildVideoStyle(arg1) {
   return window['go']['main']['App']['RebuildVideoStyle'](arg1);
+}
+
+export function RemoveSystemWidgetField(arg1, arg2) {
+  return window['go']['main']['App']['RemoveSystemWidgetField'](arg1, arg2);
 }
 
 export function RemoveWidgetField(arg1, arg2) {
@@ -1197,6 +1217,14 @@ export function UpdateYouTubeThumbnail(arg1, arg2) {
 
 export function UploadPlanThumbnail() {
   return window['go']['main']['App']['UploadPlanThumbnail']();
+}
+
+export function UploadSystemWidgetFieldImage(arg1, arg2) {
+  return window['go']['main']['App']['UploadSystemWidgetFieldImage'](arg1, arg2);
+}
+
+export function UploadSystemWidgetFieldSound(arg1, arg2) {
+  return window['go']['main']['App']['UploadSystemWidgetFieldSound'](arg1, arg2);
 }
 
 export function UploadWidgetFieldImage(arg1, arg2) {

@@ -20,6 +20,8 @@ export function AddTranscriptLine(arg1:number,arg2:number,arg3:number,arg4:strin
 
 export function AnalyzeInspirationVideo(arg1:string):Promise<void>;
 
+export function AddSystemWidgetField(arg1:string,arg2:string,arg3:string):Promise<Array<main.WidgetField>>;
+
 export function AddWidgetField(arg1:string,arg2:string,arg3:string):Promise<main.StreamWidget>;
 
 export function AddWidgetItem(arg1:string,arg2:Record<string, string>):Promise<main.StreamWidget>;
@@ -180,6 +182,10 @@ export function GenerateVideoPublishFields(arg1:string,arg2:main.VideoPublishDra
 
 export function GenerateSystemWidgetDisplay(arg1:string,arg2:string):Promise<main.SystemWidgetDisplay>;
 
+export function GenerateSystemWidgetFieldImage(arg1:string,arg2:string,arg3:string):Promise<Array<main.WidgetField>>;
+
+export function GenerateSystemWidgetFieldSound(arg1:string,arg2:string,arg3:string):Promise<Array<main.WidgetField>>;
+
 export function GenerateWidgetFieldImage(arg1:string,arg2:string,arg3:string):Promise<main.StreamWidget>;
 
 export function GenerateWidgetFieldSound(arg1:string,arg2:string,arg3:string):Promise<main.StreamWidget>;
@@ -316,6 +322,8 @@ export function GetStreams():Promise<Array<main.Stream>>;
 
 export function GetSystemWidgetDisplay(arg1:string):Promise<main.SystemWidgetDisplay>;
 
+export function GetSystemWidgetFields(arg1:string):Promise<Array<main.WidgetField>>;
+
 export function GetSystemWidgets():Promise<Array<main.SystemWidget>>;
 
 export function GetTikTokPublish(arg1:string):Promise<main.TikTokPublishRecord>;
@@ -417,6 +425,8 @@ export function RecycleMCPToken():Promise<main.MCPStatus>;
 export function RefreshChannelInfo():Promise<void>;
 
 export function RemoveVideoPlanFootage(arg1:string,arg2:string):Promise<main.VideoPlan>;
+
+export function RemoveSystemWidgetField(arg1:string,arg2:string):Promise<Array<main.WidgetField>>;
 
 export function RemoveWidgetField(arg1:string,arg2:string):Promise<main.StreamWidget>;
 
@@ -601,6 +611,10 @@ export function UpdateYouTubeStreamInfo(arg1:string,arg2:Array<string>):Promise<
 export function UpdateYouTubeThumbnail(arg1:string,arg2:Array<string>):Promise<main.StreamThumbInfo>;
 
 export function UploadPlanThumbnail():Promise<main.PlanThumbnail>;
+
+export function UploadSystemWidgetFieldImage(arg1:string,arg2:string):Promise<Array<main.WidgetField>>;
+
+export function UploadSystemWidgetFieldSound(arg1:string,arg2:string):Promise<Array<main.WidgetField>>;
 
 export function UploadWidgetFieldImage(arg1:string,arg2:string):Promise<main.StreamWidget>;
 

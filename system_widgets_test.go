@@ -317,6 +317,80 @@ func TestSystemWidgetDisplayEditable(t *testing.T) {
 	}
 }
 
+func TestSystemWidgetAssets(t *testing.T) {
+	a := newTestApp(t)
+	a.mediaBaseURL = "http://127.0.0.1:9999"
+	h := mediaHandler{app: a}
+
+	// Assets are image/sound only, and each needs a name.
+	if _, err := a.AddSystemWidgetField(systemWidgetIssueTracker, "field_message", "Nope"); err == nil {
+		t.Fatal("want error adding a non-asset field type")
+	}
+	if _, err := a.AddSystemWidgetField(systemWidgetIssueTracker, "field_image", "  "); err == nil {
+		t.Fatal("want error for an unnamed asset")
+	}
+
+	// Several assets of the same kind are allowed, told apart by name.
+	if _, err := a.AddSystemWidgetField(systemWidgetIssueTracker, "field_image", "Logo"); err != nil {
+		t.Fatalf("add image asset: %v", err)
+	}
+	fields, err := a.AddSystemWidgetField(systemWidgetIssueTracker, "field_image", "Badge")
+	if err != nil {
+		t.Fatalf("add second image asset: %v", err)
+	}
+	if len(fields) != 2 {
+		t.Fatalf("want 2 assets, got %d", len(fields))
+	}
+	badgeID := fields[1].ID
+
+	// A recorded file resolves to the widget's own folder URL and reaches the
+	// served display as a field.
+	filled, err := a.setSystemWidgetFieldFile(systemWidgetIssueTracker, badgeID, "field_1.png")
+	if err != nil {
+		t.Fatalf("set file: %v", err)
+	}
+	url := ""
+	for _, f := range filled {
+		if f.ID == badgeID {
+			url = f.ValueURL
+		}
+	}
+	if !strings.Contains(url, "/widgetfiles/issue-tracker/field_1.png") {
+		t.Fatalf("asset URL wrong: %q", url)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/issue-tracker/data", nil))
+	if body := rec.Body.String(); !strings.Contains(body, `"Badge"`) ||
+		!strings.Contains(body, "field_1.png") {
+		t.Fatalf("data should carry the asset field:\n%s", body)
+	}
+
+	// Removing one leaves the other.
+	remaining, err := a.RemoveSystemWidgetField(systemWidgetIssueTracker, badgeID)
+	if err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if len(remaining) != 1 || remaining[0].Label != "Logo" {
+		t.Fatalf("remove left the wrong set: %+v", remaining)
+	}
+
+	// Page widgets expose their assets to the injected overlay: images as a
+	// CSS custom property, and every asset on window.jaxAssets.
+	added, err := a.AddSystemWidgetField(systemWidgetUnifiedChat, "field_image", "Overlay BG")
+	if err != nil {
+		t.Fatalf("add page asset: %v", err)
+	}
+	if _, err := a.setSystemWidgetFieldFile(systemWidgetUnifiedChat, added[0].ID, "bg.png"); err != nil {
+		t.Fatalf("set page file: %v", err)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/unified-chat", nil))
+	body := rec.Body.String()
+	if !strings.Contains(body, "--asset-overlay-bg") || !strings.Contains(body, "window.jaxAssets") {
+		t.Fatalf("page should expose its assets:\n%s", body)
+	}
+}
+
 func TestActiveProjectWidget(t *testing.T) {
 	a := newTestApp(t)
 	a.mediaBaseURL = "http://127.0.0.1:9999"
