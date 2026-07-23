@@ -78,8 +78,10 @@ export function InspirationPicker({
     const q = query.trim().toLowerCase()
     return !q || c.title.toLowerCase().includes(q)
   })
-  const selected = matches.filter((c) => picked[c.id])
+  // Already-indexed uploads (added, queued, or studied) can't be added again,
+  // so they are never part of what a pick or "Add all" queues.
   const fresh = matches.filter((c) => !c.indexed)
+  const selected = fresh.filter((c) => picked[c.id])
 
   const add = async (list: main.InspirationCandidate[]) => {
     if (list.length === 0) return
@@ -183,14 +185,26 @@ export function InspirationPicker({
           ) : (
             matches.map((c) => (
               <li key={c.id}>
-                <label className="flex cursor-pointer items-center gap-3 rounded-lg p-2 transition-colors hover:bg-surface-hover">
+                <label
+                  className={
+                    c.indexed
+                      ? 'flex items-center gap-3 rounded-lg p-2 opacity-60'
+                      : 'flex cursor-pointer items-center gap-3 rounded-lg p-2 transition-colors hover:bg-surface-hover'
+                  }
+                >
                   <input
                     type="checkbox"
-                    checked={Boolean(picked[c.id])}
+                    checked={!c.indexed && Boolean(picked[c.id])}
+                    disabled={c.indexed}
                     onChange={(e) =>
                       setPicked((prev) => ({...prev, [c.id]: e.target.checked}))
                     }
-                    className="h-4 w-4 shrink-0 accent-accent"
+                    title={
+                      c.indexed
+                        ? 'Already in the library — it cannot be added again'
+                        : undefined
+                    }
+                    className="h-4 w-4 shrink-0 accent-accent disabled:cursor-not-allowed"
                   />
                   {c.thumbnailUrl && (
                     <img
@@ -213,7 +227,7 @@ export function InspirationPicker({
                         c.publishedAt ? formatDate(c.publishedAt) : '',
                         c.durationSecs > 0 ? clock(c.durationSecs) : '',
                         c.views > 0 ? `${formatCompact(c.views)} views` : '',
-                        c.indexed ? 'already indexed' : '',
+                        c.indexed ? 'already added' : '',
                       ]
                         .filter(Boolean)
                         .join(' · ')}
