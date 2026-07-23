@@ -284,18 +284,17 @@ export function Dashboard({onOpenChannel}: DashboardProps) {
               />
             </>
           )}
+
+          {/* The channels sit in the hero alongside the graph — one card
+              each, on the hero's own surface. */}
+          <ChannelCards
+            platforms={platforms}
+            breakdown={snap?.platforms ?? []}
+            growth={snap?.platformGrowth ?? []}
+            onOpenChannel={onOpenChannel}
+          />
         </div>
       </section>
-
-      {/* ---------------------------------------------------------------
-          The channels, one card each.
-          --------------------------------------------------------------- */}
-      <ChannelCards
-        platforms={platforms}
-        breakdown={snap?.platforms ?? []}
-        growth={snap?.platformGrowth ?? []}
-        onOpenChannel={onOpenChannel}
-      />
     </div>
   )
 }
@@ -427,20 +426,15 @@ function ChannelCards({
 }) {
   const channels = platforms ?? []
 
-  if (channels.length === 0) {
-    return (
-      <section aria-label="Channels">
-        <p className="rounded-xl border border-dashed border-edge bg-surface px-6 py-10 text-center text-sm text-fg-muted">
-          No channels connected — add one in Settings → Services.
-        </p>
-      </section>
-    )
-  }
+  // The hero already speaks to the empty state above (no numbers yet /
+  // connect a platform), so the cards simply stay out of the way until there
+  // is a channel to show rather than repeating the message.
+  if (channels.length === 0) return null
 
   return (
     <section aria-label="Channels">
       {/* Scale with the viewport: 3 across on medium layouts, 5 across on
-          wide/full-size ones. */}
+          wide/full-size ones. On the hero surface, so hero-toned. */}
       <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
         {channels.map((c) => {
           const def = SERVICES.find((s) => s.id === c.platform)
@@ -463,7 +457,7 @@ function ChannelCards({
                   }
                 }}
                 aria-label={`Open ${c.channelName || platformName(c.platform)} details`}
-                className="flex h-full cursor-pointer flex-col gap-2.5 rounded-xl border border-edge bg-surface p-3 text-left transition-colors hover:border-accent/50 hover:bg-surface-hover"
+                className="flex h-full cursor-pointer flex-col gap-2.5 rounded-xl border border-hero-fg/10 bg-hero-fg/5 p-3 text-left transition-colors hover:border-hero-fg/30 hover:bg-hero-fg/10"
               >
                 <header className="flex items-center gap-2.5">
                   {Icon && (
@@ -476,10 +470,10 @@ function ChannelCards({
                     </span>
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-fg">
+                    <p className="truncate text-sm font-semibold text-hero-fg">
                       {c.channelName || platformName(c.platform)}
                     </p>
-                    <p className="truncate text-xs text-fg-muted">
+                    <p className="truncate text-xs opacity-70">
                       {platformName(c.platform)}
                       {c.live &&
                         c.viewerCount > 0 &&
@@ -502,7 +496,7 @@ function ChannelCards({
                       }}
                       title={`Visit ${platformName(c.platform)}`}
                       aria-label={`Visit ${platformName(c.platform)} in the browser`}
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg opacity-70 transition-colors hover:bg-hero-fg/15 hover:opacity-100"
                     >
                       <ExternalLink size={13} aria-hidden />
                     </button>
@@ -510,9 +504,7 @@ function ChannelCards({
                 </header>
 
                 {c.error ? (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">
-                    {c.error}
-                  </p>
+                  <p className="text-xs text-amber-300">{c.error}</p>
                 ) : (
                   stats.length > 0 && (
                     <ul className="mt-auto flex flex-wrap gap-x-4 gap-y-1">
@@ -525,9 +517,9 @@ function ChannelCards({
                           <t.icon
                             size={12}
                             aria-hidden
-                            className="self-center text-fg-muted"
+                            className="self-center opacity-70"
                           />
-                          <span className="font-semibold text-fg">
+                          <span className="font-semibold text-hero-fg">
                             {formatCompact(metrics?.[t.key] ?? 0)}
                           </span>
                           <GrowthDelta value={delta?.[t.key] ?? 0} />
@@ -545,16 +537,18 @@ function ChannelCards({
   )
 }
 
-/** A stat's movement over the window: green up, red down, silent at zero. */
+/**
+ * A stat's movement over the window: green up, red down, silent at zero. The
+ * channel cards live on the hero surface, so the colours are the lighter
+ * shades that read on it.
+ */
 function GrowthDelta({value}: {value: number}) {
   if (!value) return null
   return (
     <span
       className={clsx(
         'text-xs font-medium',
-        value > 0
-          ? 'text-emerald-600 dark:text-emerald-400'
-          : 'text-red-600 dark:text-red-400',
+        value > 0 ? 'text-emerald-300' : 'text-red-300',
       )}
     >
       {value > 0 ? '+' : '−'}
