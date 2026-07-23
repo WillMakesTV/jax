@@ -66,6 +66,19 @@ const KIND_TABS = [
 type KindTab = (typeof KIND_TABS)[number]['id']
 
 /**
+ * The page's top-level sections, as inner tabs: what's being produced
+ * (Planning), what shipped and how it's doing (Tracked videos), and the raw
+ * channel catalogue (Videos). Planning leads — it's where the work starts.
+ */
+const CONTENT_TABS = [
+  {id: 'planning', label: 'Planning'},
+  {id: 'tracked', label: 'Tracked videos'},
+  {id: 'videos', label: 'Videos'},
+] as const
+
+type ContentTab = (typeof CONTENT_TABS)[number]['id']
+
+/**
  * Long form means YouTube, and only YouTube.
  *
  * Twitch and Kick VODs are recordings of broadcasts, not published videos —
@@ -436,6 +449,7 @@ export function Videos({
   const [error, setError] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('public')
   const [kindTab, setKindTab] = useState<KindTab>('long')
+  const [contentTab, setContentTab] = useState<ContentTab>('planning')
 
   // Video plans lead the page, like planned streams on the Broadcast page.
   // Completed ones drop out of production and into Tracked Videos below.
@@ -587,133 +601,189 @@ export function Videos({
         <p className="mb-4 text-sm text-red-600 dark:text-red-400">{error}</p>
       )}
 
+      {/* The page's three sections as inner tabs; Planning leads. */}
+      <div
+        role="tablist"
+        aria-label="Videos sections"
+        className="mb-6 flex w-fit items-center gap-1 rounded-lg border border-edge bg-surface p-1"
+      >
+        {CONTENT_TABS.map((t) => {
+          const count =
+            t.id === 'planning'
+              ? plans.length
+              : t.id === 'tracked'
+                ? tracked.length
+                : 0
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={contentTab === t.id}
+              onClick={() => setContentTab(t.id)}
+              className={clsx(
+                'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                contentTab === t.id
+                  ? 'bg-accent text-accent-fg'
+                  : 'text-fg-muted hover:bg-surface-hover hover:text-fg',
+              )}
+            >
+              {t.label}
+              {count > 0 && ` (${count})`}
+            </button>
+          )
+        })}
+      </div>
+
       {/* Planned videos: the ideas being produced, ahead of the published
           list — the Videos-page counterpart of the Broadcast page's planned
-          streams. Each card opens its plan; hidden when nothing is planned. */}
-      {plans.length > 0 && (
-        <section aria-label="Planned videos" className="mb-6">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            {/* The CTA that used to sit here now leads the page's header, so
-                it is reachable with nothing planned yet. */}
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
-              Planned Videos
-            </h2>
+          streams. Each card opens its plan. */}
+      {contentTab === 'planning' &&
+        (plans.length > 0 ? (
+          <section aria-label="Planned videos" className="mb-6">
+            {/* Three across on medium viewports, five at full width. */}
+            <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+              {plans.map((plan) => (
+                <li key={plan.id}>
+                  <PlannedVideoCard
+                    plan={plan}
+                    sources={resolveSources(plan, pastStreams, seasonBySeries)}
+                    onOpen={() => onOpenVideoPlan(plan)}
+                  />
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : (
+          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-edge bg-surface px-6 py-10 text-center">
+            <span
+              aria-hidden
+              className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-surface-hover text-fg-muted"
+            >
+              <Film size={20} />
+            </span>
+            <p className="text-sm font-semibold text-fg">Nothing planned yet</p>
+            <p className="mt-1 max-w-sm text-sm text-fg-muted">
+              Use “Plan a video” above to start a plan — the ideas you're
+              producing live here until they ship.
+            </p>
           </div>
-          {/* Three across on medium viewports, five at full width. */}
-          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
-            {plans.map((plan) => (
-              <li key={plan.id}>
-                <PlannedVideoCard
-                  plan={plan}
-                  sources={resolveSources(plan, pastStreams, seasonBySeries)}
-                  onOpen={() => onOpenVideoPlan(plan)}
-                />
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+        ))}
 
       {/* Tracked videos: the plans that made it out. They no longer need
           producing, so the question is how they are doing. */}
-      {tracked.length > 0 && (
-        <section aria-label="Tracked videos" className="mb-6">
-          <h2 className="mb-3 inline-flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-fg-muted">
-            <CheckCircle2 size={13} aria-hidden />
-            Tracked Videos ({tracked.length})
-          </h2>
-          {/* Dense tiles, the thumbnail as each card's backdrop (like the
+      {contentTab === 'tracked' &&
+        (tracked.length > 0 ? (
+          <section aria-label="Tracked videos" className="mb-6">
+            {/* Dense tiles, the thumbnail as each card's backdrop (like the
               planned cards above): 4-up on medium viewports, 6-up on full
               screens. The card carries the aggregate across every source —
               per-platform numbers live on the video's page. */}
-          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4 2xl:grid-cols-6">
-            {tracked.map((t) => {
-              const thumb = t.live?.thumbnailUrl || t.plan.thumbnailUrl
-              const views =
-                t.totalViews > 0
-                  ? t.totalViews
-                  : t.live && t.live.viewCount > 0
-                    ? t.live.viewCount
-                    : 0
-              return (
-                <li key={t.plan.id}>
-                  <div className="relative flex h-full min-h-28 flex-col overflow-hidden rounded-xl border border-edge bg-surface p-3 transition-colors hover:border-accent/50">
-                    {thumb && (
-                      <span aria-hidden className="absolute inset-0">
-                        <img
-                          src={thumb}
-                          alt=""
-                          className="h-full w-full object-cover"
-                        />
-                        {/* Anchored at the top so the title always sits on a
-                            solid surface; the thumbnail shows through lower
-                            down. */}
-                        <span className="absolute inset-0 bg-gradient-to-b from-surface via-surface/80 to-surface/50" />
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => onOpenVideoPlan(t.plan)}
-                      title="Open the plan this video came from"
-                      className="relative min-w-0 flex-1 text-left"
-                    >
-                      <span className="line-clamp-2 text-sm font-semibold text-fg hover:underline">
-                        {t.live?.title || t.record?.title || t.plan.title}
-                      </span>
-                      <span className="mt-0.5 block truncate text-xs text-fg-muted">
-                        {[
-                          t.plan.format === 'short' ? 'Short' : 'Long form',
-                          t.plan.completedAt
-                            ? formatDate(t.plan.completedAt)
-                            : '',
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </span>
-                    </button>
-                    <div className="relative mt-2 flex items-center justify-between gap-2">
-                      <span
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-fg"
-                        title={`${views ? formatCompact(views) : 'No'} views across ${t.shares.length + (t.record ? 1 : 0) || 1} source${t.shares.length + (t.record ? 1 : 0) === 1 ? '' : 's'}`}
+            <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4 2xl:grid-cols-6">
+              {tracked.map((t) => {
+                const thumb = t.live?.thumbnailUrl || t.plan.thumbnailUrl
+                const views =
+                  t.totalViews > 0
+                    ? t.totalViews
+                    : t.live && t.live.viewCount > 0
+                      ? t.live.viewCount
+                      : 0
+                return (
+                  <li key={t.plan.id}>
+                    <div className="relative flex h-full min-h-28 flex-col overflow-hidden rounded-xl border border-edge bg-surface p-3 transition-colors hover:border-accent/50">
+                      {thumb && (
+                        <span aria-hidden className="absolute inset-0">
+                          <img
+                            src={thumb}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                          {/* Anchored at the top so the title always sits on a
+                              solid surface; the thumbnail shows through lower
+                              down. */}
+                          <span className="absolute inset-0 bg-gradient-to-b from-surface via-surface/80 to-surface/50" />
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => onOpenVideoPlan(t.plan)}
+                        title="Open the plan this video came from"
+                        className="relative min-w-0 flex-1 text-left"
                       >
-                        <Eye size={12} aria-hidden />
-                        {views ? `${formatCompact(views)} views` : '— views'}
-                      </span>
-                      <span className="flex shrink-0 items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setSharesForId(t.plan.id)}
-                          title="Add links to everywhere this video was shared"
-                          aria-label="Edit share links"
-                          className="inline-flex items-center rounded-lg border border-edge bg-bg/80 p-1.5 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                        <span className="line-clamp-2 text-sm font-semibold text-fg hover:underline">
+                          {t.live?.title || t.record?.title || t.plan.title}
+                        </span>
+                        <span className="mt-0.5 block truncate text-xs text-fg-muted">
+                          {[
+                            t.plan.format === 'short' ? 'Short' : 'Long form',
+                            t.plan.completedAt
+                              ? formatDate(t.plan.completedAt)
+                              : '',
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </span>
+                      </button>
+                      <div className="relative mt-2 flex items-center justify-between gap-2">
+                        <span
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-fg"
+                          title={`${views ? formatCompact(views) : 'No'} views across ${t.shares.length + (t.record ? 1 : 0) || 1} source${t.shares.length + (t.record ? 1 : 0) === 1 ? '' : 's'}`}
                         >
-                          <Link2 size={13} aria-hidden />
-                        </button>
-                        {t.record?.url && (
-                          <a
-                            href={t.record.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            title="Watch the published video"
-                            aria-label="Watch the published video"
+                          <Eye size={12} aria-hidden />
+                          {views ? `${formatCompact(views)} views` : '— views'}
+                        </span>
+                        <span className="flex shrink-0 items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setSharesForId(t.plan.id)}
+                            title="Add links to everywhere this video was shared"
+                            aria-label="Edit share links"
                             className="inline-flex items-center rounded-lg border border-edge bg-bg/80 p-1.5 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
                           >
-                            <ExternalLink size={13} aria-hidden />
-                          </a>
-                        )}
-                      </span>
+                            <Link2 size={13} aria-hidden />
+                          </button>
+                          {t.record?.url && (
+                            <a
+                              href={t.record.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Watch the published video"
+                              aria-label="Watch the published video"
+                              className="inline-flex items-center rounded-lg border border-edge bg-bg/80 p-1.5 text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                            >
+                              <ExternalLink size={13} aria-hidden />
+                            </a>
+                          )}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-        </section>
-      )}
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
+        ) : (
+          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-edge bg-surface px-6 py-10 text-center">
+            <span
+              aria-hidden
+              className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-surface-hover text-fg-muted"
+            >
+              <CheckCircle2 size={20} />
+            </span>
+            <p className="text-sm font-semibold text-fg">
+              No tracked videos yet
+            </p>
+            <p className="mt-1 max-w-sm text-sm text-fg-muted">
+              A plan becomes a tracked video once it's completed and published —
+              its performance across every platform shows here.
+            </p>
+          </div>
+        ))}
 
-      {/* Long form and short form are separate catalogues; the visibility
+      {/* The channel catalogue, with its own format and visibility filters.
+          Long form and short form are separate catalogues; the visibility
           filter narrows whichever one is open. */}
-      {allVideos.length > 0 && (
+      {contentTab === 'videos' && allVideos.length > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <div
             role="tablist"
@@ -766,75 +836,76 @@ export function Videos({
         </div>
       )}
 
-      {loading && allVideos.length === 0 ? (
-        <p className="text-sm text-fg-muted">Loading videos…</p>
-      ) : allVideos.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-edge bg-surface px-6 py-10 text-center">
-          <span
-            aria-hidden
-            className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-surface-hover text-fg-muted"
+      {contentTab === 'videos' &&
+        (loading && allVideos.length === 0 ? (
+          <p className="text-sm text-fg-muted">Loading videos…</p>
+        ) : allVideos.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-edge bg-surface px-6 py-10 text-center">
+            <span
+              aria-hidden
+              className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-surface-hover text-fg-muted"
+            >
+              <Clapperboard size={20} />
+            </span>
+            <p className="text-sm font-semibold text-fg">
+              {oauthConnected ? 'No videos yet' : 'No services connected'}
+            </p>
+            <p className="mt-1 max-w-sm text-sm text-fg-muted">
+              {oauthConnected
+                ? 'Your YouTube long-form videos, and short-form from every channel, will appear here. Broadcast recordings live under Broadcasting.'
+                : 'Connect Twitch or YouTube in Settings → Services to see your videos here.'}
+            </p>
+          </div>
+        ) : videos.length === 0 ? (
+          <p className="text-sm text-fg-muted">
+            {kindTab === 'short'
+              ? 'No Shorts or Reels yet — YouTube Shorts, Facebook and Instagram Reels, and TikTok posts appear here.'
+              : `No ${
+                  STATUS_FILTERS.find(
+                    (f) => f.id === statusFilter,
+                  )?.label.toLowerCase() ?? ''
+                } long-form videos on your YouTube channel.`}
+          </p>
+        ) : (
+          // Shorts are tall, so they tile narrower — six across at full width,
+          // four on medium viewports, two on the narrowest. Long form runs
+          // three across on medium viewports and five at full-screen widths.
+          <div
+            className={clsx(
+              'grid grid-cols-1 gap-4',
+              kindTab === 'short'
+                ? 'grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6'
+                : 'sm:grid-cols-2 md:grid-cols-3 2xl:grid-cols-5',
+            )}
           >
-            <Clapperboard size={20} />
-          </span>
-          <p className="text-sm font-semibold text-fg">
-            {oauthConnected ? 'No videos yet' : 'No services connected'}
-          </p>
-          <p className="mt-1 max-w-sm text-sm text-fg-muted">
-            {oauthConnected
-              ? 'Your YouTube long-form videos, and short-form from every channel, will appear here. Broadcast recordings live under Broadcasting.'
-              : 'Connect Twitch or YouTube in Settings → Services to see your videos here.'}
-          </p>
-        </div>
-      ) : videos.length === 0 ? (
-        <p className="text-sm text-fg-muted">
-          {kindTab === 'short'
-            ? 'No Shorts or Reels yet — YouTube Shorts, Facebook and Instagram Reels, and TikTok posts appear here.'
-            : `No ${
-                STATUS_FILTERS.find(
-                  (f) => f.id === statusFilter,
-                )?.label.toLowerCase() ?? ''
-              } long-form videos on your YouTube channel.`}
-        </p>
-      ) : (
-        // Shorts are tall, so they tile narrower — six across at full width,
-        // four on medium viewports, two on the narrowest. Long form runs
-        // three across on medium viewports and five at full-screen widths.
-        <div
-          className={clsx(
-            'grid grid-cols-1 gap-4',
-            kindTab === 'short'
-              ? 'grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6'
-              : 'sm:grid-cols-2 md:grid-cols-3 2xl:grid-cols-5',
-          )}
-        >
-          {kindTab === 'short'
-            ? shortGroups.map((g) => {
-                // A short one of the tracked videos claims (by share link or
-                // publish record) clicks through to that plan's page.
-                const planId = g.postings
-                  .map((p) => planByVideo.get(`${p.platform}|${p.id}`))
-                  .find(Boolean)
-                const t = planId
-                  ? tracked.find((x) => x.plan.id === planId)
-                  : undefined
-                return (
-                  <ShortCard
-                    key={g.key}
-                    group={g}
-                    onOpen={onOpenVideo}
-                    onOpenPlan={t ? () => onOpenVideoPlan(t.plan) : undefined}
+            {kindTab === 'short'
+              ? shortGroups.map((g) => {
+                  // A short one of the tracked videos claims (by share link or
+                  // publish record) clicks through to that plan's page.
+                  const planId = g.postings
+                    .map((p) => planByVideo.get(`${p.platform}|${p.id}`))
+                    .find(Boolean)
+                  const t = planId
+                    ? tracked.find((x) => x.plan.id === planId)
+                    : undefined
+                  return (
+                    <ShortCard
+                      key={g.key}
+                      group={g}
+                      onOpen={onOpenVideo}
+                      onOpenPlan={t ? () => onOpenVideoPlan(t.plan) : undefined}
+                    />
+                  )
+                })
+              : videos.map((v) => (
+                  <VideoCard
+                    key={`${v.platform}-${v.id}`}
+                    video={v}
+                    onOpen={() => onOpenVideo(v)}
                   />
-                )
-              })
-            : videos.map((v) => (
-                <VideoCard
-                  key={`${v.platform}-${v.id}`}
-                  video={v}
-                  onOpen={() => onOpenVideo(v)}
-                />
-              ))}
-        </div>
-      )}
+                ))}
+          </div>
+        ))}
 
       <TrackedSharesModal
         tracked={tracked.find((t) => t.plan.id === sharesForId) ?? null}
