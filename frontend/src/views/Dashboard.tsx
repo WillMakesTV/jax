@@ -71,7 +71,7 @@ const TILES: {
     key: 'views',
     label: 'Views',
     icon: TrendingUp,
-    hint: 'YouTube’s lifetime channel views, plus TikTok’s views summed across its videos (TikTok publishes no lifetime total, so it is added up from the video list).',
+    hint: 'YouTube’s lifetime channel views, plus views summed from the content itself where a platform publishes no lifetime total — TikTok videos, and Instagram and Facebook Reels.',
   },
 ]
 

@@ -30,7 +30,9 @@ import (
 //   - Likes: Facebook page likes and TikTok's lifetime like count.
 //   - Content: things published. YouTube videos, Instagram posts, TikTok
 //     videos, X posts.
-//   - Views: lifetime views where a platform gives them (YouTube).
+//   - Views: lifetime views where a platform gives them (YouTube), and views
+//     summed from the content itself where there is no lifetime total (TikTok
+//     videos, Instagram and Facebook Reels).
 //
 // A platform that doesn't report a metric contributes zero to it rather than
 // guessing, and the UI says which platforms actually fed a tile — a total is
@@ -146,6 +148,7 @@ func (a *App) GetChannelMetrics() []ChannelMetrics {
 				Platform: "facebook",
 				Audience: info.FollowersN,
 				Likes:    info.LikesN,
+				Views:    info.ViewsN,
 			})
 		}
 	}

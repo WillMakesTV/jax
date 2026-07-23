@@ -385,10 +385,17 @@ type fbChannelInfo struct {
 	Likes     string `json:"likes"`
 	Avatar    string `json:"avatar"`
 	Banner    string `json:"banner"`
+	// Views is the summed Reel view count and ViewsOver how many Reels it
+	// covers — Facebook exposes no lifetime Page view total, so this is added
+	// up from the Reels themselves (see fetchFacebookReels), as Instagram's
+	// and TikTok's are. Blank/zero when there are no Reels with views.
+	Views     string `json:"views"`
+	ViewsOver int64  `json:"viewsOver"`
 	// The raw counts, for the aggregate hero and the daily history (see
 	// metrics.go); the strings above are formatted for display.
 	FollowersN int64 `json:"followersN"`
 	LikesN     int64 `json:"likesN"`
+	ViewsN     int64 `json:"viewsN"`
 }
 
 // fbPermalink absolutizes Graph's relative permalink_url values.
@@ -485,6 +492,22 @@ func (a *App) fetchFacebookLive(conn serviceConn) LiveStream {
 		out.LikesN = page.FanCount
 		out.Avatar = page.Picture.Data.URL
 		out.Banner = page.Cover.Source
+		// Views are summed from the Page's Reels — Facebook publishes no
+		// lifetime Page view total (see fetchFacebookReels). One edge call, so
+		// it rides the channel-info cache rather than the live poll.
+		if reels, rerr := a.fetchFacebookReels(conn); rerr != nil {
+			log.Printf("jax: facebook views unavailable: %v", rerr)
+		} else {
+			for _, v := range reels {
+				if v.ViewCount > 0 {
+					out.ViewsN += v.ViewCount
+					out.ViewsOver++
+				}
+			}
+			if out.ViewsN > 0 {
+				out.Views = fmtCount(out.ViewsN)
+			}
+		}
 		return out, nil
 	})
 	if err == nil {
@@ -499,6 +522,17 @@ func (a *App) fetchFacebookLive(conn serviceConn) LiveStream {
 		}
 		if info.Likes != "" && info.Likes != "0" {
 			ls.Details = append(ls.Details, DetailItem{"Page likes", info.Likes})
+		}
+		if info.ViewsN > 0 {
+			// Say what the total covers: Facebook gives no lifetime figure, so
+			// this is the sum over the Reels reached, not a whole-Page claim.
+			// The label starts with "Views" so the hero maps it to the views
+			// metric for its 30-day movement (see metricKeyFor).
+			label := "Views"
+			if info.ViewsOver > 0 {
+				label = fmt.Sprintf("Views (across %d reels)", info.ViewsOver)
+			}
+			ls.Details = append(ls.Details, DetailItem{label, info.Views})
 		}
 	}
 	return ls
