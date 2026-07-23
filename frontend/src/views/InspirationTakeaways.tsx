@@ -174,7 +174,7 @@ export function InspirationTakeaways({
 }
 
 /** One kind filter. */
-function KindChip({
+export function KindChip({
   label,
   active,
   onClick,

@@ -14,7 +14,7 @@ import {
   Users,
 } from 'lucide-react'
 import clsx from 'clsx'
-import {useCallback, useEffect, useState} from 'react'
+import {useCallback, useEffect, useMemo, useState} from 'react'
 import {
   DeleteInspirationVideo,
   GetInspirationChannel,
@@ -39,6 +39,7 @@ import {
   videoMeta,
 } from './Inspiration'
 import {InspirationPicker} from './InspirationPicker'
+import {KindChip} from './InspirationTakeaways'
 
 type ChannelTab = 'videos' | 'takeaways' | 'options'
 
@@ -362,6 +363,21 @@ function ChannelTakeaways({
   videos: main.InspirationVideo[]
   onOpenVideo: (video: main.InspirationVideo) => void
 }) {
+  const [kind, setKind] = useState('')
+
+  // One count per kind, so the filter only offers kinds this channel actually
+  // has and each chip carries how many.
+  const counts = useMemo(() => {
+    const out = new Map<string, number>()
+    for (const t of takeaways) out.set(t.kind, (out.get(t.kind) ?? 0) + 1)
+    return out
+  }, [takeaways])
+
+  const shown = useMemo(
+    () => (kind ? takeaways.filter((t) => t.kind === kind) : takeaways),
+    [takeaways, kind],
+  )
+
   if (takeaways.length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-edge bg-surface p-6 text-sm text-fg-muted">
@@ -371,47 +387,67 @@ function ChannelTakeaways({
     )
   }
   return (
-    <ul className="columns-1 gap-3 sm:columns-2 xl:columns-3">
-      {takeaways.map((t, i) => (
-        <li
-          key={`${t.videoId}-${t.title}-${i}`}
-          className="mb-3 flex break-inside-avoid flex-col gap-2 rounded-xl border border-edge bg-surface p-4"
-        >
-          <div className="flex items-center gap-2">
-            <span className="rounded-full border border-edge bg-bg px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">
-              {TAKEAWAY_KINDS[t.kind] ?? t.kind}
-            </span>
-            {t.atSecs >= 0 && (
-              <span className="font-mono text-xs text-accent">
-                {clock(t.atSecs)}
-              </span>
-            )}
-          </div>
-          <p className="text-sm font-semibold text-fg">{t.title}</p>
-          {t.detail && <p className="text-sm text-fg-muted">{t.detail}</p>}
-          {t.apply && (
-            <p className="flex gap-2 rounded-lg bg-surface-hover p-2 text-sm text-fg">
-              <Lightbulb
-                size={14}
-                aria-hidden
-                className="mt-0.5 shrink-0 text-accent"
-              />
-              {t.apply}
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={() => {
-              const video = videos.find((v) => v.id === t.videoId)
-              if (video) onOpenVideo(video)
-            }}
-            className="truncate text-left text-xs text-fg-muted transition-colors hover:text-accent"
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <KindChip
+          label={`All (${takeaways.length})`}
+          active={kind === ''}
+          onClick={() => setKind('')}
+        />
+        {Object.entries(TAKEAWAY_KINDS)
+          .filter(([id]) => (counts.get(id) ?? 0) > 0)
+          .map(([id, label]) => (
+            <KindChip
+              key={id}
+              label={`${label} (${counts.get(id)})`}
+              active={kind === id}
+              onClick={() => setKind(kind === id ? '' : id)}
+            />
+          ))}
+      </div>
+
+      <ul className="columns-1 gap-3 sm:columns-2 xl:columns-3">
+        {shown.map((t, i) => (
+          <li
+            key={`${t.videoId}-${t.title}-${i}`}
+            className="mb-3 flex break-inside-avoid flex-col gap-2 rounded-xl border border-edge bg-surface p-4"
           >
-            {t.videoTitle}
-          </button>
-        </li>
-      ))}
-    </ul>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full border border-edge bg-bg px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-fg-muted">
+                {TAKEAWAY_KINDS[t.kind] ?? t.kind}
+              </span>
+              {t.atSecs >= 0 && (
+                <span className="font-mono text-xs text-accent">
+                  {clock(t.atSecs)}
+                </span>
+              )}
+            </div>
+            <p className="text-sm font-semibold text-fg">{t.title}</p>
+            {t.detail && <p className="text-sm text-fg-muted">{t.detail}</p>}
+            {t.apply && (
+              <p className="flex gap-2 rounded-lg bg-surface-hover p-2 text-sm text-fg">
+                <Lightbulb
+                  size={14}
+                  aria-hidden
+                  className="mt-0.5 shrink-0 text-accent"
+                />
+                {t.apply}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                const video = videos.find((v) => v.id === t.videoId)
+                if (video) onOpenVideo(video)
+              }}
+              className="truncate text-left text-xs text-fg-muted transition-colors hover:text-accent"
+            >
+              {t.videoTitle}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 
