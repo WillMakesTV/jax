@@ -248,13 +248,39 @@ function ChannelHero({
 
   return (
     <section className="mb-6 overflow-hidden rounded-xl border border-edge bg-surface">
-      {channel.bannerUrl && (
-        <img
-          src={channel.bannerUrl}
-          alt={`${channel.name} banner`}
-          className="h-28 w-full object-cover sm:h-40"
-        />
-      )}
+      {/* The banner, with the channel's numbers overlaid on it as cards. With
+          no banner image a slate gradient stands in, so the cards always have
+          a backdrop to sit on. */}
+      <div className="relative">
+        {channel.bannerUrl ? (
+          <img
+            src={channel.bannerUrl}
+            alt={`${channel.name} banner`}
+            className="h-40 w-full object-cover sm:h-52"
+          />
+        ) : (
+          <div className="h-40 w-full bg-gradient-to-br from-slate-800 to-slate-900 sm:h-52" />
+        )}
+        {/* A scrim under the cards so light banners never wash them out. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/70 to-transparent" />
+        {stats.length > 0 && (
+          <dl className="absolute inset-x-0 bottom-0 flex flex-wrap gap-2 p-3">
+            {stats.map((s) => (
+              <div
+                key={s.label}
+                className="rounded-lg border border-white/15 bg-black/40 px-3 py-1.5 backdrop-blur-sm"
+              >
+                <dt className="text-[10px] font-semibold uppercase tracking-wide text-white/70">
+                  {s.label}
+                </dt>
+                <dd className="mt-0.5 text-base font-semibold text-white">
+                  {s.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </div>
       <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start">
         {channel.avatarUrl && (
           <img
@@ -319,19 +345,6 @@ function ChannelHero({
           )}
         </div>
       </div>
-
-      {/* The numbers: what YouTube reports about the channel, and what this
-          library has made of it so far. */}
-      <dl className="grid grid-cols-2 gap-px border-t border-edge bg-edge sm:grid-cols-4 xl:grid-cols-8">
-        {stats.map((s) => (
-          <div key={s.label} className="bg-surface px-4 py-3">
-            <dt className="text-[11px] font-semibold uppercase tracking-wide text-fg-muted">
-              {s.label}
-            </dt>
-            <dd className="mt-0.5 text-lg font-semibold text-fg">{s.value}</dd>
-          </div>
-        ))}
-      </dl>
     </section>
   )
 }
