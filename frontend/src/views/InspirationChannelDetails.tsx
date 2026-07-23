@@ -9,12 +9,13 @@ import {
   Loader2,
   Play,
   Plus,
+  Search,
   Sparkles,
   Trash2,
   Users,
 } from 'lucide-react'
 import clsx from 'clsx'
-import {useCallback, useEffect, useMemo, useState} from 'react'
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 import {
   DeleteInspirationVideo,
   GetInspirationChannel,
@@ -169,19 +170,9 @@ export function InspirationChannelDetails({
         ))}
       </div>
 
-      {tab === 'videos' &&
-        (videos.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-edge bg-surface p-6 text-sm text-fg-muted">
-            Nothing indexed from this channel yet. Add videos to download,
-            transcribe, and break them down.
-          </p>
-        ) : (
-          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            {videos.map((v) => (
-              <VideoCard key={v.id} video={v} onOpen={() => onOpenVideo(v)} />
-            ))}
-          </ul>
-        ))}
+      {tab === 'videos' && (
+        <ChannelVideos videos={videos} onOpenVideo={onOpenVideo} />
+      )}
 
       {tab === 'takeaways' && (
         <ChannelTakeaways
@@ -627,6 +618,111 @@ function TakeawaySkillOptions({
         )}
       </div>
     </section>
+  )
+}
+
+/** How many video cards to reveal per lazy-load page. */
+const VIDEO_PAGE = 20
+
+/**
+ * The channel's indexed videos: searchable across their titles, and revealed a
+ * page at a time as the list is scrolled so a channel with hundreds of videos
+ * doesn't render them all at once.
+ */
+function ChannelVideos({
+  videos,
+  onOpenVideo,
+}: {
+  videos: main.InspirationVideo[]
+  onOpenVideo: (video: main.InspirationVideo) => void
+}) {
+  const [query, setQuery] = useState('')
+  const [limit, setLimit] = useState(VIDEO_PAGE)
+  const sentinelRef = useRef<HTMLDivElement>(null)
+
+  const q = query.trim().toLowerCase()
+  const filtered = useMemo(
+    () =>
+      q
+        ? videos.filter((v) => (v.title || '').toLowerCase().includes(q))
+        : videos,
+    [videos, q],
+  )
+
+  // Start each new search back at the first page.
+  useEffect(() => {
+    setLimit(VIDEO_PAGE)
+  }, [q])
+
+  const visible = filtered.slice(0, limit)
+  const hasMore = visible.length < filtered.length
+
+  // Reveal the next page when the sentinel scrolls near the viewport; it sits
+  // below the current cards, so more load a little before the list runs out.
+  useEffect(() => {
+    if (!hasMore) return
+    const el = sentinelRef.current
+    if (!el) return
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) setLimit((n) => n + VIDEO_PAGE)
+      },
+      {rootMargin: '400px'},
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [hasMore, visible.length])
+
+  if (videos.length === 0) {
+    return (
+      <p className="rounded-xl border border-dashed border-edge bg-surface p-6 text-sm text-fg-muted">
+        Nothing indexed from this channel yet. Add videos to download,
+        transcribe, and break them down.
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="relative max-w-sm">
+        <Search
+          size={15}
+          aria-hidden
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted"
+        />
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search these videos…"
+          aria-label="Search videos"
+          className="w-full rounded-lg border border-edge bg-bg py-2 pl-9 pr-3 text-sm text-fg outline-none focus:border-accent"
+        />
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-edge bg-surface p-6 text-sm text-fg-muted">
+          No videos match “{query.trim()}”.
+        </p>
+      ) : (
+        <>
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            {visible.map((v) => (
+              <VideoCard key={v.id} video={v} onOpen={() => onOpenVideo(v)} />
+            ))}
+          </ul>
+          {hasMore ? (
+            <div ref={sentinelRef} aria-hidden className="h-1" />
+          ) : (
+            filtered.length > VIDEO_PAGE && (
+              <p className="text-center text-xs text-fg-muted">
+                All {filtered.length} videos shown.
+              </p>
+            )
+          )}
+        </>
+      )}
+    </div>
   )
 }
 
