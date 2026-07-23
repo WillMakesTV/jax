@@ -23,12 +23,13 @@ import {
 import {main} from '../../wailsjs/go/models'
 import {EventsOn} from '../../wailsjs/runtime/runtime'
 import {PageHeader} from '../components/PageHeader'
+import {BrandTile} from '../components/BrandTile'
 import {PlatformPill} from '../components/PlatformPill'
 import {TrackedSharesModal} from '../components/TrackedSharesModal'
 import {useDataChanged} from '../lib/dataChanged'
 import {formatAgo, formatCompact, formatDate} from '../lib/format'
 import {useServices} from '../services/ServicesProvider'
-import {anyChannelConnected} from '../services/services'
+import {anyChannelConnected, platformName} from '../services/services'
 
 interface VideosProps {
   /** Open the details view for one video. */
@@ -76,6 +77,87 @@ const isLongForm = (v: main.Video) => v.platform === 'youtube' && !v.isShort
 
 /** A video's visibility; entries predating the field count as public. */
 const statusOf = (v: main.Video) => v.status || 'public'
+
+/** Per-platform totals for the analytics hero. */
+interface PlatformStat {
+  platform: string
+  videos: number
+  views: number
+  shorts: number
+  long: number
+}
+
+/**
+ * The Videos hero: a card per platform the catalogue spans, each with that
+ * platform's total views and how many long-form and short-form videos it
+ * holds — the shape of the catalogue at a glance, above the lists.
+ */
+function PlatformAnalyticsHero({videos}: {videos: main.Video[]}) {
+  const byPlatform = new Map<string, PlatformStat>()
+  for (const v of videos) {
+    const e =
+      byPlatform.get(v.platform) ??
+      ({
+        platform: v.platform,
+        videos: 0,
+        views: 0,
+        shorts: 0,
+        long: 0,
+      } as PlatformStat)
+    e.videos += 1
+    e.views += v.viewCount
+    if (v.isShort) e.shorts += 1
+    else e.long += 1
+    byPlatform.set(v.platform, e)
+  }
+  // Busiest platform first.
+  const stats = [...byPlatform.values()].sort((a, b) => b.views - a.views)
+  if (stats.length === 0) return null
+
+  return (
+    <section
+      aria-label="Analytics by platform"
+      className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+    >
+      {stats.map((s) => (
+        <div
+          key={s.platform}
+          className="flex flex-col gap-3 rounded-xl border border-edge bg-surface p-4"
+        >
+          <div className="flex items-center gap-3">
+            <BrandTile platform={s.platform} size={32} />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-fg">
+                {platformName(s.platform)}
+              </p>
+              <p className="text-xs text-fg-muted">
+                {s.videos} {s.videos === 1 ? 'video' : 'videos'}
+              </p>
+            </div>
+          </div>
+          <div>
+            <p className="text-2xl font-semibold tracking-tight text-fg">
+              {formatCompact(s.views)}
+            </p>
+            <p className="text-xs text-fg-muted">total views</p>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {s.long > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-edge bg-bg px-2 py-0.5 text-xs font-medium text-fg-muted">
+                {s.long} long
+              </span>
+            )}
+            {s.shorts > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-edge bg-bg px-2 py-0.5 text-xs font-medium text-fg-muted">
+                {s.shorts} short
+              </span>
+            )}
+          </div>
+        </div>
+      ))}
+    </section>
+  )
+}
 
 /** One of a plan's source streams, resolved to what it actually was. */
 interface PlanSource {
@@ -438,6 +520,8 @@ export function Videos({
           </div>
         }
       />
+
+      <PlatformAnalyticsHero videos={allVideos} />
 
       {error && (
         <p className="mb-4 text-sm text-red-600 dark:text-red-400">{error}</p>
