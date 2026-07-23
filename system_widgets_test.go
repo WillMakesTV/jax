@@ -240,3 +240,48 @@ func TestIssueTrackerAdoptsCustomWidget(t *testing.T) {
 		}
 	}
 }
+
+func TestActiveProjectWidget(t *testing.T) {
+	a := newTestApp(t)
+	a.mediaBaseURL = "http://127.0.0.1:9999"
+	h := mediaHandler{app: a}
+
+	// With no custom widget, the page serves and the data carries the
+	// built-in default display.
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/active-project", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "Active Project") {
+		t.Fatalf("page: code %d", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/active-project/data", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "apw-project") {
+		t.Fatalf("default data: %q", rec.Body.String())
+	}
+
+	// A producer "Active Project" widget is adopted, and snapshotted so it
+	// survives the widget's deletion.
+	cw, err := a.SaveStreamWidget(StreamWidget{
+		Name:     "Active Project",
+		Template: "<div className=\"apx\">{widget.name}</div>",
+		CSS:      ".apx { color: teal; }",
+	})
+	if err != nil {
+		t.Fatalf("save custom widget: %v", err)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/active-project/data", nil))
+	if !strings.Contains(rec.Body.String(), "teal") {
+		t.Fatalf("data should adopt the custom widget: %q", rec.Body.String())
+	}
+
+	// Delete the custom widget: the snapshot keeps the adopted look.
+	if err := a.DeleteStreamWidget(cw.ID); err != nil {
+		t.Fatalf("delete custom widget: %v", err)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/active-project/data", nil))
+	if !strings.Contains(rec.Body.String(), "teal") {
+		t.Fatalf("snapshot should survive deletion: %q", rec.Body.String())
+	}
+}

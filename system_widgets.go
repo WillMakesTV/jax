@@ -24,7 +24,14 @@ import (
 // Sponsors: the saved brand partners on rotation, each with its logo, name,
 // and website. The third is Issue Tracker: the debug-report queue live on
 // screen, each report and its status, drawn straight from the queue so it
-// never falls out of date.
+// never falls out of date. The fourth is Active Project: the project being
+// worked on right now, following it live.
+//
+// Issue Tracker and Active Project render through the same display pipeline as
+// a producer's own stream widgets (widget_source.go) — a JSX template, CSS and
+// JS run by React — and transfer their look from the matching custom widget,
+// snapshotting it so it survives that widget's deletion (see the "System
+// widget displays" section below).
 // ---------------------------------------------------------------------------
 
 // systemWidgetPrefix serves the built-in widget pages and their endpoints.
@@ -38,6 +45,9 @@ const systemWidgetSponsors = "sponsors"
 
 // systemWidgetIssueTracker identifies the built-in issue-tracker overlay.
 const systemWidgetIssueTracker = "issue-tracker"
+
+// systemWidgetActiveProject identifies the built-in active-project overlay.
+const systemWidgetActiveProject = "active-project"
 
 // SystemWidget is one built-in Browser Source.
 type SystemWidget struct {
@@ -72,6 +82,12 @@ var systemWidgetCatalog = []SystemWidget{
 		Description: "The bug queue live on screen — every filed report and its status, updating as " +
 			"reports are filed, worked, and resolved. No configuration: it draws straight from the " +
 			"queue, so it can never fall out of date.",
+	},
+	{
+		ID:   systemWidgetActiveProject,
+		Name: "Active Project",
+		Description: "The project you're working on right now — its cover and name — following the " +
+			"active project live. Adopts your \"Active Project\" widget's design when you have one.",
 	},
 }
 
@@ -168,6 +184,8 @@ func (a *App) serveSystemWidget(w http.ResponseWriter, r *http.Request) {
 		a.serveSponsorsWidget(w, r, action)
 	case systemWidgetIssueTracker:
 		a.serveIssueTracker(w, r, action)
+	case systemWidgetActiveProject:
+		a.serveActiveProject(w, r, action)
 	default:
 		http.NotFound(w, r)
 	}
@@ -1291,48 +1309,26 @@ func (a *App) serveIssueTracker(w http.ResponseWriter, r *http.Request, action s
 	}
 }
 
-// issueTrackerData builds the display payload: the adopted (or default)
-// template/CSS/JS and its field schema, plus one item per open report keyed
-// by the display's message, status and image labels, newest first. A resolved
-// report leaves the queue (it is deleted), so only live work is ever shown.
+// issueTrackerData builds the display payload: the resolved template/CSS/JS
+// and its field schema, plus one item per open report keyed by the display's
+// message, status and image labels, newest first. A resolved report leaves
+// the queue (it is deleted), so only live work is ever shown.
 func (a *App) issueTrackerData() widgetSourceData {
+	disp := a.resolveSystemDisplay(systemWidgetIssueTracker,
+		[]string{"issue tracker", "issue queue watcher"},
+		storedDisplay{
+			Template: issueTrackerDefaultTemplate,
+			CSS:      issueTrackerDefaultCSS,
+			JS:       issueTrackerDefaultJS,
+		})
 	data := widgetSourceData{
-		Name:   "Issue Tracker",
-		Fields: []widgetSourceField{},
-		Items:  []widgetSourceItem{},
+		Name:     "Issue Tracker",
+		Template: disp.Template,
+		CSS:      disp.CSS,
+		JS:       disp.JS,
+		Fields:   disp.Fields,
+		Items:    []widgetSourceItem{},
 	}
-	msgLabel, statusLabel, imageLabel := "Message", "Status", "Image/Animation"
-	imageURL := ""
-
-	if cw, ok := a.issueTrackerTemplateWidget(); ok {
-		data.Template, data.CSS, data.JS = cw.Template, cw.CSS, cw.JS
-		kinds := map[string]string{}
-		for _, ft := range a.getWidgetFieldTypes() {
-			kinds[ft.ID] = ft.Kind
-		}
-		for _, f := range cw.Fields {
-			value := f.Value
-			if f.ValueURL != "" {
-				value = f.ValueURL
-			}
-			kind := kinds[f.TypeID]
-			data.Fields = append(data.Fields, widgetSourceField{
-				Label: f.Label, Kind: kind, Value: value,
-			})
-			switch kind {
-			case widgetFieldMessage:
-				msgLabel = f.Label
-			case widgetFieldStatus:
-				statusLabel = f.Label
-			case widgetFieldImage:
-				imageLabel, imageURL = f.Label, value
-			}
-		}
-	} else {
-		data.Template, data.CSS, data.JS = issueTrackerDefaultTemplate,
-			issueTrackerDefaultCSS, issueTrackerDefaultJS
-	}
-
 	for _, rep := range a.ListDebugReports() {
 		status := "Queued"
 		if rep.CheckedOut || rep.IssueNumber > 0 {
@@ -1342,11 +1338,11 @@ func (a *App) issueTrackerData() widgetSourceData {
 			status = fmt.Sprintf("Working #%d", rep.IssueNumber)
 		}
 		values := map[string]string{
-			msgLabel:    issueTrackerMessage(rep),
-			statusLabel: status,
+			disp.MessageLbl: issueTrackerMessage(rep),
+			disp.StatusLbl:  status,
 		}
-		if imageURL != "" {
-			values[imageLabel] = imageURL
+		if disp.ImageURL != "" {
+			values[disp.ImageLbl] = disp.ImageURL
 		}
 		data.Items = append(data.Items, widgetSourceItem{
 			ID:        fmt.Sprintf("report-%d", rep.ID),
@@ -1357,23 +1353,167 @@ func (a *App) issueTrackerData() widgetSourceData {
 	return data
 }
 
-// issueTrackerTemplateWidget finds the producer's Issue Tracker stream widget
-// (either the current or the former name), so the system widget can render
-// through the design they already built. URLs are filled so sound and image
-// fields resolve to served addresses.
-func (a *App) issueTrackerTemplateWidget() (*StreamWidget, bool) {
-	for _, sw := range a.getStreamWidgets() {
-		switch strings.ToLower(strings.TrimSpace(sw.Name)) {
-		case "issue tracker", "issue queue watcher":
-			if strings.TrimSpace(sw.Template) == "" {
-				continue
+// ---------------------------------------------------------------------------
+// System widget displays
+//
+// A system widget renders through the same display pipeline as a producer's
+// stream widget (widget_source.go): a JSX template, CSS and JS run by React on
+// the Browser Source. A widget transferred from a custom one adopts that
+// widget's template/CSS/JS live — so it looks identical — and the design is
+// snapshotted, so the system widget keeps its look after the custom widget it
+// was transferred from is deleted. Falling back, it uses the last snapshot,
+// then a built-in default.
+// ---------------------------------------------------------------------------
+
+// keySystemWidgetDisplays stores the template/CSS/JS snapshotted from each
+// system widget's source custom widget.
+const keySystemWidgetDisplays = "system_widget_displays"
+
+// storedDisplay is one snapshotted (or default) template/CSS/JS set.
+type storedDisplay struct {
+	Template string `json:"template"`
+	CSS      string `json:"css"`
+	JS       string `json:"js"`
+}
+
+// systemWidgetDisplay is a resolved display: its template/CSS/JS and field
+// schema, plus the labels its item values are keyed by (detected from the
+// live widget's field kinds; the built-in defaults otherwise).
+type systemWidgetDisplay struct {
+	Template   string
+	CSS        string
+	JS         string
+	Fields     []widgetSourceField
+	MessageLbl string
+	StatusLbl  string
+	ImageLbl   string
+	ImageURL   string
+}
+
+// storedSystemDisplays reads the snapshot map. Never nil.
+func (a *App) storedSystemDisplays() map[string]storedDisplay {
+	m := map[string]storedDisplay{}
+	if a.store != nil {
+		if _, err := a.store.getJSON(keySystemWidgetDisplays, &m); err != nil {
+			log.Printf("jax: system widget displays: %v", err)
+		}
+	}
+	if m == nil {
+		return map[string]storedDisplay{}
+	}
+	return m
+}
+
+// snapshotSystemDisplay records a system widget's current design, so it
+// survives the custom widget it was transferred from being deleted.
+func (a *App) snapshotSystemDisplay(id string, d storedDisplay) {
+	if a.store == nil || strings.TrimSpace(d.Template) == "" {
+		return
+	}
+	m := a.storedSystemDisplays()
+	if cur, ok := m[id]; ok && cur == d {
+		return
+	}
+	m[id] = d
+	if err := a.store.setJSON(keySystemWidgetDisplays, m); err != nil {
+		log.Printf("jax: snapshot system widget display: %v", err)
+	}
+}
+
+// resolveSystemDisplay resolves a system widget's display: the producer's
+// custom widget matched by name (adopted live and snapshotted), else the last
+// snapshot, else the built-in default.
+func (a *App) resolveSystemDisplay(id string, names []string, def storedDisplay) systemWidgetDisplay {
+	out := systemWidgetDisplay{
+		Fields:     []widgetSourceField{},
+		MessageLbl: "Message",
+		StatusLbl:  "Status",
+		ImageLbl:   "Image/Animation",
+	}
+	if cw, ok := a.customWidgetByName(names); ok {
+		out.Template, out.CSS, out.JS = cw.Template, cw.CSS, cw.JS
+		a.snapshotSystemDisplay(id, storedDisplay{cw.Template, cw.CSS, cw.JS})
+		kinds := map[string]string{}
+		for _, ft := range a.getWidgetFieldTypes() {
+			kinds[ft.ID] = ft.Kind
+		}
+		for _, f := range cw.Fields {
+			value := f.Value
+			if f.ValueURL != "" {
+				value = f.ValueURL
 			}
+			kind := kinds[f.TypeID]
+			out.Fields = append(out.Fields, widgetSourceField{
+				Label: f.Label, Kind: kind, Value: value,
+			})
+			switch kind {
+			case widgetFieldMessage:
+				out.MessageLbl = f.Label
+			case widgetFieldStatus:
+				out.StatusLbl = f.Label
+			case widgetFieldImage:
+				out.ImageLbl, out.ImageURL = f.Label, value
+			}
+		}
+		return out
+	}
+	if d, ok := a.storedSystemDisplays()[id]; ok && strings.TrimSpace(d.Template) != "" {
+		out.Template, out.CSS, out.JS = d.Template, d.CSS, d.JS
+		return out
+	}
+	out.Template, out.CSS, out.JS = def.Template, def.CSS, def.JS
+	return out
+}
+
+// customWidgetByName finds a producer stream widget by any of the given names
+// (case-insensitive), skipping one with no template. URLs are filled so sound
+// and image fields resolve to served addresses.
+func (a *App) customWidgetByName(names []string) (*StreamWidget, bool) {
+	want := map[string]bool{}
+	for _, n := range names {
+		want[strings.ToLower(strings.TrimSpace(n))] = true
+	}
+	for _, sw := range a.getStreamWidgets() {
+		if want[strings.ToLower(strings.TrimSpace(sw.Name))] &&
+			strings.TrimSpace(sw.Template) != "" {
 			cp := sw
 			a.fillWidgetURLs(&cp)
 			return &cp, true
 		}
 	}
 	return nil, false
+}
+
+// serveActiveProject is the active-project overlay: the current project's
+// cover and name, rendered through the display pipeline. Its display is
+// transferred from the producer's "Active Project" stream widget; the display
+// polls /widget/app/active-project itself, so the feed carries only the
+// template, styles and field fallbacks.
+func (a *App) serveActiveProject(w http.ResponseWriter, r *http.Request, action string) {
+	switch action {
+	case "":
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_ = widgetSourcePage.Execute(w, map[string]string{"Name": "Active Project"})
+	case "data":
+		disp := a.resolveSystemDisplay(systemWidgetActiveProject,
+			[]string{"active project"},
+			storedDisplay{
+				Template: activeProjectDefaultTemplate,
+				CSS:      activeProjectDefaultCSS,
+				JS:       activeProjectDefaultJS,
+			})
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(widgetSourceData{
+			Name:     "Active Project",
+			Template: disp.Template,
+			CSS:      disp.CSS,
+			JS:       disp.JS,
+			Fields:   disp.Fields,
+			Items:    []widgetSourceItem{},
+		})
+	default:
+		http.NotFound(w, r)
+	}
 }
 
 // issueTrackerMessage is the one-line summary a report shows on the tracker:
@@ -1453,3 +1593,89 @@ const issueTrackerDefaultCSS = `body { margin: 0; padding: 24px; background: tra
 // The default display needs no custom logic — the template renders the items
 // straight through.
 const issueTrackerDefaultJS = ""
+
+// The built-in Active Project display, used when the producer has no "Active
+// Project" stream widget to adopt. A cover-filled card with the project name
+// on a scrim; its custom JS follows the app's active project live from
+// /widget/app/active-project, falling back to the widget's own fields.
+const activeProjectDefaultTemplate = `<div className="apw-wrap">
+  <div className="apw">
+    <div className="apw-media">
+      <img alt="" />
+      <div className="apw-scrim"></div>
+    </div>
+    <div className="apw-body">
+      <div className="apw-name">Current Project</div>
+      <div className="apw-project">No active project</div>
+    </div>
+  </div>
+</div>`
+
+const activeProjectDefaultCSS = `body { margin: 0; padding: 0; background: transparent; overflow: hidden;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+.apw-wrap { width: 240px; height: 240px; max-width: 100%; box-sizing: border-box;
+  padding-left: 20px; }
+.apw { position: relative; overflow: hidden; display: flex; flex-direction: column;
+  width: 100%; height: 100%; box-sizing: border-box; border-radius: 14px;
+  background: linear-gradient(135deg, #0f172a, #1e293b);
+  border: 1px solid rgba(255,255,255,0.14); box-shadow: 0 10px 36px rgba(0,0,0,0.5);
+  color: #fff; }
+.apw-media { position: absolute; inset: 0; overflow: hidden; }
+.apw-media img { position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; display: block; }
+.apw-noimage .apw-media img { display: none; }
+.apw-scrim { position: absolute; inset: 0; background: linear-gradient(180deg,
+  rgba(15,23,42,0.92) 0%, rgba(15,23,42,0.55) 35%, rgba(15,23,42,0.15) 60%,
+  rgba(15,23,42,0.75) 100%); }
+.apw-body { position: relative; z-index: 1; display: flex; flex-direction: column;
+  align-items: flex-start; gap: 8px; padding: 14px 16px 12px; }
+.apw-name { font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.14em; color: #93c5fd; background: #0f172a;
+  border: 1px solid rgba(255,255,255,0.14); border-radius: 6px; padding: 4px 8px; }
+.apw-project { font-size: 22px; font-weight: 700; line-height: 1.25;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden; text-shadow: 0 2px 8px rgba(0,0,0,0.7); }
+.apw-idle .apw-project { color: #cbd5e1; }`
+
+// The default's logic: poll the app's active project and paint the card. The
+// widget's own Project Name/Image fields stand in when nothing is active.
+const activeProjectDefaultJS = `var store = (window.__apwStore = window.__apwStore || {data: null, timer: null})
+store.rootEl = root
+store.fieldName = (fields['Project Name'] || '').trim()
+store.fieldImage = fields['Project Image'] || ''
+store.paint = function () {
+  var s = window.__apwStore
+  var scope = s.rootEl && s.rootEl.isConnected ? s.rootEl : document
+  var card = scope.querySelector('.apw')
+  if (!card) return
+  var d = s.data || {}
+  var title = (d.title || s.fieldName || '').trim()
+  var image = d.imageUrl || (d.title ? '' : s.fieldImage) || ''
+  var nameEl = card.querySelector('.apw-project')
+  if (nameEl) nameEl.textContent = title || 'No active project'
+  var imgEl = card.querySelector('.apw-media img')
+  if (imgEl && imgEl.getAttribute('src') !== image) {
+    if (image) imgEl.setAttribute('src', image)
+    else imgEl.removeAttribute('src')
+  }
+  card.classList.toggle('apw-noimage', !image)
+  card.classList.toggle('apw-idle', !title)
+}
+store.fetch = function () {
+  fetch('/widget/app/active-project', {cache: 'no-store'})
+    .then(function (r) { return r.ok ? r.json() : null })
+    .then(function (d) {
+      var s = window.__apwStore
+      if (!s) return
+      if (d) s.data = d
+      s.paint()
+    })
+    .catch(function () {})
+}
+store.paint()
+store.fetch()
+if (!store.timer) {
+  store.timer = setInterval(function () {
+    if (window.__apwStore && window.__apwStore.fetch) window.__apwStore.fetch()
+  }, 5000)
+}`
