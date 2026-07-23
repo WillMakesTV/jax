@@ -1,8 +1,7 @@
 import {Bug, ExternalLink} from 'lucide-react'
-import {useEffect, useState} from 'react'
-import {GetGitHubConnection, SaveDebugReport} from '../../wailsjs/go/main/App'
+import {useState} from 'react'
+import {SaveDebugReport} from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
-import {openExternal} from '../lib/browser'
 import {DictationButton} from './DictationButton'
 import {MarkdownField} from './markdown/MarkdownField'
 import {Modal} from './Modal'
@@ -20,6 +19,8 @@ interface DebugReportModalProps {
   defaultRoute?: string
   /** Called with the stored report after a successful save. */
   onSaved?: (report: main.DebugReport) => void
+  /** Open Settings → Development (the filed reports live there). */
+  onViewIssues?: () => void
 }
 
 /**
@@ -33,24 +34,13 @@ export function DebugReportModal({
   report,
   defaultRoute = '',
   onSaved,
+  onViewIssues,
 }: DebugReportModalProps) {
   const [description, setDescription] = useState('')
   const [route, setRoute] = useState('')
   const [global, setGlobal] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  // The repository the AI-debugging workflow files against (Settings →
-  // Development). Filed reports become issues there, so the modal offers a
-  // way to see what is already open before adding another.
-  const [repo, setRepo] = useState('')
-
-  useEffect(() => {
-    if (!open) return
-    GetGitHubConnection()
-      .then((conn) => setRepo(conn.repo ?? ''))
-      .catch(() => {})
-  }, [open])
-
   // Reload the fields each time the dialog opens (fresh file or edit target).
   // Synchronously during render — not in an effect — so the description field
   // mounts with the right value and picks its mode from it: edit when the
@@ -146,11 +136,14 @@ export function DebugReportModal({
         )}
 
         <div className="mt-1 flex items-center justify-between gap-2">
-          {repo ? (
+          {onViewIssues ? (
             <button
               type="button"
-              onClick={() => openExternal(`https://github.com/${repo}/issues`)}
-              title={`Open ${repo}'s issues`}
+              onClick={() => {
+                onClose()
+                onViewIssues()
+              }}
+              title="Open Settings → Development to see the filed reports"
               className="inline-flex items-center gap-1.5 text-sm font-medium text-fg-muted transition-colors hover:text-accent"
             >
               <ExternalLink size={14} aria-hidden />

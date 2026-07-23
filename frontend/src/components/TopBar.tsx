@@ -10,6 +10,7 @@ import {useState} from 'react'
 import {aggregateLive, useLiveData} from '../live/LiveDataProvider'
 import type {ViewId} from '../navigation'
 import type {ProfileTab} from '../views/Profile'
+import type {SettingsTab} from '../views/Settings'
 import {DebugReportModal} from './DebugReportModal'
 import {UserMenu} from './UserMenu'
 
@@ -24,6 +25,8 @@ interface TopBarProps {
   onForward: () => void
   /** Open the OBS Studio section (the CTA next to the user menu). */
   onOpenObs: () => void
+  /** Open Settings on a given tab. */
+  onOpenSettings: (tab: SettingsTab) => void
   /** Open the profile page on the given tab (from the user menu). */
   onOpenProfile: (tab: ProfileTab) => void
 }
@@ -40,6 +43,7 @@ export function TopBar({
   onBack,
   onForward,
   onOpenObs,
+  onOpenSettings,
   onOpenProfile,
 }: TopBarProps) {
   const [debugOpen, setDebugOpen] = useState(false)
@@ -90,6 +94,7 @@ export function TopBar({
         open={debugOpen}
         onClose={() => setDebugOpen(false)}
         defaultRoute={view}
+        onViewIssues={() => onOpenSettings('development')}
       />
     </header>
   )

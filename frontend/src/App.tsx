@@ -722,6 +722,9 @@ function App() {
             onBack={back}
             onForward={forward}
             onOpenObs={() => setView('obs')}
+            onOpenSettings={(tab) =>
+              navigate({view: 'settings', settingsTab: tab})
+            }
             onOpenProfile={openProfile}
           />
           <div className="flex-1 overflow-y-auto p-8">
