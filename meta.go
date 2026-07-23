@@ -511,10 +511,17 @@ type igChannelInfo struct {
 	Followers string `json:"followers"`
 	Posts     string `json:"posts"`
 	Avatar    string `json:"avatar"`
+	// Views is the summed Reel view count and ViewsOver how many Reels it
+	// covers — Instagram publishes no lifetime account view total, so this is
+	// added up from the Reels themselves (see fetchInstagramReels), the way
+	// TikTok's is. Blank/zero when the insights permission is missing.
+	Views     string `json:"views"`
+	ViewsOver int64  `json:"viewsOver"`
 	// The raw counts, for the aggregate hero and the daily history (see
 	// metrics.go); the strings above are formatted for display.
 	FollowersN int64 `json:"followersN"`
 	PostsN     int64 `json:"postsN"`
+	ViewsN     int64 `json:"viewsN"`
 }
 
 // igLiveNow returns the account's live media id ("" when not live),
@@ -589,6 +596,24 @@ func (a *App) fetchInstagramLive(conn serviceConn) LiveStream {
 		out.FollowersN = user.FollowersCount
 		out.PostsN = user.MediaCount
 		out.Avatar = user.ProfilePictureURL
+		// Views have to be added up from the Reels themselves — Instagram
+		// publishes no lifetime account total (see fetchInstagramReels). One
+		// insights call per Reel, so this rides the channel-info cache rather
+		// than the live poll. A Reel whose insights failed keeps a zero and
+		// simply doesn't add to the sum; ViewsOver counts the ones that did.
+		if reels, rerr := a.fetchInstagramReels(conn); rerr != nil {
+			log.Printf("jax: instagram views unavailable: %v", rerr)
+		} else {
+			for _, v := range reels {
+				if v.ViewCount > 0 {
+					out.ViewsN += v.ViewCount
+					out.ViewsOver++
+				}
+			}
+			if out.ViewsN > 0 {
+				out.Views = fmtCount(out.ViewsN)
+			}
+		}
 		return out, nil
 	})
 	if err == nil {
@@ -598,6 +623,17 @@ func (a *App) fetchInstagramLive(conn serviceConn) LiveStream {
 		}
 		if info.Posts != "" {
 			ls.Details = append(ls.Details, DetailItem{"Posts", info.Posts})
+		}
+		if info.ViewsN > 0 {
+			// Say what the total covers: Instagram gives no lifetime figure, so
+			// this is the sum over the Reels reached, not a whole-account claim.
+			// The label starts with "Views" so the hero maps it to the views
+			// metric for its 30-day movement (see metricKeyFor).
+			label := "Views"
+			if info.ViewsOver > 0 {
+				label = fmt.Sprintf("Views (across %d reels)", info.ViewsOver)
+			}
+			ls.Details = append(ls.Details, DetailItem{label, info.Views})
 		}
 	}
 	return ls

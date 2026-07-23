@@ -1646,7 +1646,7 @@ func (a *App) GetSystemWidgetDisplay(id string) (SystemWidgetDisplay, error) {
 		ID: id, Name: name,
 		Template: eff.Template, CSS: eff.CSS, JS: eff.JS,
 		DefaultTemplate: def.Template, DefaultCSS: def.CSS, DefaultJS: def.JS,
-		Customized:      customized,
+		Customized: customized,
 	}, nil
 }
 

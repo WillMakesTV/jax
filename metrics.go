@@ -156,6 +156,7 @@ func (a *App) GetChannelMetrics() []ChannelMetrics {
 				Platform: "instagram",
 				Audience: info.FollowersN,
 				Content:  info.PostsN,
+				Views:    info.ViewsN,
 			})
 		}
 	}
