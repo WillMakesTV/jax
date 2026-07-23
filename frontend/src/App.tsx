@@ -703,6 +703,7 @@ function App() {
         <Sidebar
           // Keep the parent item highlighted while a details view is open.
           activeView={
+            view === 'broadcast-plan' ||
             view === 'stream-details' ||
             view === 'live-details' ||
             view === 'download-video' ||
@@ -725,7 +726,13 @@ function App() {
                       ? 'videos'
                       : view === 'channel-details'
                         ? 'dashboard'
-                        : view
+                        : view === 'inspiration-channel' ||
+                            view === 'inspiration-video' ||
+                            view === 'inspiration-types' ||
+                            view === 'inspiration-type' ||
+                            view === 'inspiration-takeaways'
+                          ? 'inspiration'
+                          : view
           }
           onNavigate={setView}
           collapsed={collapsed}
