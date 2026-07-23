@@ -26,6 +26,7 @@ import {PageHeader} from '../components/PageHeader'
 import {BrandTile} from '../components/BrandTile'
 import {PlatformPill} from '../components/PlatformPill'
 import {TrackedSharesModal} from '../components/TrackedSharesModal'
+import {useLiveData} from '../live/LiveDataProvider'
 import {useDataChanged} from '../lib/dataChanged'
 import {formatAgo, formatCompact, formatDate} from '../lib/format'
 import {useServices} from '../services/ServicesProvider'
@@ -87,12 +88,19 @@ interface PlatformStat {
   long: number
 }
 
+/** The channels whose banner and logo dress the hero, in preference order. */
+const HERO_BANNER_ORDER = ['youtube', 'facebook', 'instagram']
+
 /**
- * The Videos hero: a card per platform the catalogue spans, each with that
- * platform's total views and how many long-form and short-form videos it
- * holds — the shape of the catalogue at a glance, above the lists.
+ * The Videos hero: the channel's own banner and logo as a backdrop, with a
+ * card per platform the catalogue spans laid over it — each platform's total
+ * views and how many long-form and short-form videos it holds. The banner and
+ * logo come from YouTube by default, then Facebook, then Instagram, then
+ * whatever channel is connected; the analytics sit inside the banner.
  */
 function PlatformAnalyticsHero({videos}: {videos: main.Video[]}) {
+  const {platforms} = useLiveData()
+
   const byPlatform = new Map<string, PlatformStat>()
   for (const v of videos) {
     const e =
@@ -114,47 +122,99 @@ function PlatformAnalyticsHero({videos}: {videos: main.Video[]}) {
   const stats = [...byPlatform.values()].sort((a, b) => b.views - a.views)
   if (stats.length === 0) return null
 
+  // Dress the hero from the connected channels: YouTube's banner and logo
+  // first, then Facebook, then Instagram, then whichever channel has artwork.
+  const channelByPlatform = new Map(platforms.map((p) => [p.platform, p]))
+  const hero =
+    HERO_BANNER_ORDER.map((p) => channelByPlatform.get(p)).find(
+      (s) => s?.bannerUrl || s?.avatarUrl,
+    ) ??
+    platforms.find((s) => s.bannerUrl || s.avatarUrl) ??
+    platforms[0]
+  const banner = hero?.bannerUrl
+  const logo = hero?.avatarUrl
+
   return (
     <section
       aria-label="Analytics by platform"
-      className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+      className="relative mb-6 overflow-hidden rounded-2xl border border-edge bg-surface"
     >
-      {stats.map((s) => (
-        <div
-          key={s.platform}
-          className="flex flex-col gap-3 rounded-xl border border-edge bg-surface p-4"
-        >
-          <div className="flex items-center gap-3">
-            <BrandTile platform={s.platform} size={32} />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-fg">
-                {platformName(s.platform)}
-              </p>
-              <p className="text-xs text-fg-muted">
-                {s.videos} {s.videos === 1 ? 'video' : 'videos'}
-              </p>
-            </div>
-          </div>
-          <div>
-            <p className="text-2xl font-semibold tracking-tight text-fg">
-              {formatCompact(s.views)}
+      {/* The channel's banner (else its blurred logo, else a brand gradient)
+          as the backdrop, under a scrim that keeps the cards readable over
+          any artwork. */}
+      <div aria-hidden className="absolute inset-0">
+        {banner ? (
+          <img src={banner} alt="" className="h-full w-full object-cover" />
+        ) : logo ? (
+          <img
+            src={logo}
+            alt=""
+            className="h-full w-full scale-110 object-cover opacity-40 blur-2xl"
+          />
+        ) : (
+          <div className="h-full w-full bg-gradient-to-br from-accent/30 to-accent/5" />
+        )}
+        <div className="absolute inset-0 bg-slate-950/70" />
+      </div>
+
+      <div className="relative p-5">
+        <div className="flex items-center gap-3">
+          {logo ? (
+            <img
+              src={logo}
+              alt=""
+              aria-hidden
+              className="h-11 w-11 shrink-0 rounded-full border-2 border-white/30 object-cover"
+            />
+          ) : hero ? (
+            <BrandTile platform={hero.platform} size={40} />
+          ) : null}
+          <div className="min-w-0">
+            <p className="truncate text-base font-semibold text-white">
+              {hero?.channelName || 'Your channels'}
             </p>
-            <p className="text-xs text-fg-muted">total views</p>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {s.long > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-edge bg-bg px-2 py-0.5 text-xs font-medium text-fg-muted">
-                {s.long} long
-              </span>
-            )}
-            {s.shorts > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-edge bg-bg px-2 py-0.5 text-xs font-medium text-fg-muted">
-                {s.shorts} short
-              </span>
-            )}
+            <p className="text-xs text-white/70">
+              Catalogue analytics by platform
+            </p>
           </div>
         </div>
-      ))}
+
+        {/* The per-platform cards, inside the banner: four across on medium
+            viewports, six at full width. */}
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
+          {stats.map((s) => (
+            <div
+              key={s.platform}
+              className="flex flex-col gap-2 rounded-xl border border-white/15 bg-slate-950/40 p-3 backdrop-blur-sm"
+            >
+              <div className="flex items-center gap-2">
+                <BrandTile platform={s.platform} size={22} />
+                <p className="min-w-0 truncate text-xs font-semibold text-white">
+                  {platformName(s.platform)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xl font-semibold tracking-tight text-white">
+                  {formatCompact(s.views)}
+                </p>
+                <p className="text-[11px] text-white/60">total views</p>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {s.long > 0 && (
+                  <span className="rounded-full border border-white/15 bg-white/5 px-1.5 py-0.5 text-[10px] font-medium text-white/80">
+                    {s.long} long
+                  </span>
+                )}
+                {s.shorts > 0 && (
+                  <span className="rounded-full border border-white/15 bg-white/5 px-1.5 py-0.5 text-[10px] font-medium text-white/80">
+                    {s.shorts} short
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </section>
   )
 }
