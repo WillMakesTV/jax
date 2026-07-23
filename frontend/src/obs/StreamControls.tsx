@@ -1,14 +1,13 @@
-import clsx from 'clsx'
 import {useEffect, useState} from 'react'
 import {useLiveData} from '../live/LiveDataProvider'
-import {END_ROUTINE, runStreamRoutine, START_ROUTINE} from './routines'
+import {END_ROUTINE, runStreamRoutine} from './routines'
 import {useServices} from '../services/ServicesProvider'
 
 /**
- * Inline stream controls: start/stop the OBS broadcast with a confirm step,
- * running the built-in Start/End Stream routine's steps first (see the
- * Routines tab). Rendered beneath the program preview, so it stays compact
- * and horizontal.
+ * Inline stop control beneath the program preview: end a running OBS broadcast
+ * (running the built-in End Stream routine's steps first) with a confirm step.
+ * Going live is done from the top-bar Go Live button, so this only appears
+ * while the stream is on the air — there is no start button here.
  */
 export function StreamControls() {
   const {statuses, obsRequest} = useServices()
@@ -22,19 +21,16 @@ export function StreamControls() {
   const [error, setError] = useState('')
 
   // Drop a pending confirmation when the stream state changes underneath it
-  // (e.g. the stream was started/stopped from OBS itself).
+  // (e.g. the stream was stopped from OBS itself).
   useEffect(() => {
     setConfirming(false)
   }, [streaming])
 
-  const toggleStream = async () => {
+  const stopStream = async () => {
     setBusy(true)
     setError('')
     try {
-      const warnings = await runStreamRoutine(
-        streaming ? END_ROUTINE : START_ROUTINE,
-        obsRequest,
-      )
+      const warnings = await runStreamRoutine(END_ROUTINE, obsRequest)
       setError(warnings.join(' · '))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'The OBS request failed.')
@@ -44,31 +40,22 @@ export function StreamControls() {
     }
   }
 
-  if (!connected) {
-    return (
-      <p className="text-xs text-fg-muted">
-        Connect OBS in Settings → Services to control the stream.
-      </p>
-    )
-  }
+  // Only a stop control, and only while live — starting the stream is done
+  // from the top-bar Go Live button.
+  if (!connected || !streaming) return null
 
   return (
     <div className="flex flex-wrap items-center gap-2">
       {confirming ? (
         <>
-          <span className="text-xs text-fg-muted">
-            {streaming ? 'End the broadcast?' : 'Go live now?'}
-          </span>
+          <span className="text-xs text-fg-muted">End the broadcast?</span>
           <button
             type="button"
-            onClick={() => void toggleStream()}
+            onClick={() => void stopStream()}
             disabled={busy}
-            className={clsx(
-              'rounded-lg px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-90 disabled:opacity-50',
-              streaming ? 'bg-red-600 text-white' : 'bg-accent text-accent-fg',
-            )}
+            className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {busy ? 'Working…' : streaming ? 'Confirm stop' : 'Confirm go live'}
+            {busy ? 'Working…' : 'Confirm stop'}
           </button>
           <button
             type="button"
@@ -83,14 +70,9 @@ export function StreamControls() {
         <button
           type="button"
           onClick={() => setConfirming(true)}
-          className={clsx(
-            'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
-            streaming
-              ? 'border border-red-600/50 text-red-600 hover:bg-red-600/10 dark:text-red-400'
-              : 'bg-accent text-accent-fg transition-opacity hover:opacity-90',
-          )}
+          className="rounded-lg border border-red-600/50 px-3 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-600/10 dark:text-red-400"
         >
-          {streaming ? 'Stop streaming' : 'Start streaming'}
+          Stop streaming
         </button>
       )}
       {error && (
