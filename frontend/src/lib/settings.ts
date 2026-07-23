@@ -17,6 +17,11 @@ export const SETTING_KEYS = {
   downloadSource: 'download_source',
   /** How many downloaded videos may be transcribed at once: '1' | '2'. */
   transcribeConcurrency: 'transcribe_concurrency',
+  /**
+   * OpenAI TTS voice used to speak sound bytes/clips (widget Sound fields and
+   * the like). Mirrors keyApplicationVoice in store.go; blank uses the default.
+   */
+  applicationVoice: 'application_voice',
   /** Root for video-plan edit workspaces ('' = the Videos/jax edits default). */
   editWorkspaceDir: 'edit_workspace_dir',
   /** OBS input name of the audio input capture designated as primary mic. */

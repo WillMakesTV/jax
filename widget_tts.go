@@ -32,6 +32,30 @@ const (
 	openaiTTSVoice = "alloy"
 )
 
+// openaiTTSVoices are the voices gpt-4o-mini-tts speaks, offered as the
+// Application Voice in Settings → Preferences. The first is the default.
+var openaiTTSVoices = []string{
+	"alloy", "ash", "ballad", "coral", "echo",
+	"fable", "onyx", "nova", "sage", "shimmer", "verse",
+}
+
+// applicationVoice resolves the configured Application Voice, falling back to
+// the built-in default when unset or unrecognized (a stale value can't reach
+// the API as an unknown voice).
+func (a *App) applicationVoice() string {
+	if a.store == nil {
+		return openaiTTSVoice
+	}
+	v, _ := a.store.getSetting(keyApplicationVoice)
+	v = strings.TrimSpace(v)
+	for _, known := range openaiTTSVoices {
+		if v == known {
+			return v
+		}
+	}
+	return openaiTTSVoice
+}
+
 // GenerateWidgetFieldSound speaks text into an audio file and records it as
 // the sound field's value, returning the updated widget. OpenAI TTS renders
 // the voice when an API key is connected; otherwise the local Windows
@@ -71,7 +95,7 @@ func (a *App) openaiSpeech(ctx context.Context, dir, text string) (string, error
 	}
 	body, err := json.Marshal(map[string]any{
 		"model":           openaiTTSModel,
-		"voice":           openaiTTSVoice,
+		"voice":           a.applicationVoice(),
 		"input":           text,
 		"response_format": "mp3",
 	})

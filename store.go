@@ -30,6 +30,10 @@ const (
 	// keyYouTubeLivePrefix holds the "🔴 LIVE: "-style prefix for YouTube
 	// broadcast titles; shared with the frontend's SETTING_KEYS.
 	keyYouTubeLivePrefix = "youtube_live_prefix"
+	// keyApplicationVoice holds the OpenAI TTS voice used to speak sound
+	// bytes/clips (widget Sound fields and the like); shared with the
+	// frontend's SETTING_KEYS. Blank falls back to the built-in default.
+	keyApplicationVoice = "application_voice"
 	// keyAppSkillOverrides holds the id → markdown map of user-edited
 	// Application Skills; ids absent from the map use the embedded default.
 	keyAppSkillOverrides = "app_skill_overrides"

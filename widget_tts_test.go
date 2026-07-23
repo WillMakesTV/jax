@@ -33,3 +33,28 @@ func TestGenerateWidgetFieldSoundRequiresText(t *testing.T) {
 		t.Fatal("want error for empty text")
 	}
 }
+
+func TestApplicationVoice(t *testing.T) {
+	a := newTestApp(t)
+
+	// Unset: the built-in default speaks.
+	if got := a.applicationVoice(); got != openaiTTSVoice {
+		t.Fatalf("unset should default to %q, got %q", openaiTTSVoice, got)
+	}
+
+	// A recognized voice is honored.
+	if err := a.SetSetting(keyApplicationVoice, "nova"); err != nil {
+		t.Fatalf("set voice: %v", err)
+	}
+	if got := a.applicationVoice(); got != "nova" {
+		t.Fatalf("want nova, got %q", got)
+	}
+
+	// An unknown value can't reach the API — it falls back to the default.
+	if err := a.SetSetting(keyApplicationVoice, "not-a-voice"); err != nil {
+		t.Fatalf("set voice: %v", err)
+	}
+	if got := a.applicationVoice(); got != openaiTTSVoice {
+		t.Fatalf("unknown voice should fall back to %q, got %q", openaiTTSVoice, got)
+	}
+}
