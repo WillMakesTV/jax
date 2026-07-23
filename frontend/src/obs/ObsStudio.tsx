@@ -3,8 +3,10 @@ import {main} from '../../wailsjs/go/models'
 import {ObsPanel} from './ObsPanel'
 import {RoutinesPanel} from './RoutinesPanel'
 import {StreamWidgetsPanel} from './StreamWidgetsPanel'
+import {SystemWidgetsPanel} from './SystemWidgetsPanel'
 
-export type ObsTab = 'dashboard' | 'routines' | 'widgets'
+export type ObsTab =
+  'dashboard' | 'routines' | 'system-widgets' | 'custom-widgets'
 
 /**
  * The OBS Studio section: its main dashboard (preview, scenes, sources,
@@ -31,7 +33,8 @@ export function ObsStudio({
   const tabs: {id: ObsTab; label: string}[] = [
     {id: 'dashboard', label: 'Dashboard'},
     {id: 'routines', label: 'Routines'},
-    {id: 'widgets', label: 'Stream Widgets'},
+    {id: 'system-widgets', label: 'System Widgets'},
+    {id: 'custom-widgets', label: 'Custom Widgets'},
   ]
 
   return (
@@ -62,11 +65,11 @@ export function ObsStudio({
 
       {tab === 'dashboard' && <ObsPanel />}
       {tab === 'routines' && <RoutinesPanel onEditRoutine={onEditRoutine} />}
-      {tab === 'widgets' && (
-        <StreamWidgetsPanel
-          onOpenWidget={onOpenWidget}
-          onOpenSystemWidget={onOpenSystemWidget}
-        />
+      {tab === 'system-widgets' && (
+        <SystemWidgetsPanel onOpenSystemWidget={onOpenSystemWidget} />
+      )}
+      {tab === 'custom-widgets' && (
+        <StreamWidgetsPanel onOpenWidget={onOpenWidget} />
       )}
     </div>
   )

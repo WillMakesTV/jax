@@ -399,14 +399,12 @@ function App() {
       navigate({view: 'system-widget-details', systemWidget}),
     [navigate],
   )
-  const backToWidgets = useCallback(
-    () =>
-      navigate({
-        view: 'obs',
-        obsTab: 'widgets',
-        widget: null,
-        systemWidget: null,
-      }),
+  const backToCustomWidgets = useCallback(
+    () => navigate({view: 'obs', obsTab: 'custom-widgets', widget: null}),
+    [navigate],
+  )
+  const backToSystemWidgets = useCallback(
+    () => navigate({view: 'obs', obsTab: 'system-widgets', systemWidget: null}),
     [navigate],
   )
   // Status-bar transcription chip: jump to the stream whose downloaded video
@@ -864,13 +862,13 @@ function App() {
               <StreamWidgetDetails
                 widget={cur.widget}
                 initialTab={cur.widgetTab ?? undefined}
-                onBack={backToWidgets}
+                onBack={backToCustomWidgets}
               />
             )}
             {view === 'system-widget-details' && cur.systemWidget && (
               <SystemWidgetDetails
                 widget={cur.systemWidget}
-                onBack={backToWidgets}
+                onBack={backToSystemWidgets}
               />
             )}
             {view === 'stream-details' && detailStream && (

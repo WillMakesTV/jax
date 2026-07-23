@@ -1,22 +1,14 @@
 import {
-  Bell,
   Check,
   Copy,
   FlaskConical,
-  FolderKanban,
-  Handshake,
   Image,
   LayoutGrid,
-  ListChecks,
-  MessagesSquare,
-  Pencil,
   Plus,
-  Power,
   RefreshCw,
   SlidersHorizontal,
   Trash2,
   Type,
-  type LucideIcon,
 } from 'lucide-react'
 import {useCallback, useEffect, useState} from 'react'
 import {
@@ -24,11 +16,9 @@ import {
   DeleteWidgetFieldType,
   GenerateWidgetTestItem,
   GetStreamWidgets,
-  GetSystemWidgets,
   GetWidgetFieldTypes,
   SaveStreamWidget,
   SaveWidgetFieldType,
-  SetSystemWidgetEnabled,
   TestStreamWidget,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
@@ -39,32 +29,18 @@ import {useDataChanged} from '../lib/dataChanged'
 const field =
   'w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent'
 
-/** Icon per system widget, matched to what each overlay shows. */
-const SYSTEM_ICONS: Record<string, LucideIcon> = {
-  'unified-chat': MessagesSquare,
-  sponsors: Handshake,
-  'issue-tracker': ListChecks,
-  'active-project': FolderKanban,
-  'event-feed': Bell,
-}
-
 /**
- * The OBS section's Stream Widgets tab: create and manage stream widgets —
+ * The OBS section's Custom Widgets tab: create and manage stream widgets —
  * on-stream elements the producer defines by name. The model is deliberately
  * minimal for now and grows properties as the feature does.
  */
 export function StreamWidgetsPanel({
   onOpenWidget,
-  onOpenSystemWidget,
 }: {
   /** Open a widget's configuration page. */
   onOpenWidget: (widget: main.StreamWidget) => void
-  /** Open a system widget's display page. */
-  onOpenSystemWidget: (widget: main.SystemWidget) => void
 }) {
   const [widgets, setWidgets] = useState<main.StreamWidget[]>([])
-  // The built-in widgets the app ships, each with an on/off switch.
-  const [sysWidgets, setSysWidgets] = useState<main.SystemWidget[]>([])
   const [types, setTypes] = useState<main.WidgetFieldType[]>([])
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
@@ -74,9 +50,6 @@ export function StreamWidgetsPanel({
     GetStreamWidgets()
       .then((w) => setWidgets(w ?? []))
       .catch(() => {})
-    GetSystemWidgets()
-      .then((s) => setSysWidgets(s ?? []))
-      .catch(() => {})
     GetWidgetFieldTypes()
       .then((t) => setTypes(t ?? []))
       .catch(() => {})
@@ -84,10 +57,7 @@ export function StreamWidgetsPanel({
 
   useEffect(load, [load])
   // Widgets saved elsewhere (e.g. an MCP client) appear without a re-visit.
-  useDataChanged(
-    ['stream_widgets', 'widget_field_types', 'system_widgets_disabled'],
-    load,
-  )
+  useDataChanged(['stream_widgets', 'widget_field_types'], load)
 
   // A widget's card thumbnail: its first image field carrying a file.
   const kindById = new Map(types.map((t) => [t.id, t.kind]))
@@ -200,7 +170,6 @@ export function StreamWidgetsPanel({
   }
 
   // Which widget's Browser Source address was just copied, for feedback.
-  // Shared by the custom and system lists (their ids never collide).
   const [copiedId, setCopiedId] = useState('')
   const copySource = async (w: {id: string; sourceUrl: string}) => {
     if (!w.sourceUrl) return
@@ -213,23 +182,6 @@ export function StreamWidgetsPanel({
       )
     } catch {
       // Clipboard unavailable; the details page still shows the address.
-    }
-  }
-
-  // Switch a built-in widget on or off; off 404s its Browser Source page.
-  const toggleSystem = async (sw: main.SystemWidget) => {
-    setError('')
-    try {
-      const updated = await SetSystemWidgetEnabled(sw.id, !sw.enabled)
-      setSysWidgets(updated ?? [])
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : typeof err === 'string' && err
-            ? err
-            : 'The system widget could not be switched.',
-      )
     }
   }
 
@@ -251,95 +203,6 @@ export function StreamWidgetsPanel({
           Manage Field Types
         </button>
       </div>
-
-      {/* Built-in widgets lead: fully implemented overlays the app ships,
-          enabled by default. Switching one off 404s its page, so an OBS
-          source left pointing at it goes dark rather than half-working. */}
-      {sysWidgets.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
-            System widgets
-          </h2>
-          <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {sysWidgets.map((sw) => {
-              const Icon = SYSTEM_ICONS[sw.id] ?? LayoutGrid
-              return (
-                <li
-                  key={sw.id}
-                  className="flex flex-col rounded-xl border border-edge bg-surface p-4"
-                >
-                  <div className="flex items-start gap-3">
-                    <span
-                      aria-hidden
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent"
-                    >
-                      <Icon size={17} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <span className="block text-sm font-semibold text-fg">
-                        {sw.name}
-                      </span>
-                      <span className="mt-0.5 block text-xs leading-relaxed text-fg-muted">
-                        {sw.description}
-                      </span>
-                    </div>
-                  </div>
-                  {/* CTAs sit at the card's foot, aligned across the row
-                      whatever each description's height. */}
-                  <div className="mt-auto flex flex-wrap items-center gap-2 pt-4">
-                    {sw.editable && (
-                      <button
-                        type="button"
-                        onClick={() => onOpenSystemWidget(sw)}
-                        title="Customize this widget's display"
-                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
-                      >
-                        <Pencil size={12} aria-hidden />
-                        {sw.customized ? 'Edit display' : 'Customize'}
-                      </button>
-                    )}
-                    {sw.enabled && sw.sourceUrl && (
-                      <button
-                        type="button"
-                        onClick={() => void copySource(sw)}
-                        title="Copy the OBS Browser Source address"
-                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
-                      >
-                        {copiedId === sw.id ? (
-                          <Check size={12} aria-hidden />
-                        ) : (
-                          <Copy size={12} aria-hidden />
-                        )}
-                        {copiedId === sw.id ? 'Copied' : 'Copy Browser Source'}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => void toggleSystem(sw)}
-                      title={
-                        sw.enabled
-                          ? 'Disable this widget — its Browser Source page goes dark'
-                          : 'Enable this widget'
-                      }
-                      className={`ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                        sw.enabled
-                          ? 'bg-accent text-accent-fg hover:opacity-90'
-                          : 'border border-edge bg-bg text-fg-muted hover:bg-surface-hover hover:text-fg'
-                      }`}
-                    >
-                      <Power size={12} aria-hidden />
-                      {sw.enabled ? 'Enabled' : 'Disabled'}
-                    </button>
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-          <h2 className="mt-2 text-sm font-semibold uppercase tracking-wide text-fg-muted">
-            Custom widgets
-          </h2>
-        </div>
-      )}
 
       <form
         onSubmit={(e) => {
