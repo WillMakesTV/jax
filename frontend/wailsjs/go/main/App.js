@@ -622,6 +622,10 @@ export function GetStreams() {
   return window['go']['main']['App']['GetStreams']();
 }
 
+export function GetSystemWidgetDisplay(arg1) {
+  return window['go']['main']['App']['GetSystemWidgetDisplay'](arg1);
+}
+
 export function GetSystemWidgets() {
   return window['go']['main']['App']['GetSystemWidgets']();
 }
@@ -846,6 +850,10 @@ export function ResetPlannedStream(arg1) {
   return window['go']['main']['App']['ResetPlannedStream'](arg1);
 }
 
+export function ResetSystemWidgetDisplay(arg1) {
+  return window['go']['main']['App']['ResetSystemWidgetDisplay'](arg1);
+}
+
 export function RestoreEditVersion(arg1, arg2) {
   return window['go']['main']['App']['RestoreEditVersion'](arg1, arg2);
 }
@@ -1060,6 +1068,10 @@ export function SetStreamEpisode(arg1, arg2, arg3) {
 
 export function SetStreamThumbnail(arg1, arg2) {
   return window['go']['main']['App']['SetStreamThumbnail'](arg1, arg2);
+}
+
+export function SetSystemWidgetDisplay(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SetSystemWidgetDisplay'](arg1, arg2, arg3, arg4);
 }
 
 export function SetSystemWidgetEnabled(arg1, arg2) {

@@ -219,6 +219,75 @@ func TestIssueTrackerEndpoints(t *testing.T) {
 		t.Fatalf("disabled page: code %d", rec.Code)
 	}
 }
+func TestSystemWidgetDisplayEditable(t *testing.T) {
+	a := newTestApp(t)
+	a.mediaBaseURL = "http://127.0.0.1:9999"
+	h := mediaHandler{app: a}
+
+	// The catalog marks the template-driven widgets editable and the bespoke
+	// overlays not.
+	editable := map[string]bool{}
+	for _, sw := range a.GetSystemWidgets() {
+		editable[sw.ID] = sw.Editable
+	}
+	if !editable[systemWidgetIssueTracker] || !editable[systemWidgetActiveProject] {
+		t.Fatal("issue tracker and active project should be editable")
+	}
+	if editable[systemWidgetUnifiedChat] || editable[systemWidgetEventFeed] {
+		t.Fatal("the bespoke overlays should not be editable")
+	}
+
+	// A bespoke overlay has no editable display.
+	if _, err := a.GetSystemWidgetDisplay(systemWidgetUnifiedChat); err == nil {
+		t.Fatal("want error editing a bespoke overlay's display")
+	}
+
+	// The editable widget starts on its built-in default, uncustomized.
+	disp, err := a.GetSystemWidgetDisplay(systemWidgetIssueTracker)
+	if err != nil {
+		t.Fatalf("get display: %v", err)
+	}
+	if disp.Customized || disp.Template != disp.DefaultTemplate {
+		t.Fatalf("should start on the built-in default: %+v", disp.Customized)
+	}
+
+	// A saved override drives the served display and flags the widget
+	// customized in the catalog.
+	const mine = `<div className="mine">{items.length}</div>`
+	if _, err := a.SetSystemWidgetDisplay(systemWidgetIssueTracker, mine, ".mine{color:red}", "// none"); err != nil {
+		t.Fatalf("set display: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/issue-tracker/data", nil))
+	if body := rec.Body.String(); !strings.Contains(body, `class=\"mine\"`) &&
+		!strings.Contains(body, "mine") {
+		t.Fatalf("served display should carry the override:\n%s", body)
+	}
+	customized := false
+	for _, sw := range a.GetSystemWidgets() {
+		if sw.ID == systemWidgetIssueTracker {
+			customized = sw.Customized
+		}
+	}
+	if !customized {
+		t.Fatal("the catalog should report the widget customized")
+	}
+
+	// Reset drops the override and returns the built-in default to the feed.
+	if _, err := a.ResetSystemWidgetDisplay(systemWidgetIssueTracker); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	after, _ := a.GetSystemWidgetDisplay(systemWidgetIssueTracker)
+	if after.Customized || after.Template != after.DefaultTemplate {
+		t.Fatalf("reset should return to the default: %+v", after)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/issue-tracker/data", nil))
+	if strings.Contains(rec.Body.String(), "mine") {
+		t.Fatalf("reset display should drop the override:\n%s", rec.Body.String())
+	}
+}
+
 func TestActiveProjectWidget(t *testing.T) {
 	a := newTestApp(t)
 	a.mediaBaseURL = "http://127.0.0.1:9999"

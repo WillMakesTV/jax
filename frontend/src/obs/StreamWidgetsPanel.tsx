@@ -5,6 +5,7 @@ import {
   Image,
   LayoutGrid,
   MessageSquare,
+  Pencil,
   Plus,
   Power,
   RefreshCw,
@@ -29,6 +30,7 @@ import {main} from '../../wailsjs/go/models'
 import {useAiQueue} from '../ai/AiQueueProvider'
 import {Modal} from '../components/Modal'
 import {useDataChanged} from '../lib/dataChanged'
+import {SystemWidgetDisplayModal} from './SystemWidgetDisplayModal'
 
 const field =
   'w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent'
@@ -216,6 +218,10 @@ export function StreamWidgetsPanel({
   }
 
   const [fieldTypesOpen, setFieldTypesOpen] = useState(false)
+  // The system widget whose display is being edited, if any.
+  const [editingSystem, setEditingSystem] = useState<main.SystemWidget | null>(
+    null,
+  )
 
   return (
     <div className="flex max-w-2xl flex-col gap-4">
@@ -262,6 +268,17 @@ export function StreamWidgetsPanel({
                     {sw.description}
                   </span>
                 </span>
+                {sw.editable && (
+                  <button
+                    type="button"
+                    onClick={() => setEditingSystem(sw)}
+                    title="Edit this widget's display — template, CSS and JS"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                  >
+                    <Pencil size={12} aria-hidden />
+                    {sw.customized ? 'Edit display' : 'Customize'}
+                  </button>
+                )}
                 {sw.enabled && sw.sourceUrl && (
                   <button
                     type="button"
@@ -434,6 +451,13 @@ export function StreamWidgetsPanel({
       <FieldTypesModal
         open={fieldTypesOpen}
         onClose={() => setFieldTypesOpen(false)}
+      />
+
+      <SystemWidgetDisplayModal
+        open={editingSystem !== null}
+        widget={editingSystem}
+        onClose={() => setEditingSystem(null)}
+        onSaved={load}
       />
     </div>
   )

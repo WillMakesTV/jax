@@ -65,6 +65,20 @@ type SystemWidget struct {
 	// SourceURL is the widget's local OBS Browser Source address, derived
 	// on read and never persisted.
 	SourceURL string `json:"sourceUrl"`
+	// Editable is true for widgets that render through the display pipeline
+	// (a JSX template, CSS and JS), so their display can be customized like a
+	// producer's own widget. The interactive overlays (Unified Chat, Event
+	// Feed) are not template-driven and are not editable.
+	Editable bool `json:"editable"`
+	// Customized is true when the producer has edited this widget's display
+	// away from the built-in default.
+	Customized bool `json:"customized"`
+}
+
+// systemWidgetEditable reports whether a widget renders through the editable
+// display pipeline.
+func systemWidgetEditable(id string) bool {
+	return id == systemWidgetIssueTracker || id == systemWidgetActiveProject
 }
 
 // systemWidgetCatalog lists the built-in widgets, in display order. Enabled
@@ -140,12 +154,15 @@ func (a *App) GetSystemWidgets() []SystemWidget {
 	a.mu.Unlock()
 	disabled := a.systemWidgetsDisabled()
 
+	overrides := a.storedSystemOverrides()
 	out := make([]SystemWidget, 0, len(systemWidgetCatalog))
 	for _, sw := range systemWidgetCatalog {
 		sw.Enabled = !disabled[sw.ID]
 		if base != "" {
 			sw.SourceURL = base + systemWidgetPrefix + url.PathEscape(sw.ID)
 		}
+		sw.Editable = systemWidgetEditable(sw.ID)
+		_, sw.Customized = overrides[sw.ID]
 		out = append(out, sw)
 	}
 	return out
@@ -1333,11 +1350,12 @@ func (a *App) serveIssueTracker(w http.ResponseWriter, r *http.Request, action s
 // The Issue Tracker owns its display rather than adopting a custom widget's,
 // so its ordering and animation are the app's to define.
 func (a *App) issueTrackerData() widgetSourceData {
+	disp := a.systemWidgetDisplay(systemWidgetIssueTracker)
 	data := widgetSourceData{
 		Name:     "Issue Tracker",
-		Template: issueTrackerDefaultTemplate,
-		CSS:      issueTrackerDefaultCSS,
-		JS:       issueTrackerDefaultJS,
+		Template: disp.Template,
+		CSS:      disp.CSS,
+		JS:       disp.JS,
 		Fields:   []widgetSourceField{},
 		Items:    []widgetSourceItem{},
 	}
@@ -1543,6 +1561,122 @@ func (a *App) resolveSystemDisplay(id string, names []string, def storedDisplay)
 	return out
 }
 
+// keySystemWidgetOverrides stores the producer's edited display for a system
+// widget, keyed by id. Absence means the built-in default is used.
+const keySystemWidgetOverrides = "system_widget_overrides"
+
+// storedSystemOverrides reads the override map. Never nil.
+func (a *App) storedSystemOverrides() map[string]storedDisplay {
+	m := map[string]storedDisplay{}
+	if a.store != nil {
+		if _, err := a.store.getJSON(keySystemWidgetOverrides, &m); err != nil {
+			log.Printf("jax: system widget overrides: %v", err)
+		}
+	}
+	if m == nil {
+		return map[string]storedDisplay{}
+	}
+	return m
+}
+
+// systemWidgetDefaultDisplay returns the built-in default display for a system
+// widget: the Issue Tracker's own, or the Active Project's (which adopts the
+// producer's "Active Project" widget when one exists, else the embedded one).
+func (a *App) systemWidgetDefaultDisplay(id string) storedDisplay {
+	switch id {
+	case systemWidgetIssueTracker:
+		return storedDisplay{
+			Template: issueTrackerDefaultTemplate,
+			CSS:      issueTrackerDefaultCSS,
+			JS:       issueTrackerDefaultJS,
+		}
+	case systemWidgetActiveProject:
+		if cw, ok := a.customWidgetByName([]string{"active project"}); ok {
+			return storedDisplay{Template: cw.Template, CSS: cw.CSS, JS: cw.JS}
+		}
+		return storedDisplay{
+			Template: activeProjectDefaultTemplate,
+			CSS:      activeProjectDefaultCSS,
+			JS:       activeProjectDefaultJS,
+		}
+	}
+	return storedDisplay{}
+}
+
+// systemWidgetDisplay resolves a system widget's effective display: the
+// producer's edited override when set, else the built-in default.
+func (a *App) systemWidgetDisplay(id string) storedDisplay {
+	if d, ok := a.storedSystemOverrides()[id]; ok && strings.TrimSpace(d.Template) != "" {
+		return d
+	}
+	return a.systemWidgetDefaultDisplay(id)
+}
+
+// SystemWidgetDisplay is a system widget's editable display: the current
+// template/CSS/JS, the built-in default (for a reset), and whether the current
+// one is a producer edit.
+type SystemWidgetDisplay struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Template        string `json:"template"`
+	CSS             string `json:"css"`
+	JS              string `json:"js"`
+	DefaultTemplate string `json:"defaultTemplate"`
+	DefaultCSS      string `json:"defaultCss"`
+	DefaultJS       string `json:"defaultJs"`
+	Customized      bool   `json:"customized"`
+}
+
+// GetSystemWidgetDisplay returns a system widget's editable display: the
+// effective template/CSS/JS and the built-in default to reset to.
+func (a *App) GetSystemWidgetDisplay(id string) (SystemWidgetDisplay, error) {
+	if !systemWidgetEditable(id) {
+		return SystemWidgetDisplay{}, fmt.Errorf("system widget %q has no editable display", id)
+	}
+	name := id
+	for _, sw := range systemWidgetCatalog {
+		if sw.ID == id {
+			name = sw.Name
+		}
+	}
+	def := a.systemWidgetDefaultDisplay(id)
+	eff := a.systemWidgetDisplay(id)
+	_, customized := a.storedSystemOverrides()[id]
+	return SystemWidgetDisplay{
+		ID: id, Name: name,
+		Template: eff.Template, CSS: eff.CSS, JS: eff.JS,
+		DefaultTemplate: def.Template, DefaultCSS: def.CSS, DefaultJS: def.JS,
+		Customized:      customized,
+	}, nil
+}
+
+// SetSystemWidgetDisplay stores a producer's edited display for a system
+// widget. An empty template resets to the built-in default.
+func (a *App) SetSystemWidgetDisplay(id, template, css, js string) (SystemWidgetDisplay, error) {
+	if !systemWidgetEditable(id) {
+		return SystemWidgetDisplay{}, fmt.Errorf("system widget %q has no editable display", id)
+	}
+	if a.store == nil {
+		return SystemWidgetDisplay{}, fmt.Errorf("storage unavailable")
+	}
+	overrides := a.storedSystemOverrides()
+	if strings.TrimSpace(template) == "" {
+		delete(overrides, id)
+	} else {
+		overrides[id] = storedDisplay{Template: template, CSS: css, JS: js}
+	}
+	if err := a.store.setJSON(keySystemWidgetOverrides, overrides); err != nil {
+		return SystemWidgetDisplay{}, err
+	}
+	return a.GetSystemWidgetDisplay(id)
+}
+
+// ResetSystemWidgetDisplay drops a system widget's override, returning it to
+// the built-in default.
+func (a *App) ResetSystemWidgetDisplay(id string) (SystemWidgetDisplay, error) {
+	return a.SetSystemWidgetDisplay(id, "", "", "")
+}
+
 // customWidgetByName finds a producer stream widget by any of the given names
 // (case-insensitive), skipping one with no template. URLs are filled so sound
 // and image fields resolve to served addresses.
@@ -1580,6 +1714,12 @@ func (a *App) serveActiveProject(w http.ResponseWriter, r *http.Request, action 
 				CSS:      activeProjectDefaultCSS,
 				JS:       activeProjectDefaultJS,
 			})
+		// A producer's edited display overrides the adopted/default one, but
+		// keeps the resolved field fallbacks it draws project name and image
+		// from.
+		if ov, ok := a.storedSystemOverrides()[systemWidgetActiveProject]; ok && strings.TrimSpace(ov.Template) != "" {
+			disp.Template, disp.CSS, disp.JS = ov.Template, ov.CSS, ov.JS
+		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(widgetSourceData{
 			Name:     "Active Project",

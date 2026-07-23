@@ -312,6 +312,8 @@ export function GetStreamdeckMultiActions():Promise<Array<main.StreamdeckMultiAc
 
 export function GetStreams():Promise<Array<main.Stream>>;
 
+export function GetSystemWidgetDisplay(arg1:string):Promise<main.SystemWidgetDisplay>;
+
 export function GetSystemWidgets():Promise<Array<main.SystemWidget>>;
 
 export function GetTikTokPublish(arg1:string):Promise<main.TikTokPublishRecord>;
@@ -426,6 +428,8 @@ export function ResetAppSkill(arg1:string):Promise<main.AppSkill>;
 
 export function ResetPlannedStream(arg1:string):Promise<void>;
 
+export function ResetSystemWidgetDisplay(arg1:string):Promise<main.SystemWidgetDisplay>;
+
 export function RestoreEditVersion(arg1:string,arg2:string):Promise<main.EditWorkspaceInfo>;
 
 export function ReviseWidgetSkill(arg1:string,arg2:string):Promise<main.AppSkill>;
@@ -533,6 +537,8 @@ export function SetInspirationChannelTakeaways(arg1:string,arg2:string):Promise<
 export function SetStreamEpisode(arg1:Array<string>,arg2:number,arg3:string):Promise<void>;
 
 export function SetStreamThumbnail(arg1:string,arg2:string):Promise<main.StreamThumbInfo>;
+
+export function SetSystemWidgetDisplay(arg1:string,arg2:string,arg3:string,arg4:string):Promise<main.SystemWidgetDisplay>;
 
 export function SetSystemWidgetEnabled(arg1:string,arg2:boolean):Promise<Array<main.SystemWidget>>;
 
