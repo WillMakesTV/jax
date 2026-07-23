@@ -74,6 +74,11 @@ export const SETTING_KEYS = {
    * connection, kept so a reconnect doesn't ask for it again.
    */
   githubClientId: 'github_client_id',
+  /**
+   * The OpenCut web app the editor's OpenCut panel embeds ('' = the hosted
+   * default). Point it at a self-hosted or bundled instance to work offline.
+   */
+  openCutUrl: 'opencut_url',
 } as const
 
 /**
