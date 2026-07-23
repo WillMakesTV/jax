@@ -39,15 +39,13 @@ import {useDownloads} from '../downloads/useDownloads'
 import {openExternal} from '../lib/browser'
 import {formatCompact, formatDate} from '../lib/format'
 import {VideoPlanEditor} from './VideoPlanEditor'
-import {OpenCutPanel} from './OpenCutPanel'
 import {VideoPlanPublish} from './VideoPlanPublish'
 
-export type VideoPlanTab = 'content' | 'editor' | 'opencut' | 'publish'
+export type VideoPlanTab = 'content' | 'editor' | 'publish'
 
 const TABS: {id: VideoPlanTab; label: string; icon: typeof Clapperboard}[] = [
   {id: 'content', label: 'Content', icon: Clapperboard},
   {id: 'editor', label: 'Editor', icon: Scissors},
-  {id: 'opencut', label: 'OpenCut', icon: Clapperboard},
   {id: 'publish', label: 'Publish', icon: Upload},
 ]
 
@@ -728,8 +726,6 @@ export function VideoPlanDetails({
           onPublish={() => setTab('publish')}
         />
       )}
-
-      {tab === 'opencut' && <OpenCutPanel plan={plan} />}
 
       {tab === 'publish' && (
         <VideoPlanPublish
