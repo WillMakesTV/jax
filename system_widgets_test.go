@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSystemWidgets(t *testing.T) {
@@ -283,5 +285,61 @@ func TestActiveProjectWidget(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/active-project/data", nil))
 	if !strings.Contains(rec.Body.String(), "teal") {
 		t.Fatalf("snapshot should survive deletion: %q", rec.Body.String())
+	}
+}
+
+func TestEventFeedEndpoints(t *testing.T) {
+	a := newTestApp(t)
+	a.mediaBaseURL = "http://127.0.0.1:9999"
+	h := mediaHandler{app: a}
+
+	// The page serves; with no events the feed is an empty group list.
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/event-feed", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "Event Feed") {
+		t.Fatalf("page: code %d", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/event-feed/data", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"groups":[]`) {
+		t.Fatalf("empty data: %q", rec.Body.String())
+	}
+
+	// A stream in the history, with events inside its window, becomes one
+	// group named for that stream.
+	startedAt := "2026-07-01T12:00:00Z"
+	start, _ := time.Parse(time.RFC3339, startedAt)
+	raw, err := json.Marshal([]PastBroadcast{{
+		Platform: "youtube", Title: "Launch stream", URL: "https://youtu.be/l",
+		StartedAt: startedAt, DurationSecs: 3600,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.store.setCacheEntry(a.connsCacheKey("past_broadcasts"), string(raw)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.store.saveLiveEvents([]StoredLiveEvent{
+		{Platform: "twitch", ID: "f1", Type: "follow", Author: "Ann",
+			Detail: "followed", At: start.Add(10 * time.Minute).UnixMilli()},
+	}); err != nil {
+		t.Fatalf("save events: %v", err)
+	}
+
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/event-feed/data", nil))
+	body := rec.Body.String()
+	if !strings.Contains(body, "Launch stream") || !strings.Contains(body, `"author":"Ann"`) {
+		t.Fatalf("feed should group the event under its stream: %q", body)
+	}
+
+	// Disabling 404s the page.
+	if _, err := a.SetSystemWidgetEnabled(systemWidgetEventFeed, false); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/event-feed", nil))
+	if rec.Code != 404 {
+		t.Fatalf("disabled page: code %d", rec.Code)
 	}
 }

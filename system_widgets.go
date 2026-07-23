@@ -25,7 +25,9 @@ import (
 // and website. The third is Issue Tracker: the debug-report queue live on
 // screen, each report and its status, drawn straight from the queue so it
 // never falls out of date. The fourth is Active Project: the project being
-// worked on right now, following it live.
+// worked on right now, following it live. The fifth is Event Feed: every
+// earned follow, sub, gift, cheer and raid as one scrolling history, divided
+// by the stream each came from.
 //
 // Issue Tracker and Active Project render through the same display pipeline as
 // a producer's own stream widgets (widget_source.go) — a JSX template, CSS and
@@ -48,6 +50,9 @@ const systemWidgetIssueTracker = "issue-tracker"
 
 // systemWidgetActiveProject identifies the built-in active-project overlay.
 const systemWidgetActiveProject = "active-project"
+
+// systemWidgetEventFeed identifies the built-in event-feed overlay.
+const systemWidgetEventFeed = "event-feed"
 
 // SystemWidget is one built-in Browser Source.
 type SystemWidget struct {
@@ -88,6 +93,12 @@ var systemWidgetCatalog = []SystemWidget{
 		Name: "Active Project",
 		Description: "The project you're working on right now — its cover and name — following the " +
 			"active project live. Adopts your \"Active Project\" widget's design when you have one.",
+	},
+	{
+		ID:   systemWidgetEventFeed,
+		Name: "Event Feed",
+		Description: "Every follow, sub, gift, cheer and raid you've earned — like Unified Chat but " +
+			"events only — as one scrolling history, divided by the stream each came from.",
 	},
 }
 
@@ -186,6 +197,8 @@ func (a *App) serveSystemWidget(w http.ResponseWriter, r *http.Request) {
 		a.serveIssueTracker(w, r, action)
 	case systemWidgetActiveProject:
 		a.serveActiveProject(w, r, action)
+	case systemWidgetEventFeed:
+		a.serveEventFeed(w, r, action)
 	default:
 		http.NotFound(w, r)
 	}
@@ -1516,6 +1529,76 @@ func (a *App) serveActiveProject(w http.ResponseWriter, r *http.Request, action 
 	}
 }
 
+// eventFeedMaxStreams caps how many recent streams the feed reads events for,
+// so the poll stays cheap however long the broadcast history grows.
+const eventFeedMaxStreams = 40
+
+// serveEventFeed is the event-feed overlay: the page, and the history of
+// earned events grouped by the stream each came from.
+func (a *App) serveEventFeed(w http.ResponseWriter, r *http.Request, action string) {
+	switch action {
+	case "":
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(eventFeedPage))
+	case "data":
+		// The follows, subs, gifts, cheers and raids each stream earned, one
+		// group per stream, oldest stream first so the newest events sit at
+		// the bottom of the scroll (as the chat overlay does). Only streams
+		// that actually earned an event appear, so the dividers mean
+		// something. Recent streams only, to keep the poll light.
+		type feedEvent struct {
+			Platform string `json:"platform"`
+			Type     string `json:"type"`
+			Author   string `json:"author"`
+			Detail   string `json:"detail"`
+			At       int64  `json:"at"`
+		}
+		type feedGroup struct {
+			Title     string      `json:"title"`
+			StartedAt string      `json:"startedAt"`
+			Episode   int         `json:"episode"`
+			Events    []feedEvent `json:"events"`
+		}
+		streams := a.GetPastStreams(false)
+		if len(streams) > eventFeedMaxStreams {
+			streams = streams[:eventFeedMaxStreams]
+		}
+		groups := []feedGroup{}
+		// GetPastStreams is newest first; walk backwards so the oldest group
+		// leads and the newest trails.
+		for i := len(streams) - 1; i >= 0; i-- {
+			s := streams[i]
+			// A stream's window is the longest of its simulcast broadcasts.
+			durationSecs := 0
+			for _, b := range s.Broadcasts {
+				if b.DurationSecs > durationSecs {
+					durationSecs = b.DurationSecs
+				}
+			}
+			evs := a.GetLiveEventsForStream(s.StartedAt, durationSecs)
+			if len(evs) == 0 {
+				continue
+			}
+			g := feedGroup{
+				Title:     firstNonEmpty(s.Title, "Untitled stream"),
+				StartedAt: s.StartedAt,
+				Episode:   s.EpisodeNumber,
+			}
+			for _, e := range evs {
+				g.Events = append(g.Events, feedEvent{
+					Platform: e.Platform, Type: e.Type,
+					Author: e.Author, Detail: e.Detail, At: e.At,
+				})
+			}
+			groups = append(groups, g)
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]any{"groups": groups})
+	default:
+		http.NotFound(w, r)
+	}
+}
+
 // issueTrackerMessage is the one-line summary a report shows on the tracker:
 // its title, or the first non-empty line of its description.
 func issueTrackerMessage(r DebugReport) string {
@@ -1679,3 +1762,153 @@ if (!store.timer) {
     if (window.__apwStore && window.__apwStore.fetch) window.__apwStore.fetch()
   }, 5000)
 }`
+
+// eventFeedPage is the overlay: the earned-events history as a dark-gray
+// scrolling column, each stream's events under a divider naming that stream,
+// pinned to the newest at the bottom - the same look as the Unified Chat
+// overlay, events only. Author and detail are text nodes only, so stored
+// text never becomes markup.
+const eventFeedPage = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Event Feed</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #1f2937;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+  #wrap { display: flex; flex-direction: column; height: 100vh;
+    box-sizing: border-box; padding: 12px; }
+  #list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+  #list > :first-child { margin-top: auto; }
+  #list::-webkit-scrollbar { width: 0; }
+  #empty { flex: 1; display: flex; align-items: center; justify-content: center;
+    color: rgba(255,255,255,0.45); font-size: 14px; text-align: center; }
+  .divider { display: flex; align-items: center; gap: 10px; margin: 12px 2px 4px;
+    color: rgba(255,255,255,0.55); }
+  .divider::before, .divider::after { content: ''; flex: 1; height: 1px;
+    background: rgba(255,255,255,0.14); }
+  .divider .d-title { font-size: 12px; font-weight: 700; white-space: nowrap;
+    max-width: 60%; overflow: hidden; text-overflow: ellipsis; }
+  .divider .d-date { font-size: 11px; color: rgba(255,255,255,0.4); white-space: nowrap; }
+  .evt { position: relative; background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.09); border-radius: 10px; padding: 6px 10px;
+    color: #fff; font-size: 15px; line-height: 1.35; overflow-wrap: anywhere; }
+  .evt-icon { display: inline-block; margin-right: 6px; font-size: 14px; }
+  .author { font-weight: 700; margin-right: 6px; }
+  .plat { display: inline-block; vertical-align: 1px; margin-right: 6px;
+    font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 1px 6px; border-radius: 999px; color: #fff; }
+  .time { float: right; font-size: 11px; color: rgba(255,255,255,0.4); margin-left: 8px; }
+  .evt-follow { background: rgba(83,252,24,0.14); border-color: rgba(83,252,24,0.35); }
+  .evt-sub    { background: rgba(255,196,0,0.14); border-color: rgba(255,196,0,0.38); }
+  .evt-gift   { background: rgba(255,122,0,0.14); border-color: rgba(255,122,0,0.38); }
+  .evt-raid   { background: rgba(145,70,255,0.18); border-color: rgba(145,70,255,0.42); }
+  .evt-cheer  { background: rgba(0,176,255,0.14); border-color: rgba(0,176,255,0.38); }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="empty" style="display: none">Events you earn appear here, grouped by stream.</div>
+  <div id="list"></div>
+</div>
+<script>
+(function () {
+  'use strict'
+  var base = location.pathname.replace(/\/$/, '')
+  var list = document.getElementById('list')
+  var empty = document.getElementById('empty')
+  var lastJSON = ''
+
+  var EVENT_ICONS = { follow: '\u2665', sub: '\u2605', gift: '\uD83C\uDF81', raid: '\u2691', cheer: '\u25C6' }
+  var PLATFORM_COLORS = { twitch: '#9146FF', youtube: '#FF0000', kick: '#53FC18',
+    facebook: '#1877F2', instagram: '#E1306C', x: '#444444', tiktok: '#111111' }
+
+  function fmtTime(at) {
+    var d = new Date(at)
+    var h = d.getHours(), m = d.getMinutes()
+    return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m
+  }
+  function fmtDate(iso) {
+    var d = new Date(iso)
+    if (isNaN(d.getTime())) return ''
+    return d.toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'})
+  }
+
+  function evtRow(e) {
+    var row = document.createElement('div')
+    row.className = 'evt evt-' + (e.type || 'follow')
+    var time = document.createElement('span')
+    time.className = 'time'
+    time.textContent = fmtTime(e.at)
+    row.appendChild(time)
+    if (e.platform) {
+      var plat = document.createElement('span')
+      plat.className = 'plat'
+      plat.textContent = e.platform
+      plat.style.background = PLATFORM_COLORS[e.platform] || '#555'
+      row.appendChild(plat)
+    }
+    var icon = document.createElement('span')
+    icon.className = 'evt-icon'
+    icon.textContent = EVENT_ICONS[e.type] || '\u2605'
+    row.appendChild(icon)
+    var author = document.createElement('span')
+    author.className = 'author'
+    author.textContent = e.author || ''
+    row.appendChild(author)
+    row.appendChild(document.createTextNode(e.detail || ''))
+    return row
+  }
+
+  function divider(g) {
+    var d = document.createElement('div')
+    d.className = 'divider'
+    var title = document.createElement('span')
+    title.className = 'd-title'
+    title.textContent = (g.episode ? 'EP' + g.episode + ' - ' : '') + (g.title || 'Stream')
+    d.appendChild(title)
+    var date = document.createElement('span')
+    date.className = 'd-date'
+    date.textContent = fmtDate(g.startedAt)
+    d.appendChild(date)
+    return d
+  }
+
+  function render(groups) {
+    var total = 0
+    groups.forEach(function (g) { total += (g.events || []).length })
+    if (total === 0) {
+      list.style.display = 'none'
+      empty.style.display = 'flex'
+      return
+    }
+    empty.style.display = 'none'
+    list.style.display = 'flex'
+    var pinned = list.scrollTop + list.clientHeight >= list.scrollHeight - 40
+    list.textContent = ''
+    groups.forEach(function (g) {
+      if (!(g.events || []).length) return
+      list.appendChild(divider(g))
+      g.events.forEach(function (e) { list.appendChild(evtRow(e)) })
+    })
+    if (pinned) list.scrollTop = list.scrollHeight
+  }
+
+  function tick() {
+    fetch(base + '/data', {cache: 'no-store'})
+      .then(function (r) { return r.text() })
+      .then(function (text) {
+        if (text === lastJSON) return
+        lastJSON = text
+        render((JSON.parse(text).groups) || [])
+      })
+      .catch(function () {})
+  }
+
+  tick()
+  setInterval(tick, 8000)
+})()
+</script>
+</body>
+</html>
+`
