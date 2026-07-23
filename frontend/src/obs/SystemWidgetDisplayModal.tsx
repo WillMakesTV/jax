@@ -39,6 +39,13 @@ export function SystemWidgetDisplayModal({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  // Page widgets (Unified Chat, Sponsors, Event Feed) are fixed overlays that
+  // take producer CSS and JS layered onto their built-in design — no template.
+  const isPage = widget?.displayKind === 'page'
+  const tabs: ('template' | 'css' | 'js')[] = isPage
+    ? ['css', 'js']
+    : ['template', 'css', 'js']
+
   // Load the widget's current display each time the dialog opens. Done
   // synchronously against the open transition (not in an effect) so the fields
   // never flash a previous widget's content.
@@ -48,7 +55,7 @@ export function SystemWidgetDisplayModal({
     setPrevKey(key)
     if (key && widget) {
       setError('')
-      setDisplayTab('template')
+      setDisplayTab(widget.displayKind === 'page' ? 'css' : 'template')
       setLoading(true)
       GetSystemWidgetDisplay(widget.id)
         .then((d) => {
@@ -103,13 +110,13 @@ export function SystemWidgetDisplayModal({
     >
       <div className="flex flex-col gap-3">
         <p className="text-xs text-fg-muted">
-          JSX that fully controls the widget's display, with a stylesheet and
-          custom JS for animation. The built-in look is the starting point —
-          Reset to default returns to it at any time.
+          {isPage
+            ? "This overlay's design is built in. Add your own CSS and JS to restyle or extend it — they're layered on top of the overlay. Reset to default removes them."
+            : "JSX that fully controls the widget's display, with a stylesheet and custom JS for animation. The built-in look is the starting point — Reset to default returns to it at any time."}
         </p>
 
         <div className="flex items-center gap-1">
-          {(['template', 'css', 'js'] as const).map((tab) => (
+          {tabs.map((tab) => (
             <button
               key={tab}
               type="button"

@@ -65,20 +65,45 @@ type SystemWidget struct {
 	// SourceURL is the widget's local OBS Browser Source address, derived
 	// on read and never persisted.
 	SourceURL string `json:"sourceUrl"`
-	// Editable is true for widgets that render through the display pipeline
-	// (a JSX template, CSS and JS), so their display can be customized like a
-	// producer's own widget. The interactive overlays (Unified Chat, Event
-	// Feed) are not template-driven and are not editable.
-	Editable bool `json:"editable"`
+	// Editable is true for every widget whose display the producer can
+	// customize. DisplayKind says how: "template" widgets (Issue Tracker,
+	// Active Project) render through the display pipeline and expose a JSX
+	// template plus CSS and JS; "page" widgets (Unified Chat, Sponsors, Event
+	// Feed) are fixed interactive overlays that take producer CSS and JS
+	// layered over their built-in design.
+	Editable    bool   `json:"editable"`
+	DisplayKind string `json:"displayKind"`
 	// Customized is true when the producer has edited this widget's display
 	// away from the built-in default.
 	Customized bool `json:"customized"`
 }
 
-// systemWidgetEditable reports whether a widget renders through the editable
-// display pipeline.
+// Display kinds: how a system widget's look is customized.
+const (
+	// displayKindTemplate: a JSX template plus CSS and JS, run through the
+	// widget display pipeline (Issue Tracker, Active Project).
+	displayKindTemplate = "template"
+	// displayKindPage: a fixed interactive HTML overlay that accepts producer
+	// CSS and JS layered onto its built-in design (Unified Chat, Sponsors,
+	// Event Feed).
+	displayKindPage = "page"
+)
+
+// systemWidgetDisplayKind reports how a widget's display is customized, or ""
+// when it has no editable display.
+func systemWidgetDisplayKind(id string) string {
+	switch id {
+	case systemWidgetIssueTracker, systemWidgetActiveProject:
+		return displayKindTemplate
+	case systemWidgetUnifiedChat, systemWidgetSponsors, systemWidgetEventFeed:
+		return displayKindPage
+	}
+	return ""
+}
+
+// systemWidgetEditable reports whether a widget's display can be customized.
 func systemWidgetEditable(id string) bool {
-	return id == systemWidgetIssueTracker || id == systemWidgetActiveProject
+	return systemWidgetDisplayKind(id) != ""
 }
 
 // systemWidgetCatalog lists the built-in widgets, in display order. Enabled
@@ -161,7 +186,8 @@ func (a *App) GetSystemWidgets() []SystemWidget {
 		if base != "" {
 			sw.SourceURL = base + systemWidgetPrefix + url.PathEscape(sw.ID)
 		}
-		sw.Editable = systemWidgetEditable(sw.ID)
+		sw.DisplayKind = systemWidgetDisplayKind(sw.ID)
+		sw.Editable = sw.DisplayKind != ""
 		_, sw.Customized = overrides[sw.ID]
 		out = append(out, sw)
 	}
@@ -228,8 +254,7 @@ func (a *App) serveSystemWidget(w http.ResponseWriter, r *http.Request) {
 func (a *App) serveUnifiedChat(w http.ResponseWriter, r *http.Request, action string) {
 	switch action {
 	case "":
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(unifiedChatPage))
+		a.servePageWidget(w, systemWidgetUnifiedChat, unifiedChatPage)
 	case "data":
 		// The overlay shows the broadcast on the air: the active session's
 		// chat and events only, matching the Broadcasting page's live feed.
@@ -1069,8 +1094,7 @@ const unifiedChatPage = `<!DOCTYPE html>
 func (a *App) serveSponsorsWidget(w http.ResponseWriter, r *http.Request, action string) {
 	switch action {
 	case "":
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(sponsorsPage))
+		a.servePageWidget(w, systemWidgetSponsors, sponsorsPage)
 	case "data":
 		// Only what the overlay draws: the sponsor's logo (its chosen
 		// branding file), its name, and its website. Sponsors without a
@@ -1603,8 +1627,9 @@ func (a *App) systemWidgetDefaultDisplay(id string) storedDisplay {
 	return storedDisplay{}
 }
 
-// systemWidgetDisplay resolves a system widget's effective display: the
-// producer's edited override when set, else the built-in default.
+// systemWidgetDisplay resolves a template widget's effective display: the
+// producer's edited override when set, else the built-in default. Page widgets
+// have no template display and are served through page injection instead.
 func (a *App) systemWidgetDisplay(id string) storedDisplay {
 	if d, ok := a.storedSystemOverrides()[id]; ok && strings.TrimSpace(d.Template) != "" {
 		return d
@@ -1612,12 +1637,62 @@ func (a *App) systemWidgetDisplay(id string) storedDisplay {
 	return a.systemWidgetDefaultDisplay(id)
 }
 
-// SystemWidgetDisplay is a system widget's editable display: the current
-// template/CSS/JS, the built-in default (for a reset), and whether the current
-// one is a producer edit.
+// systemWidgetPageInjection is the producer's CSS and JS for a page widget,
+// wrapped in the tags that layer it onto the built-in overlay. Empty when the
+// widget has no override (or is not a page widget), so the page is untouched.
+func (a *App) systemWidgetPageInjection(id string) string {
+	if systemWidgetDisplayKind(id) != displayKindPage {
+		return ""
+	}
+	d, ok := a.storedSystemOverrides()[id]
+	if !ok {
+		return ""
+	}
+	var b strings.Builder
+	if strings.TrimSpace(d.CSS) != "" {
+		b.WriteString("\n<style>\n")
+		b.WriteString(d.CSS)
+		b.WriteString("\n</style>\n")
+	}
+	if strings.TrimSpace(d.JS) != "" {
+		// Runs once after the built-in overlay's own scripts, so it can restyle
+		// or hook the DOM the overlay renders (an observer/interval for the
+		// parts that re-render later).
+		b.WriteString("\n<script>\n")
+		b.WriteString(d.JS)
+		b.WriteString("\n</script>\n")
+	}
+	return b.String()
+}
+
+// injectBeforeBodyEnd splices an HTML fragment in just before </body> (or
+// appends it when there is none), leaving the page unchanged for an empty
+// fragment.
+func injectBeforeBodyEnd(page, fragment string) string {
+	if fragment == "" {
+		return page
+	}
+	if i := strings.LastIndex(page, "</body>"); i >= 0 {
+		return page[:i] + fragment + page[i:]
+	}
+	return page + fragment
+}
+
+// servePageWidget writes a page widget's HTML with the producer's CSS/JS
+// override (if any) layered on.
+func (a *App) servePageWidget(w http.ResponseWriter, id, page string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(injectBeforeBodyEnd(page, a.systemWidgetPageInjection(id))))
+}
+
+// SystemWidgetDisplay is a system widget's editable display. Kind is
+// "template" (a JSX template with CSS and JS) or "page" (producer CSS and JS
+// layered onto a fixed overlay — Template stays empty). Default* is the
+// built-in look to reset to, and Customized reports a producer edit.
 type SystemWidgetDisplay struct {
 	ID              string `json:"id"`
 	Name            string `json:"name"`
+	Kind            string `json:"kind"`
 	Template        string `json:"template"`
 	CSS             string `json:"css"`
 	JS              string `json:"js"`
@@ -1630,7 +1705,8 @@ type SystemWidgetDisplay struct {
 // GetSystemWidgetDisplay returns a system widget's editable display: the
 // effective template/CSS/JS and the built-in default to reset to.
 func (a *App) GetSystemWidgetDisplay(id string) (SystemWidgetDisplay, error) {
-	if !systemWidgetEditable(id) {
+	kind := systemWidgetDisplayKind(id)
+	if kind == "" {
 		return SystemWidgetDisplay{}, fmt.Errorf("system widget %q has no editable display", id)
 	}
 	name := id
@@ -1640,10 +1716,16 @@ func (a *App) GetSystemWidgetDisplay(id string) (SystemWidgetDisplay, error) {
 		}
 	}
 	def := a.systemWidgetDefaultDisplay(id)
-	eff := a.systemWidgetDisplay(id)
-	_, customized := a.storedSystemOverrides()[id]
+	override, customized := a.storedSystemOverrides()[id]
+	// The effective display is the override when set, else the built-in
+	// default. Page widgets keep an empty template — their CSS/JS is additive,
+	// so the built-in overlay is the base, not a default template.
+	eff := def
+	if customized && (kind == displayKindPage || strings.TrimSpace(override.Template) != "") {
+		eff = override
+	}
 	return SystemWidgetDisplay{
-		ID: id, Name: name,
+		ID: id, Name: name, Kind: kind,
 		Template: eff.Template, CSS: eff.CSS, JS: eff.JS,
 		DefaultTemplate: def.Template, DefaultCSS: def.CSS, DefaultJS: def.JS,
 		Customized: customized,
@@ -1651,7 +1733,7 @@ func (a *App) GetSystemWidgetDisplay(id string) (SystemWidgetDisplay, error) {
 }
 
 // SetSystemWidgetDisplay stores a producer's edited display for a system
-// widget. An empty template resets to the built-in default.
+// widget. Clearing every field resets to the built-in default.
 func (a *App) SetSystemWidgetDisplay(id, template, css, js string) (SystemWidgetDisplay, error) {
 	if !systemWidgetEditable(id) {
 		return SystemWidgetDisplay{}, fmt.Errorf("system widget %q has no editable display", id)
@@ -1660,7 +1742,7 @@ func (a *App) SetSystemWidgetDisplay(id, template, css, js string) (SystemWidget
 		return SystemWidgetDisplay{}, fmt.Errorf("storage unavailable")
 	}
 	overrides := a.storedSystemOverrides()
-	if strings.TrimSpace(template) == "" {
+	if strings.TrimSpace(template) == "" && strings.TrimSpace(css) == "" && strings.TrimSpace(js) == "" {
 		delete(overrides, id)
 	} else {
 		overrides[id] = storedDisplay{Template: template, CSS: css, JS: js}
@@ -1743,8 +1825,7 @@ const eventFeedMaxStreams = 40
 func (a *App) serveEventFeed(w http.ResponseWriter, r *http.Request, action string) {
 	switch action {
 	case "":
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(eventFeedPage))
+		a.servePageWidget(w, systemWidgetEventFeed, eventFeedPage)
 	case "data":
 		// The follows, subs, gifts, cheers and raids each stream earned, one
 		// group per stream, oldest stream first so the newest events sit at

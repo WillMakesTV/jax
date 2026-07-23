@@ -224,22 +224,51 @@ func TestSystemWidgetDisplayEditable(t *testing.T) {
 	a.mediaBaseURL = "http://127.0.0.1:9999"
 	h := mediaHandler{app: a}
 
-	// The catalog marks the template-driven widgets editable and the bespoke
-	// overlays not.
-	editable := map[string]bool{}
+	// Every system widget is editable; the template-driven ones through a JSX
+	// template, the bespoke overlays through page CSS/JS injection.
+	kind := map[string]string{}
 	for _, sw := range a.GetSystemWidgets() {
-		editable[sw.ID] = sw.Editable
+		if !sw.Editable {
+			t.Fatalf("every system widget should be editable: %q", sw.ID)
+		}
+		kind[sw.ID] = sw.DisplayKind
 	}
-	if !editable[systemWidgetIssueTracker] || !editable[systemWidgetActiveProject] {
-		t.Fatal("issue tracker and active project should be editable")
+	if kind[systemWidgetIssueTracker] != displayKindTemplate ||
+		kind[systemWidgetActiveProject] != displayKindTemplate {
+		t.Fatal("issue tracker and active project should be template widgets")
 	}
-	if editable[systemWidgetUnifiedChat] || editable[systemWidgetEventFeed] {
-		t.Fatal("the bespoke overlays should not be editable")
+	if kind[systemWidgetUnifiedChat] != displayKindPage ||
+		kind[systemWidgetSponsors] != displayKindPage ||
+		kind[systemWidgetEventFeed] != displayKindPage {
+		t.Fatal("the bespoke overlays should be page widgets")
 	}
 
-	// A bespoke overlay has no editable display.
-	if _, err := a.GetSystemWidgetDisplay(systemWidgetUnifiedChat); err == nil {
-		t.Fatal("want error editing a bespoke overlay's display")
+	// A page widget's display reports its kind and no default template.
+	pd, err := a.GetSystemWidgetDisplay(systemWidgetUnifiedChat)
+	if err != nil {
+		t.Fatalf("get page display: %v", err)
+	}
+	if pd.Kind != displayKindPage || pd.DefaultTemplate != "" {
+		t.Fatalf("page widget display unexpected: %+v", pd)
+	}
+	// Its override CSS/JS is injected into the served overlay page.
+	if _, err := a.SetSystemWidgetDisplay(systemWidgetUnifiedChat, "", ".x{color:red}", "console.log('hi')"); err != nil {
+		t.Fatalf("set page display: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/unified-chat", nil))
+	body := rec.Body.String()
+	if !strings.Contains(body, ".x{color:red}") || !strings.Contains(body, "console.log('hi')") {
+		t.Fatalf("page override should be injected into the overlay:\n%s", body)
+	}
+	// Clearing it returns the untouched page.
+	if _, err := a.ResetSystemWidgetDisplay(systemWidgetUnifiedChat); err != nil {
+		t.Fatalf("reset page: %v", err)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/unified-chat", nil))
+	if strings.Contains(rec.Body.String(), ".x{color:red}") {
+		t.Fatalf("reset should drop the page override")
 	}
 
 	// The editable widget starts on its built-in default, uncustomized.
@@ -257,7 +286,7 @@ func TestSystemWidgetDisplayEditable(t *testing.T) {
 	if _, err := a.SetSystemWidgetDisplay(systemWidgetIssueTracker, mine, ".mine{color:red}", "// none"); err != nil {
 		t.Fatalf("set display: %v", err)
 	}
-	rec := httptest.NewRecorder()
+	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/issue-tracker/data", nil))
 	if body := rec.Body.String(); !strings.Contains(body, `class=\"mine\"`) &&
 		!strings.Contains(body, "mine") {

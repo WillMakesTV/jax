@@ -2088,6 +2088,7 @@ export class SystemWidget {
     enabled: boolean;
     sourceUrl: string;
     editable: boolean;
+    displayKind: string;
     customized: boolean;
 
     static createFrom(source: any = {}) {
@@ -2102,6 +2103,7 @@ export class SystemWidget {
         this.enabled = source["enabled"];
         this.sourceUrl = source["sourceUrl"];
         this.editable = source["editable"];
+        this.displayKind = source["displayKind"];
         this.customized = source["customized"];
     }
 }
@@ -2109,6 +2111,7 @@ export class SystemWidget {
 export class SystemWidgetDisplay {
     id: string;
     name: string;
+    kind: string;
     template: string;
     css: string;
     js: string;
@@ -2125,6 +2128,7 @@ export class SystemWidgetDisplay {
         if ('string' === typeof source) source = JSON.parse(source);
         this.id = source["id"];
         this.name = source["name"];
+        this.kind = source["kind"];
         this.template = source["template"];
         this.css = source["css"];
         this.js = source["js"];
