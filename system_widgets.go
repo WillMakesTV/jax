@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 )
 
@@ -1322,27 +1323,28 @@ func (a *App) serveIssueTracker(w http.ResponseWriter, r *http.Request, action s
 	}
 }
 
-// issueTrackerData builds the display payload: the resolved template/CSS/JS
-// and its field schema, plus one item per open report keyed by the display's
-// message, status and image labels, newest first. A resolved report leaves
-// the queue (it is deleted), so only live work is ever shown.
+// issueTrackerData builds the display payload: the built-in Issue Tracker
+// display, and one item per open report. The queue is worked oldest first, so
+// the items are ordered oldest first here — the oldest (next to be worked)
+// leads and the newest trails. A resolved report leaves the queue (it is
+// deleted), so only live work is ever shown.
+//
+// The Issue Tracker owns its display rather than adopting a custom widget's,
+// so its ordering and animation are the app's to define.
 func (a *App) issueTrackerData() widgetSourceData {
-	disp := a.resolveSystemDisplay(systemWidgetIssueTracker,
-		[]string{"issue tracker", "issue queue watcher"},
-		storedDisplay{
-			Template: issueTrackerDefaultTemplate,
-			CSS:      issueTrackerDefaultCSS,
-			JS:       issueTrackerDefaultJS,
-		})
 	data := widgetSourceData{
 		Name:     "Issue Tracker",
-		Template: disp.Template,
-		CSS:      disp.CSS,
-		JS:       disp.JS,
-		Fields:   disp.Fields,
+		Template: issueTrackerDefaultTemplate,
+		CSS:      issueTrackerDefaultCSS,
+		JS:       issueTrackerDefaultJS,
+		Fields:   []widgetSourceField{},
 		Items:    []widgetSourceItem{},
 	}
-	for _, rep := range a.ListDebugReports() {
+	reports := a.ListDebugReports()
+	// ListDebugReports is newest first; the queue is worked oldest first, so
+	// order the board to match — the id increases with filing time.
+	sort.Slice(reports, func(i, j int) bool { return reports[i].ID < reports[j].ID })
+	for _, rep := range reports {
 		status := "Queued"
 		if rep.CheckedOut || rep.IssueNumber > 0 {
 			status = "Working"
@@ -1350,17 +1352,13 @@ func (a *App) issueTrackerData() widgetSourceData {
 		if rep.IssueNumber > 0 {
 			status = fmt.Sprintf("Working #%d", rep.IssueNumber)
 		}
-		values := map[string]string{
-			disp.MessageLbl: issueTrackerMessage(rep),
-			disp.StatusLbl:  status,
-		}
-		if disp.ImageURL != "" {
-			values[disp.ImageLbl] = disp.ImageURL
-		}
 		data.Items = append(data.Items, widgetSourceItem{
 			ID:        fmt.Sprintf("report-%d", rep.ID),
 			CreatedAt: rep.CreatedAt,
-			Values:    values,
+			Values: map[string]string{
+				"Message": issueTrackerMessage(rep),
+				"Status":  status,
+			},
 		})
 	}
 	return data

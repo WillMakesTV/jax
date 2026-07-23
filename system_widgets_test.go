@@ -198,6 +198,10 @@ func TestIssueTrackerEndpoints(t *testing.T) {
 			t.Fatalf("data missing %q:\n%s", want, body)
 		}
 	}
+	// Oldest first: the first-filed report leads, the newest trails.
+	if strings.Index(body, "cards overflow") > strings.Index(body, "needs a fix") {
+		t.Fatalf("items should be oldest-first:\n%s", body)
+	}
 	_ = queued
 
 	// Disabling the widget 404s its page, like the rest of the catalog.
@@ -210,39 +214,6 @@ func TestIssueTrackerEndpoints(t *testing.T) {
 		t.Fatalf("disabled page: code %d", rec.Code)
 	}
 }
-
-func TestIssueTrackerAdoptsCustomWidget(t *testing.T) {
-	a := newTestApp(t)
-	a.mediaBaseURL = "http://127.0.0.1:9999"
-	h := mediaHandler{app: a}
-
-	// A producer-built "Issue Tracker" widget with its own design.
-	if _, err := a.SaveStreamWidget(StreamWidget{
-		Name:     "Issue Tracker",
-		Template: "<div className=\"mine\">{items.length}</div>",
-		CSS:      ".mine { color: hotpink; }",
-		JS:       "/* custom logic */",
-	}); err != nil {
-		t.Fatalf("save custom widget: %v", err)
-	}
-	if _, err := a.SaveDebugReport(DebugReport{Description: "a bug"}); err != nil {
-		t.Fatalf("file report: %v", err)
-	}
-
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/issue-tracker/data", nil))
-	body := rec.Body.String()
-	// The system widget renders through the producer's template/CSS/JS, fed
-	// the live queue.
-	for _, want := range []string{
-		`className=\"mine\"`, "hotpink", "custom logic", "a bug",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("data should adopt the custom widget's design, missing %q:\n%s", want, body)
-		}
-	}
-}
-
 func TestActiveProjectWidget(t *testing.T) {
 	a := newTestApp(t)
 	a.mediaBaseURL = "http://127.0.0.1:9999"
