@@ -178,6 +178,8 @@ export function GenerateVideoScript(arg1:string,arg2:string):Promise<string>;
 
 export function GenerateVideoPublishFields(arg1:string,arg2:main.VideoPublishDraft,arg3:Array<string>,arg4:string):Promise<main.VideoPublishSuggestion>;
 
+export function GenerateSystemWidgetDisplay(arg1:string,arg2:string):Promise<main.SystemWidgetDisplay>;
+
 export function GenerateWidgetFieldImage(arg1:string,arg2:string,arg3:string):Promise<main.StreamWidget>;
 
 export function GenerateWidgetFieldSound(arg1:string,arg2:string,arg3:string):Promise<main.StreamWidget>;

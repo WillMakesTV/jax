@@ -44,6 +44,7 @@ export type ViewId =
   | 'edit-series'
   | 'edit-routine'
   | 'widget-details'
+  | 'system-widget-details'
   | 'settings'
   | 'profile'
 

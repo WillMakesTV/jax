@@ -25,6 +25,16 @@ func TestParseWidgetTemplate(t *testing.T) {
 	if _, err := parseWidgetTemplate(`{"template": "", "css": "x"}`); err == nil {
 		t.Fatal("want error for an empty template")
 	}
+
+	// Page widgets (CSS/JS layered on a fixed overlay) generate no template,
+	// so the tolerant parse accepts an empty one.
+	loose, err := parseWidgetDisplay(`{"template": "", "css": ".x{color:red}", "js": ""}`, false)
+	if err != nil {
+		t.Fatalf("loose parse: %v", err)
+	}
+	if loose.Template != "" || loose.CSS != ".x{color:red}" {
+		t.Fatalf("loose parse mismatch: %+v", loose)
+	}
 }
 
 func TestParseWidgetTestItem(t *testing.T) {

@@ -17,6 +17,7 @@ export function ObsStudio({
   onTabChange,
   onEditRoutine,
   onOpenWidget,
+  onOpenSystemWidget,
 }: {
   tab: ObsTab
   onTabChange: (tab: ObsTab) => void
@@ -24,6 +25,8 @@ export function ObsStudio({
   onEditRoutine: (routine: main.Routine | null) => void
   /** Open a stream widget's configuration page. */
   onOpenWidget: (widget: main.StreamWidget) => void
+  /** Open a system widget's display page. */
+  onOpenSystemWidget: (widget: main.SystemWidget) => void
 }) {
   const tabs: {id: ObsTab; label: string}[] = [
     {id: 'dashboard', label: 'Dashboard'},
@@ -59,7 +62,12 @@ export function ObsStudio({
 
       {tab === 'dashboard' && <ObsPanel />}
       {tab === 'routines' && <RoutinesPanel onEditRoutine={onEditRoutine} />}
-      {tab === 'widgets' && <StreamWidgetsPanel onOpenWidget={onOpenWidget} />}
+      {tab === 'widgets' && (
+        <StreamWidgetsPanel
+          onOpenWidget={onOpenWidget}
+          onOpenSystemWidget={onOpenSystemWidget}
+        />
+      )}
     </div>
   )
 }

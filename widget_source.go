@@ -605,6 +605,26 @@ var widgetSourcePage = template.Must(template.New("widget").Parse(`<!DOCTYPE htm
 </html>
 `))
 
+// widgetDisplayFormatBrief is the output contract appended to a display-
+// generation skill: how the model must answer, and what the template runs
+// with. Shared by custom widgets and the system-widget generator.
+const widgetDisplayFormatBrief = `
+
+# Output format
+
+Respond with a single JSON object and nothing else:
+{"template": "<JSX>", "css": "<stylesheet>", "js": "<custom logic, or empty string>"}
+
+template is one JSX expression (a single root element, className not class)
+receiving widget, fields (label → value; file kinds are URLs), playSound,
+and items (the widget's entries newest first, each {id, createdAt, values}
+with values keyed by label — list-style widgets render these). css is a
+plain stylesheet applied to the page. js is optional plain JavaScript run
+after each render as function(widget, fields, playSound, root, items).
+When a current template/css/js are provided below, treat the request as
+EDITS to them: keep the parts the request does not ask to change. Do not
+wrap the JSON in code fences.`
+
 // GenerateWidgetTemplate produces (or revises) a widget's display — JSX
 // template, CSS, and custom JS — from the producer's layout description,
 // briefed by the widget's own skill. The result is stored on the widget and
@@ -631,22 +651,7 @@ func (a *App) GenerateWidgetTemplate(widgetID, description string) (StreamWidget
 	if err != nil {
 		return StreamWidget{}, err
 	}
-	system := skill.Content + `
-
-# Output format
-
-Respond with a single JSON object and nothing else:
-{"template": "<JSX>", "css": "<stylesheet>", "js": "<custom logic, or empty string>"}
-
-template is one JSX expression (a single root element, className not class)
-receiving widget, fields (label → value; file kinds are URLs), playSound,
-and items (the widget's entries newest first, each {id, createdAt, values}
-with values keyed by label — list-style widgets render these). css is a
-plain stylesheet applied to the page. js is optional plain JavaScript run
-after each render as function(widget, fields, playSound, root, items).
-When a current template/css/js are provided below, treat the request as
-EDITS to them: keep the parts the request does not ask to change. Do not
-wrap the JSON in code fences.`
+	system := skill.Content + widgetDisplayFormatBrief
 
 	var in strings.Builder
 	fmt.Fprintf(&in, "# Widget\nName: %s\n\n## Fields\n", widget.Name)
@@ -814,6 +819,13 @@ type widgetTemplateResult struct {
 // parseWidgetTemplate extracts the template JSON from the model's response,
 // tolerating stray prose or code fences around the object.
 func parseWidgetTemplate(text string) (widgetTemplateResult, error) {
+	return parseWidgetDisplay(text, true)
+}
+
+// parseWidgetDisplay extracts the display JSON from the model's response,
+// tolerating stray prose or code fences. requireTemplate is false for page
+// widgets, whose display is CSS/JS layered on a fixed overlay (no template).
+func parseWidgetDisplay(text string, requireTemplate bool) (widgetTemplateResult, error) {
 	var out widgetTemplateResult
 	lo := strings.Index(text, "{")
 	hi := strings.LastIndex(text, "}")
@@ -823,7 +835,7 @@ func parseWidgetTemplate(text string) (widgetTemplateResult, error) {
 	if err := json.Unmarshal([]byte(text[lo:hi+1]), &out); err != nil {
 		return out, fmt.Errorf("the model returned an unexpected format — try again")
 	}
-	if strings.TrimSpace(out.Template) == "" {
+	if requireTemplate && strings.TrimSpace(out.Template) == "" {
 		return out, fmt.Errorf("the model returned no template — try again")
 	}
 	return out, nil

@@ -35,7 +35,6 @@ import {main} from '../../wailsjs/go/models'
 import {useAiQueue} from '../ai/AiQueueProvider'
 import {Modal} from '../components/Modal'
 import {useDataChanged} from '../lib/dataChanged'
-import {SystemWidgetDisplayModal} from './SystemWidgetDisplayModal'
 
 const field =
   'w-full rounded-lg border border-edge bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent'
@@ -56,9 +55,12 @@ const SYSTEM_ICONS: Record<string, LucideIcon> = {
  */
 export function StreamWidgetsPanel({
   onOpenWidget,
+  onOpenSystemWidget,
 }: {
   /** Open a widget's configuration page. */
   onOpenWidget: (widget: main.StreamWidget) => void
+  /** Open a system widget's display page. */
+  onOpenSystemWidget: (widget: main.SystemWidget) => void
 }) {
   const [widgets, setWidgets] = useState<main.StreamWidget[]>([])
   // The built-in widgets the app ships, each with an on/off switch.
@@ -232,10 +234,6 @@ export function StreamWidgetsPanel({
   }
 
   const [fieldTypesOpen, setFieldTypesOpen] = useState(false)
-  // The system widget whose display is being edited, if any.
-  const [editingSystem, setEditingSystem] = useState<main.SystemWidget | null>(
-    null,
-  )
 
   return (
     <div className="flex max-w-5xl flex-col gap-4">
@@ -292,7 +290,7 @@ export function StreamWidgetsPanel({
                     {sw.editable && (
                       <button
                         type="button"
-                        onClick={() => setEditingSystem(sw)}
+                        onClick={() => onOpenSystemWidget(sw)}
                         title="Customize this widget's display"
                         className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
                       >
@@ -474,13 +472,6 @@ export function StreamWidgetsPanel({
       <FieldTypesModal
         open={fieldTypesOpen}
         onClose={() => setFieldTypesOpen(false)}
-      />
-
-      <SystemWidgetDisplayModal
-        open={editingSystem !== null}
-        widget={editingSystem}
-        onClose={() => setEditingSystem(null)}
-        onSaved={load}
       />
     </div>
   )

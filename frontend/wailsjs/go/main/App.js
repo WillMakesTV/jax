@@ -358,6 +358,10 @@ export function GenerateWidgetFieldImage(arg1, arg2, arg3) {
   return window['go']['main']['App']['GenerateWidgetFieldImage'](arg1, arg2, arg3);
 }
 
+export function GenerateSystemWidgetDisplay(arg1, arg2) {
+  return window['go']['main']['App']['GenerateSystemWidgetDisplay'](arg1, arg2);
+}
+
 export function GenerateWidgetFieldSound(arg1, arg2, arg3) {
   return window['go']['main']['App']['GenerateWidgetFieldSound'](arg1, arg2, arg3);
 }

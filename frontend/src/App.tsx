@@ -43,6 +43,7 @@ import {SponsorDetails} from './views/SponsorDetails'
 import {Sponsors} from './views/Sponsors'
 import {StreamDetails, type StreamTab} from './views/StreamDetails'
 import {StreamWidgetDetails, type WidgetTab} from './views/StreamWidgetDetails'
+import {SystemWidgetDetails} from './views/SystemWidgetDetails'
 import {Videos} from './views/Videos'
 import {VideoStyle} from './views/VideoStyle'
 import {VideoDetails} from './views/VideoDetails'
@@ -83,6 +84,8 @@ interface NavState {
   widget: main.StreamWidget | null
   /** Tab to land on when opening widget-details; null = default. */
   widgetTab: WidgetTab | null
+  /** The system widget whose display is being edited; null = none. */
+  systemWidget: main.SystemWidget | null
   /** The stream plan being viewed/edited; null = creating a new one. */
   plan: main.PlannedStream | null
   /** The video plan being viewed/edited; null = creating a new one. */
@@ -122,6 +125,7 @@ const INITIAL_NAV: NavState = {
   routine: null,
   widget: null,
   widgetTab: null,
+  systemWidget: null,
   plan: null,
   videoPlan: null,
   videoPlanTab: null,
@@ -149,6 +153,7 @@ const sameNav = (a: NavState, b: NavState) =>
   a.routine === b.routine &&
   a.widget === b.widget &&
   a.widgetTab === b.widgetTab &&
+  a.systemWidget === b.systemWidget &&
   a.plan === b.plan &&
   a.videoPlan === b.videoPlan &&
   a.videoPlanTab === b.videoPlanTab &&
@@ -389,8 +394,19 @@ function App() {
       navigate({view: 'widget-details', widget, widgetTab: null}),
     [navigate],
   )
+  const openSystemWidgetDetails = useCallback(
+    (systemWidget: main.SystemWidget) =>
+      navigate({view: 'system-widget-details', systemWidget}),
+    [navigate],
+  )
   const backToWidgets = useCallback(
-    () => navigate({view: 'obs', obsTab: 'widgets', widget: null}),
+    () =>
+      navigate({
+        view: 'obs',
+        obsTab: 'widgets',
+        widget: null,
+        systemWidget: null,
+      }),
     [navigate],
   )
   // Status-bar transcription chip: jump to the stream whose downloaded video
@@ -637,6 +653,8 @@ function App() {
         return cur.routine ? 'Edit routine' : 'New routine'
       case 'widget-details':
         return cur.widget?.name || 'Stream widget'
+      case 'system-widget-details':
+        return cur.systemWidget?.name || 'System widget'
       default:
         return 'Jax'
     }
@@ -697,7 +715,9 @@ function App() {
                 ? 'projects'
                 : view === 'sponsor-details' || view === 'campaign-details'
                   ? 'sponsors'
-                  : view === 'edit-routine' || view === 'widget-details'
+                  : view === 'edit-routine' ||
+                      view === 'widget-details' ||
+                      view === 'system-widget-details'
                     ? 'obs'
                     : view === 'video-details' ||
                         view === 'plan-video' ||
@@ -830,6 +850,7 @@ function App() {
                 onTabChange={setObsTab}
                 onEditRoutine={openEditRoutine}
                 onOpenWidget={openWidgetDetails}
+                onOpenSystemWidget={openSystemWidgetDetails}
               />
             )}
             {view === 'edit-routine' && (
@@ -843,6 +864,12 @@ function App() {
               <StreamWidgetDetails
                 widget={cur.widget}
                 initialTab={cur.widgetTab ?? undefined}
+                onBack={backToWidgets}
+              />
+            )}
+            {view === 'system-widget-details' && cur.systemWidget && (
+              <SystemWidgetDetails
+                widget={cur.systemWidget}
                 onBack={backToWidgets}
               />
             )}
