@@ -319,3 +319,37 @@ func TestEventFeedEndpoints(t *testing.T) {
 		t.Fatalf("disabled page: code %d", rec.Code)
 	}
 }
+
+func TestIssueTrackerShowsRecentCompletions(t *testing.T) {
+	a := newTestApp(t)
+	a.mediaBaseURL = "http://127.0.0.1:9999"
+	h := mediaHandler{app: a}
+
+	// A report resolved just now shows as Done with its finish time; one
+	// resolved long ago has aged off the board.
+	if _, err := a.store.insertFixNotice(FixNotice{
+		ReportID: 1, Title: "fresh fix", IssueNumber: 7,
+		ResolvedAt: time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("insert fresh: %v", err)
+	}
+	if _, err := a.store.insertFixNotice(FixNotice{
+		ReportID: 2, Title: "old fix", IssueNumber: 8,
+		ResolvedAt: time.Now().Add(-time.Hour).UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("insert old: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/issue-tracker/data", nil))
+	body := rec.Body.String()
+	if !strings.Contains(body, "fresh fix") || !strings.Contains(body, `"Status":"Done #7"`) {
+		t.Fatalf("recent completion should show as Done: %s", body)
+	}
+	if !strings.Contains(body, `"Completed":`) {
+		t.Fatalf("done item should carry its completion time: %s", body)
+	}
+	if strings.Contains(body, "old fix") {
+		t.Fatalf("an aged-off completion should not show: %s", body)
+	}
+}

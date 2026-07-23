@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -1369,7 +1370,61 @@ func (a *App) issueTrackerData() widgetSourceData {
 			},
 		})
 	}
+	// Recently resolved reports show as complete at the bottom, carrying the
+	// time the fix landed, before they age off — the same "done, and when"
+	// the tracker showed before it drew from the queue. The resolution
+	// history (Settings → Development) keeps every one permanently.
+	data.Items = append(data.Items, a.issueTrackerDoneItems()...)
 	return data
+}
+
+// issueTrackerDoneItemWindow is how long a resolved report lingers on the
+// board as complete before it ages off.
+const issueTrackerDoneItemWindow = 10 * time.Minute
+
+// issueTrackerDoneItems returns the recently resolved reports as done items,
+// oldest completion first so the newest sits at the very bottom.
+func (a *App) issueTrackerDoneItems() []widgetSourceItem {
+	done := []widgetSourceItem{}
+	// ListResolvedReports is newest first; collect the recent ones, then
+	// reverse so the most recent completion trails.
+	for _, fx := range a.ListResolvedReports() {
+		at, err := time.Parse(time.RFC3339, fx.ResolvedAt)
+		if err != nil || time.Since(at) > issueTrackerDoneItemWindow {
+			continue
+		}
+		status := "Done"
+		if fx.IssueNumber > 0 {
+			status = fmt.Sprintf("Done #%d", fx.IssueNumber)
+		}
+		done = append(done, widgetSourceItem{
+			ID:        fmt.Sprintf("done-%d", fx.ReportID),
+			CreatedAt: fx.ResolvedAt,
+			Values: map[string]string{
+				"Message":   fixNoticeMessage(fx),
+				"Status":    status,
+				"Completed": fx.ResolvedAt,
+			},
+		})
+	}
+	for i, j := 0, len(done)-1; i < j; i, j = i+1, j-1 {
+		done[i], done[j] = done[j], done[i]
+	}
+	return done
+}
+
+// fixNoticeMessage is a resolved report's one-line summary: its title, or the
+// first non-empty line of its description.
+func fixNoticeMessage(fx FixNotice) string {
+	if t := strings.TrimSpace(fx.Title); t != "" {
+		return t
+	}
+	for _, line := range strings.Split(fx.Description, "\n") {
+		if s := strings.TrimSpace(line); s != "" {
+			return s
+		}
+	}
+	return "Resolved report"
 }
 
 // ---------------------------------------------------------------------------
@@ -1628,14 +1683,30 @@ const issueTrackerDefaultTemplate = `<div className="iqw-wrap">
   <div className="iqw-list">
     {(items || []).map((item) => {
       var status = (item.values['Status'] || '').trim()
-      var working = /\d|work/i.test(status)
+      var done = /\b(done|resolved|complete|closed|fixed)\b/i.test(status)
+      var working = !done && /\d|work/i.test(status)
+      var completed = item.values['Completed']
+      var when = ''
+      if (completed) {
+        var d = new Date(completed)
+        if (!isNaN(d.getTime())) {
+          when = d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})
+        }
+      }
       return (
-        <div key={item.id} data-iqw-id={item.id} className={'iqw' + (working ? ' working' : '')}>
+        <div
+          key={item.id}
+          data-iqw-id={item.id}
+          className={'iqw' + (working ? ' working' : '') + (done ? ' done' : '')}
+        >
           <div className="iqw-body">
             <div className="iqw-name">{widget.name}</div>
             <div className="iqw-message">{item.values['Message']}</div>
           </div>
-          <div className="iqw-status">{status || 'Queued'}</div>
+          <div className="iqw-meta">
+            <div className="iqw-status">{status || 'Queued'}</div>
+            {when ? <div className="iqw-when">{when}</div> : null}
+          </div>
         </div>
       )
     })}
@@ -1662,11 +1733,16 @@ const issueTrackerDefaultCSS = `body { margin: 0; padding: 0; background: transp
   text-shadow: 0 1px 3px rgba(0,0,0,0.5);
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
   overflow: hidden; overflow-wrap: anywhere; }
-.iqw-status { flex: none; align-self: flex-start; display: inline-flex;
-  align-items: center; padding: 4px 12px; border-radius: 999px; font-size: 11px;
-  font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em;
-  white-space: nowrap; background: #64748b; color: #04121f; }
+.iqw-meta { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.iqw-status { display: inline-flex; align-items: center; padding: 4px 12px;
+  border-radius: 999px; font-size: 11px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.08em; white-space: nowrap; background: #64748b; color: #04121f; }
 .iqw.working .iqw-status { background: #f59e0b; color: #1a1206; }
+.iqw.done .iqw-status { background: #22c55e; color: #04170a; }
+.iqw.done { opacity: 0.85; }
+.iqw.done .iqw-message { text-shadow: none; color: #cbd5e1; }
+.iqw-when { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.55);
+  font-variant-numeric: tabular-nums; }
 .iqw-empty { width: 100%; box-sizing: border-box; padding: 16px 20px;
   border-radius: 16px; border: 1px dashed rgba(255,255,255,0.18);
   background: rgba(15,23,42,0.75); color: rgba(255,255,255,0.5);
