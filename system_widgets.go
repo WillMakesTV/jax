@@ -1626,14 +1626,11 @@ func issueTrackerMessage(r DebugReport) string {
 // display pipeline as a stream widget, so it is the full display feature.
 const issueTrackerDefaultTemplate = `<div className="iqw-wrap">
   <div className="iqw-list">
-    {(items || []).slice(0, 8).map((item, i) => {
+    {(items || []).map((item) => {
       var status = (item.values['Status'] || '').trim()
       var working = /\d|work/i.test(status)
       return (
-        <div
-          key={item.id}
-          className={'iqw' + (i === 0 ? '' : ' compact') + (working ? ' working' : '')}
-        >
+        <div key={item.id} data-iqw-id={item.id} className={'iqw' + (working ? ' working' : '')}>
           <div className="iqw-body">
             <div className="iqw-name">{widget.name}</div>
             <div className="iqw-message">{item.values['Message']}</div>
@@ -1648,40 +1645,102 @@ const issueTrackerDefaultTemplate = `<div className="iqw-wrap">
   </div>
 </div>`
 
-const issueTrackerDefaultCSS = `body { margin: 0; padding: 24px; background: transparent; overflow: hidden;
+const issueTrackerDefaultCSS = `body { margin: 0; padding: 0; background: transparent; overflow: hidden;
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
-.iqw-list { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
-.iqw { display: flex; align-items: center; gap: 16px; max-width: 560px;
+.iqw-wrap { width: 500px; height: 650px; max-width: 100%; max-height: 100vh;
+  box-sizing: border-box; padding: 24px; overflow: hidden; }
+.iqw-list { display: flex; flex-direction: column; gap: 10px; }
+.iqw { display: flex; align-items: center; gap: 16px; width: 100%;
   box-sizing: border-box; padding: 16px 20px; border-radius: 16px;
   background: linear-gradient(135deg, rgba(15,23,42,0.94), rgba(30,41,59,0.94));
   border: 1px solid rgba(255,255,255,0.14); box-shadow: 0 10px 36px rgba(0,0,0,0.5);
   color: #fff; }
-.iqw.compact { max-width: 460px; padding: 10px 16px; border-radius: 12px; gap: 12px; }
-.iqw-body { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.iqw.compact .iqw-body { flex-direction: row; align-items: center; gap: 10px; }
+.iqw-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 6px; }
 .iqw-name { font-size: 11px; font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.14em; color: #93c5fd; }
-.iqw.compact .iqw-name { display: none; }
 .iqw-message { font-size: 18px; font-weight: 700; line-height: 1.3;
   text-shadow: 0 1px 3px rgba(0,0,0,0.5);
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
   overflow: hidden; overflow-wrap: anywhere; }
-.iqw.compact .iqw-message { font-size: 14px; -webkit-line-clamp: 1; max-width: 300px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.iqw-status { align-self: flex-start; display: inline-flex; align-items: center;
-  padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: 800;
-  text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap;
-  background: #64748b; color: #04121f; }
-.iqw.compact .iqw-status { padding: 2px 10px; font-size: 10px; }
+.iqw-status { flex: none; align-self: flex-start; display: inline-flex;
+  align-items: center; padding: 4px 12px; border-radius: 999px; font-size: 11px;
+  font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em;
+  white-space: nowrap; background: #64748b; color: #04121f; }
 .iqw.working .iqw-status { background: #f59e0b; color: #1a1206; }
-.iqw-empty { max-width: 560px; box-sizing: border-box; padding: 16px 20px;
+.iqw-empty { width: 100%; box-sizing: border-box; padding: 16px 20px;
   border-radius: 16px; border: 1px dashed rgba(255,255,255,0.18);
   background: rgba(15,23,42,0.75); color: rgba(255,255,255,0.5);
-  font-size: 14px; text-align: center; }`
+  font-size: 14px; text-align: center; }
+.iqw-enter { animation: iqw-in 0.55s cubic-bezier(0.2,0.9,0.3,1.2) both; }
+@keyframes iqw-in {
+  from { opacity: 0; transform: translateX(calc(100% + 48px)); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.iqw-ghost { position: fixed; margin: 0; pointer-events: none; z-index: 5;
+  animation: iqw-up 0.5s ease-in forwards; }
+@keyframes iqw-up {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-40px); }
+}`
 
-// The default display needs no custom logic — the template renders the items
-// straight through.
-const issueTrackerDefaultJS = ""
+// The default's motion: each row slides in from the right when it appears,
+// rows glide (FLIP) to their new slots when the order changes, and a row that
+// leaves the queue lifts off as a ghost and fades up. State is kept on the
+// window so it survives the shell's re-render each poll.
+const issueTrackerDefaultJS = `var store = (window.__itStore = window.__itStore || {snap: {}, ready: false})
+var scope = root || document
+var rows = scope.querySelectorAll('[data-iqw-id]')
+
+// Snapshot the previous render's rows (position + markup) so a row that is
+// gone this time can be replayed as a ghost.
+var prev = store.snap
+var now = {}
+for (var i = 0; i < rows.length; i++) {
+  var el = rows[i]
+  var id = el.getAttribute('data-iqw-id')
+  var r = el.getBoundingClientRect()
+  now[id] = {left: r.left, top: r.top, width: r.width, height: r.height, html: el.outerHTML}
+  if (store.ready && !prev[id]) {
+    // New row: slide in from the right.
+    el.classList.remove('iqw-enter')
+    void el.offsetWidth
+    el.classList.add('iqw-enter')
+  } else if (prev[id]) {
+    // Moved row: start it at its old spot and let it glide back (FLIP).
+    var dx = prev[id].left - r.left
+    var dy = prev[id].top - r.top
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+      el.style.transition = 'none'
+      el.style.transform = 'translate(' + dx + 'px,' + dy + 'px)'
+      void el.offsetWidth
+      el.style.transition = 'transform 0.5s cubic-bezier(0.4,0,0.2,1)'
+      el.style.transform = ''
+    }
+  }
+}
+
+// Rows that were present last time but are gone now leave as fading ghosts.
+if (store.ready) {
+  Object.keys(prev).forEach(function (id) {
+    if (now[id]) return
+    var p = prev[id]
+    var ghost = document.createElement('div')
+    ghost.innerHTML = p.html
+    var node = ghost.firstChild
+    if (!node) return
+    node.classList.add('iqw-ghost')
+    node.style.left = p.left + 'px'
+    node.style.top = p.top + 'px'
+    node.style.width = p.width + 'px'
+    document.body.appendChild(node)
+    setTimeout(function () {
+      if (node.parentNode) node.parentNode.removeChild(node)
+    }, 550)
+  })
+}
+
+store.snap = now
+store.ready = true`
 
 // The built-in Active Project display, used when the producer has no "Active
 // Project" stream widget to adopt. A cover-filled card with the project name
