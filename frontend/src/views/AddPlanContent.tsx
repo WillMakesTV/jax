@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import {Check, Film, MonitorPlay, Trash2, Upload} from 'lucide-react'
+import {ArrowLeft, Check, Film, MonitorPlay, Trash2, Upload} from 'lucide-react'
 import {useEffect, useState} from 'react'
 import {
   EnsureVideoPlanWorkspace,
@@ -10,60 +10,48 @@ import {
   SaveVideoPlan,
 } from '../../wailsjs/go/main/App'
 import {main} from '../../wailsjs/go/models'
-import {formatDate} from '../lib/format'
+import {EpisodeThumb} from '../components/EpisodeThumb'
+import {PageHeader} from '../components/PageHeader'
 import {ObsRecordPanel} from '../obs/ObsRecordPanel'
-import {EpisodeThumb} from './EpisodeThumb'
-import {Modal} from './Modal'
+import {formatDate} from '../lib/format'
 
 /** Where added content comes from — the same split as the plan wizard. */
 type ContentMode = 'streams' | 'footage'
 
 /**
- * The video-plan page's "Add Content" dialog: source additional past
- * broadcasts or bring in new footage — picked files or a fresh OBS recording
- * landed in the plan's sources folder — the same choices the "Plan a video"
- * wizard's content step offers, applied to an existing plan immediately.
+ * The video-plan's "Add content" page: source additional past broadcasts or
+ * bring in new footage — picked files or a fresh OBS recording landed in the
+ * plan's sources folder — the same choices the "Plan a video" wizard's
+ * content step offers, applied to an existing plan immediately. Its own route
+ * rather than a dialog, so the pickers and the OBS record panel have the whole
+ * page to work in.
  */
-export function AddContentModal({
-  open,
-  onClose,
+export function AddPlanContent({
   plan,
+  onBack,
   onUpdated,
 }: {
-  open: boolean
-  onClose: () => void
   plan: main.VideoPlan
+  /** Back to the plan. */
+  onBack: () => void
   /** Receives the stored plan after each change lands. */
   onUpdated: (plan: main.VideoPlan) => void
 }) {
   const [mode, setMode] = useState<ContentMode>('streams')
   const [pastStreams, setPastStreams] = useState<main.PastStream[]>([])
   const [streamsLoaded, setStreamsLoaded] = useState(false)
-  const [sources, setSources] = useState<main.VideoPlanStream[]>([])
-  const [files, setFiles] = useState<string[]>([])
+  const [sources, setSources] = useState<main.VideoPlanStream[]>(
+    (plan.streams ?? []).map((s) => ({...s})),
+  )
+  const [files, setFiles] = useState<string[]>(plan.files ?? [])
   const [sourcesDir, setSourcesDir] = useState('')
   const [obsOpen, setObsOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  // Adopt the plan's current content each time the dialog opens —
-  // synchronously during render, so the pickers mount with the right state.
-  const [prevOpen, setPrevOpen] = useState(open)
-  if (open !== prevOpen) {
-    setPrevOpen(open)
-    if (open) {
-      setSources((plan.streams ?? []).map((s) => ({...s})))
-      setFiles(plan.files ?? [])
-      setMode('streams')
-      setObsOpen(false)
-      setError('')
-    }
-  }
-
   // The pickers' data: past streams for the grid, and the plan's workspace
   // (with its sources folder) so a recording has somewhere to land.
   useEffect(() => {
-    if (!open) return
     GetPastStreams(false)
       .then((s) => setPastStreams(s ?? []))
       .catch(() => {})
@@ -71,7 +59,7 @@ export function AddContentModal({
     EnsureVideoPlanWorkspace(plan.id)
       .then((d) => setSourcesDir(d.sources))
       .catch(() => {})
-  }, [open, plan.id])
+  }, [plan.id])
 
   const isSelected = (startedAt: string) =>
     sources.some((src) => src.startedAt === startedAt)
@@ -182,14 +170,21 @@ export function AddContentModal({
   }
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Add content"
-      icon={<Film size={18} aria-hidden className="text-fg-muted" />}
-      maxWidthClass="max-w-2xl"
-    >
-      <div className="flex flex-col gap-4">
+    <div className="flex flex-1 flex-col">
+      <button
+        type="button"
+        onClick={onBack}
+        className="mb-4 inline-flex w-fit items-center gap-1.5 text-sm text-fg-muted transition-colors hover:text-fg"
+      >
+        <ArrowLeft size={16} aria-hidden />
+        Back to the plan
+      </button>
+
+      <PageHeader
+        description={`Source more past broadcasts or bring in new footage for “${plan.title}”. Changes save to the plan as you make them.`}
+      />
+
+      <div className="flex max-w-2xl flex-col gap-4">
         <div
           role="tablist"
           aria-label="Content source"
@@ -230,7 +225,7 @@ export function AddContentModal({
             ) : (
               <ul
                 aria-label="Pick source streams"
-                className="grid max-h-80 select-none grid-cols-2 gap-2 overflow-y-auto rounded-xl border border-edge bg-bg p-2 sm:grid-cols-3"
+                className="grid max-h-[28rem] select-none grid-cols-2 gap-2 overflow-y-auto rounded-xl border border-edge bg-bg p-2 sm:grid-cols-3"
               >
                 {pastStreams.map((s) => {
                   const selected = isSelected(s.startedAt)
@@ -353,6 +348,6 @@ export function AddContentModal({
           <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
         )}
       </div>
-    </Modal>
+    </div>
   )
 }

@@ -40,6 +40,7 @@ export type ViewId =
   | 'plan-stream'
   | 'plan-video'
   | 'video-plan'
+  | 'add-plan-content'
   | 'edit-series'
   | 'edit-routine'
   | 'widget-details'

@@ -46,6 +46,7 @@ import {StreamWidgetDetails, type WidgetTab} from './views/StreamWidgetDetails'
 import {Videos} from './views/Videos'
 import {VideoStyle} from './views/VideoStyle'
 import {VideoDetails} from './views/VideoDetails'
+import {AddPlanContent} from './views/AddPlanContent'
 import {VideoPlanDetails, type VideoPlanTab} from './views/VideoPlanDetails'
 import {Settings, type SettingsTab} from './views/Settings'
 import {Profile, type ProfileTab} from './views/Profile'
@@ -608,6 +609,8 @@ function App() {
           : 'Plan a video'
       case 'video-plan':
         return cur.videoPlan?.title || 'Video plan'
+      case 'add-plan-content':
+        return 'Add content'
       case 'project-details':
         return cur.project ? cur.project.title || 'Project' : 'New project'
       case 'sponsors':
@@ -699,6 +702,7 @@ function App() {
                     : view === 'video-details' ||
                         view === 'plan-video' ||
                         view === 'video-plan' ||
+                        view === 'add-plan-content' ||
                         view === 'video-style'
                       ? 'videos'
                       : view === 'channel-details'
@@ -874,7 +878,17 @@ function App() {
                 initialTab={cur.videoPlanTab ?? undefined}
                 onEdit={openPlanVideo}
                 onOpenStream={openStreamDetails}
+                onAddContent={(videoPlan) =>
+                  navigate({view: 'add-plan-content', videoPlan})
+                }
                 onDeleted={backToVideos}
+              />
+            )}
+            {view === 'add-plan-content' && cur.videoPlan && (
+              <AddPlanContent
+                plan={cur.videoPlan}
+                onBack={() => back()}
+                onUpdated={(videoPlan) => navigate({videoPlan})}
               />
             )}
             {view === 'plan-video' && (
