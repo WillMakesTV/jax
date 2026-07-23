@@ -145,3 +145,61 @@ func TestUnifiedChatEndpoints(t *testing.T) {
 		t.Fatalf("disabled widget page: code %d", rec.Code)
 	}
 }
+
+func TestIssueTrackerEndpoints(t *testing.T) {
+	a := newTestApp(t)
+	a.mediaBaseURL = "http://127.0.0.1:9999"
+	h := mediaHandler{app: a}
+
+	// Empty queue: the page serves and the feed is an empty list.
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/issue-tracker", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "Issue Tracker") {
+		t.Fatalf("page: code %d", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/issue-tracker/data", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"issues":[]`) {
+		t.Fatalf("empty data: %q", rec.Body.String())
+	}
+
+	// A filed report shows up right away, Queued; a checked-out one reads
+	// Working; recording an issue number reads Working #N.
+	queued, err := a.SaveDebugReport(DebugReport{Description: "cards overflow"})
+	if err != nil {
+		t.Fatalf("file report: %v", err)
+	}
+	claimed, _ := a.SaveDebugReport(DebugReport{Description: "banner clips"})
+	if _, err := a.CheckOutDebugReport(claimed.ID); err != nil {
+		t.Fatalf("check out: %v", err)
+	}
+	withIssue, _ := a.SaveDebugReport(DebugReport{Description: "needs a fix"})
+	withIssue.IssueNumber = 42
+	if _, err := a.SaveDebugReport(withIssue); err != nil {
+		t.Fatalf("record issue: %v", err)
+	}
+
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/issue-tracker/data", nil))
+	body := rec.Body.String()
+	for _, want := range []string{
+		"cards overflow", `"status":"Queued"`,
+		"banner clips", `"status":"Working"`,
+		"needs a fix", `"status":"Working #42"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("data missing %q:\n%s", want, body)
+		}
+	}
+	_ = queued
+
+	// Disabling the widget 404s its page, like the rest of the catalog.
+	if _, err := a.SetSystemWidgetEnabled(systemWidgetIssueTracker, false); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/syswidget/issue-tracker", nil))
+	if rec.Code != 404 {
+		t.Fatalf("disabled page: code %d", rec.Code)
+	}
+}
