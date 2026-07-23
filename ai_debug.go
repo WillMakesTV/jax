@@ -44,7 +44,8 @@ type FixNotice struct {
 	Route       string `json:"route"`       // app view id the report was filed on
 	IssueURL    string `json:"issueUrl"`    // GitHub issue the fix landed under
 	IssueNumber int64  `json:"issueNumber"`
-	ResolvedAt  string `json:"resolvedAt"` // RFC3339
+	CreatedAt   string `json:"createdAt"`  // when the report was filed (RFC3339)
+	ResolvedAt  string `json:"resolvedAt"` // when the fix landed (RFC3339)
 }
 
 // --- Store ------------------------------------------------------------------
@@ -190,12 +191,12 @@ func (s *Store) searchDebugReports(q string) ([]DebugReport, error) {
 	return out, rows.Err()
 }
 
-const fixNoticeColumns = `id, report_id, title, description, route, issue_url, issue_number, resolved_at`
+const fixNoticeColumns = `id, report_id, title, description, route, issue_url, issue_number, created_at, resolved_at`
 
 func scanFixNotice(row interface{ Scan(...any) error }) (FixNotice, error) {
 	var n FixNotice
 	err := row.Scan(&n.ID, &n.ReportID, &n.Title, &n.Description, &n.Route,
-		&n.IssueURL, &n.IssueNumber, &n.ResolvedAt)
+		&n.IssueURL, &n.IssueNumber, &n.CreatedAt, &n.ResolvedAt)
 	return n, err
 }
 
@@ -203,9 +204,9 @@ func scanFixNotice(row interface{ Scan(...any) error }) (FixNotice, error) {
 // with its assigned id.
 func (s *Store) insertFixNotice(n FixNotice) (FixNotice, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO dev_ai_debug_fixed (report_id, title, description, route, issue_url, issue_number, resolved_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		n.ReportID, n.Title, n.Description, n.Route, n.IssueURL, n.IssueNumber, n.ResolvedAt)
+		`INSERT INTO dev_ai_debug_fixed (report_id, title, description, route, issue_url, issue_number, created_at, resolved_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		n.ReportID, n.Title, n.Description, n.Route, n.IssueURL, n.IssueNumber, n.CreatedAt, n.ResolvedAt)
 	if err != nil {
 		return FixNotice{}, err
 	}
@@ -357,6 +358,7 @@ func (a *App) ResolveDebugReport(id int64) error {
 		Route:       report.Route,
 		IssueURL:    report.IssueURL,
 		IssueNumber: report.IssueNumber,
+		CreatedAt:   report.CreatedAt,
 		ResolvedAt:  time.Now().UTC().Format(time.RFC3339),
 	})
 	if err != nil {

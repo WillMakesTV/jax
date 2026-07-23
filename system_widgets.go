@@ -1404,6 +1404,10 @@ func (a *App) issueTrackerDoneItems() []widgetSourceItem {
 				"Message":   fixNoticeMessage(fx),
 				"Status":    status,
 				"Completed": fx.ResolvedAt,
+				// The report's filing time, so the display can show how long
+				// the fix took ("" for reports resolved before the history
+				// recorded it).
+				"Started": fx.CreatedAt,
 			},
 		})
 	}
@@ -1687,10 +1691,19 @@ const issueTrackerDefaultTemplate = `<div className="iqw-wrap">
       var working = !done && /\d|work/i.test(status)
       var completed = item.values['Completed']
       var when = ''
+      var took = ''
       if (completed) {
         var d = new Date(completed)
         if (!isNaN(d.getTime())) {
           when = d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})
+        }
+        var started = new Date(item.values['Started'] || '')
+        if (!isNaN(started.getTime()) && !isNaN(d.getTime())) {
+          var secs = Math.max(0, Math.round((d.getTime() - started.getTime()) / 1000))
+          var h = Math.floor(secs / 3600)
+          var m = Math.floor((secs % 3600) / 60)
+          var s = secs % 60
+          took = 'took ' + (h > 0 ? h + 'h ' + m + 'm' : m > 0 ? m + 'm ' + s + 's' : s + 's')
         }
       }
       return (
@@ -1705,6 +1718,7 @@ const issueTrackerDefaultTemplate = `<div className="iqw-wrap">
           </div>
           <div className="iqw-meta">
             <div className="iqw-status">{status || 'Queued'}</div>
+            {took ? <div className="iqw-took">{took}</div> : null}
             {when ? <div className="iqw-when">{when}</div> : null}
           </div>
         </div>
@@ -1741,6 +1755,8 @@ const issueTrackerDefaultCSS = `body { margin: 0; padding: 0; background: transp
 .iqw.done .iqw-status { background: #22c55e; color: #04170a; }
 .iqw.done { opacity: 0.85; }
 .iqw.done .iqw-message { text-shadow: none; color: #cbd5e1; }
+.iqw-took { font-size: 11px; font-weight: 800; color: #86efac;
+  font-variant-numeric: tabular-nums; }
 .iqw-when { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.55);
   font-variant-numeric: tabular-nums; }
 .iqw-empty { width: 100%; box-sizing: border-box; padding: 16px 20px;

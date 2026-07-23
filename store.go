@@ -259,6 +259,7 @@ CREATE TABLE IF NOT EXISTS dev_ai_debug_fixed (
 	issue_url    TEXT NOT NULL DEFAULT '',
 	issue_number INTEGER NOT NULL DEFAULT 0,
 	read         INTEGER NOT NULL DEFAULT 0,
+	created_at   TEXT NOT NULL DEFAULT '',
 	resolved_at  TEXT NOT NULL
 );`
 	if _, err := s.db.Exec(schema); err != nil {
@@ -276,6 +277,7 @@ CREATE TABLE IF NOT EXISTS dev_ai_debug_fixed (
 		`ALTER TABLE dev_ai_debug_fixed ADD COLUMN issue_url TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE dev_ai_debug_fixed ADD COLUMN issue_number INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE dev_ai_debug_fixed ADD COLUMN read INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE dev_ai_debug_fixed ADD COLUMN created_at TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE chat_messages ADD COLUMN rich_text TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil &&

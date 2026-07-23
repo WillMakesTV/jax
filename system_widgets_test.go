@@ -325,11 +325,13 @@ func TestIssueTrackerShowsRecentCompletions(t *testing.T) {
 	a.mediaBaseURL = "http://127.0.0.1:9999"
 	h := mediaHandler{app: a}
 
-	// A report resolved just now shows as Done with its finish time; one
-	// resolved long ago has aged off the board.
+	// A report resolved just now shows as Done with its finish time and how
+	// long it took; one resolved long ago has aged off the board.
+	now := time.Now().UTC()
 	if _, err := a.store.insertFixNotice(FixNotice{
 		ReportID: 1, Title: "fresh fix", IssueNumber: 7,
-		ResolvedAt: time.Now().UTC().Format(time.RFC3339),
+		CreatedAt:  now.Add(-5 * time.Minute).Format(time.RFC3339),
+		ResolvedAt: now.Format(time.RFC3339),
 	}); err != nil {
 		t.Fatalf("insert fresh: %v", err)
 	}
@@ -346,8 +348,8 @@ func TestIssueTrackerShowsRecentCompletions(t *testing.T) {
 	if !strings.Contains(body, "fresh fix") || !strings.Contains(body, `"Status":"Done #7"`) {
 		t.Fatalf("recent completion should show as Done: %s", body)
 	}
-	if !strings.Contains(body, `"Completed":`) {
-		t.Fatalf("done item should carry its completion time: %s", body)
+	if !strings.Contains(body, `"Completed":`) || !strings.Contains(body, `"Started":`) {
+		t.Fatalf("done item should carry its completion and start time: %s", body)
 	}
 	if strings.Contains(body, "old fix") {
 		t.Fatalf("an aged-off completion should not show: %s", body)
