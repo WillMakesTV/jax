@@ -1647,9 +1647,9 @@ const issueTrackerDefaultTemplate = `<div className="iqw-wrap">
 
 const issueTrackerDefaultCSS = `body { margin: 0; padding: 0; background: transparent; overflow: hidden;
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
-.iqw-wrap { width: 500px; height: 650px; max-width: 100%; max-height: 100vh;
-  box-sizing: border-box; padding: 24px; overflow: hidden; }
-.iqw-list { display: flex; flex-direction: column; gap: 10px; }
+.iqw-wrap { width: 500px; height: 650px; box-sizing: border-box; padding: 24px;
+  overflow: hidden; }
+.iqw-list { display: flex; flex-direction: column; gap: 10px; width: 100%; }
 .iqw { display: flex; align-items: center; gap: 16px; width: 100%;
   box-sizing: border-box; padding: 16px 20px; border-radius: 16px;
   background: linear-gradient(135deg, rgba(15,23,42,0.94), rgba(30,41,59,0.94));
