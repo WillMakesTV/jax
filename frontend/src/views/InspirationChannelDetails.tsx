@@ -13,10 +13,12 @@ import {
   Sparkles,
   Trash2,
   Users,
+  X,
 } from 'lucide-react'
 import clsx from 'clsx'
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 import {
+  CancelInspirationVideo,
   DeleteInspirationVideo,
   GetInspirationChannel,
   GetInspirationTakeaways,
@@ -832,6 +834,20 @@ function VideoCard({
                   <Play size={12} aria-hidden />
                 )}
                 {video.status === 'error' ? 'Try again' : 'Process'}
+              </button>
+            )}
+            {working && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void CancelInspirationVideo(video.id)
+                }}
+                title="Stop processing this video and take it out of the queue"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-semibold text-fg transition-colors hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
+              >
+                <X size={12} aria-hidden />
+                Stop
               </button>
             )}
             <button

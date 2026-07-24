@@ -3,6 +3,7 @@ package main
 import (
 	"bp-temp/internal/platform"
 	"bufio"
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -398,7 +399,7 @@ func (a *App) refreshInspirationChannel(channelURL string) {
 		return
 	}
 	var found InspirationChannel
-	err := a.runInspirationSidecar(func(line sidecarLine) {
+	err := a.runInspirationSidecar(context.Background(), func(line sidecarLine) {
 		if line.Status == "channel" {
 			found = inspirationChannelOf(line.Channel)
 		}
@@ -459,7 +460,7 @@ func (a *App) emitInspirationStatus(id, title, status, detail string, progress i
 
 // inspirationSidecar writes the embedded fetcher and returns the command to
 // run it with the given arguments.
-func (a *App) inspirationSidecar(args ...string) (*exec.Cmd, error) {
+func (a *App) inspirationSidecar(ctx context.Context, args ...string) (*exec.Cmd, error) {
 	dir, err := dataDir()
 	if err != nil {
 		return nil, fmt.Errorf("no data directory: %w", err)
@@ -472,7 +473,7 @@ func (a *App) inspirationSidecar(args ...string) (*exec.Cmd, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(python, append(append(pyArgs, script), args...)...)
+	cmd := exec.CommandContext(ctx, python, append(append(pyArgs, script), args...)...)
 	platform.BackgroundProcess(cmd) // never outrank live capture
 	return cmd, nil
 }
@@ -542,8 +543,8 @@ type sidecarLine struct {
 
 // runInspirationSidecar runs the fetcher and hands every parsed line to onLine.
 // The returned error carries the sidecar's own error line when it reported one.
-func (a *App) runInspirationSidecar(onLine func(sidecarLine), args ...string) error {
-	cmd, err := a.inspirationSidecar(args...)
+func (a *App) runInspirationSidecar(ctx context.Context, onLine func(sidecarLine), args ...string) error {
+	cmd, err := a.inspirationSidecar(ctx, args...)
 	if err != nil {
 		return err
 	}
@@ -600,6 +601,59 @@ var inspirationQueue struct {
 	sync.Mutex
 	ids     []string
 	running bool
+	// current is the id being worked (""=idle), cancel stops its running
+	// download/transcription, and canceled marks ids the producer pulled so a
+	// mid-run worker knows to stop rather than finish.
+	current  string
+	cancel   context.CancelFunc
+	canceled map[string]bool
+}
+
+// inspirationIsCanceled reports whether the producer asked to stop this id.
+func inspirationIsCanceled(id string) bool {
+	inspirationQueue.Lock()
+	defer inspirationQueue.Unlock()
+	return inspirationQueue.canceled[id]
+}
+
+// clearInspirationCanceled forgets the cancel flags for the given ids (a run's
+// id can change from its pending id to the platform's), so a later re-process
+// is not blocked by a stale flag.
+func clearInspirationCanceled(ids ...string) {
+	inspirationQueue.Lock()
+	defer inspirationQueue.Unlock()
+	for _, id := range ids {
+		delete(inspirationQueue.canceled, id)
+	}
+}
+
+// CancelInspirationVideo pulls a video out of the processing queue and, if it
+// is the one being worked, stops its running download/transcription. The video
+// drops back to "tracked" so it can be processed again later.
+func (a *App) CancelInspirationVideo(id string) error {
+	inspirationQueue.Lock()
+	kept := inspirationQueue.ids[:0]
+	for _, q := range inspirationQueue.ids {
+		if q != id {
+			kept = append(kept, q)
+		}
+	}
+	inspirationQueue.ids = kept
+	if inspirationQueue.canceled == nil {
+		inspirationQueue.canceled = map[string]bool{}
+	}
+	inspirationQueue.canceled[id] = true
+	if inspirationQueue.current == id && inspirationQueue.cancel != nil {
+		inspirationQueue.cancel()
+	}
+	inspirationQueue.Unlock()
+
+	// Only reset a video the pipeline still owns; a finished one keeps its
+	// result. Reverting to tracked also drops it from the in-flight list.
+	if v, err := a.GetInspirationVideo(id); err == nil && inspirationWorking(v.Status) {
+		a.inspirationStatus(id, inspirationTracked, "", 0)
+	}
+	return nil
 }
 
 // enqueueInspirationVideo puts a video in line to be processed and starts the
@@ -636,18 +690,27 @@ func (a *App) runInspirationQueue() {
 		}
 		id := inspirationQueue.ids[0]
 		inspirationQueue.ids = inspirationQueue.ids[1:]
+		ctx, cancel := context.WithCancel(context.Background())
+		inspirationQueue.current = id
+		inspirationQueue.cancel = cancel
 		inspirationQueue.Unlock()
 
 		video, err := a.GetInspirationVideo(id)
-		if err != nil {
-			// Deleted while it waited; nothing to process.
-			continue
-		}
-		if video.URL == "" {
+		switch {
+		case err != nil || inspirationIsCanceled(id):
+			// Deleted or cancelled while it waited; nothing to process.
+		case video.URL == "":
 			a.inspirationStatus(id, inspirationError, "that video has no URL to fetch", 0)
-			continue
+		default:
+			a.processInspirationVideo(ctx, id, video.URL)
 		}
-		a.processInspirationVideo(id, video.URL)
+
+		cancel()
+		inspirationQueue.Lock()
+		inspirationQueue.current = ""
+		inspirationQueue.cancel = nil
+		inspirationQueue.Unlock()
+		clearInspirationCanceled(id)
 	}
 }
 
@@ -725,7 +788,7 @@ func (a *App) AddInspirationChannel(channelURL string) (InspirationChannel, erro
 
 	var channel InspirationChannel
 	found := []InspirationVideo{}
-	err := a.runInspirationSidecar(func(line sidecarLine) {
+	err := a.runInspirationSidecar(context.Background(), func(line sidecarLine) {
 		switch line.Status {
 		case "channel":
 			channel = inspirationChannelOf(line.Channel)
@@ -832,7 +895,7 @@ func (a *App) BrowseInspirationChannel(channelID string, limit int) ([]Inspirati
 	}
 
 	out := []InspirationCandidate{}
-	err := a.runInspirationSidecar(func(line sidecarLine) {
+	err := a.runInspirationSidecar(context.Background(), func(line sidecarLine) {
 		if line.Status != "video" || line.Video.ID == "" {
 			return
 		}
@@ -933,7 +996,7 @@ func (a *App) AddInspirationVideo(videoURL string) (InspirationVideo, error) {
 	// waits its turn, rather than a URL that only fills in once the download
 	// starts.
 	var meta sidecarLine
-	err := a.runInspirationSidecar(func(line sidecarLine) {
+	err := a.runInspirationSidecar(context.Background(), func(line sidecarLine) {
 		if line.Status == "meta" {
 			meta = line
 		}
@@ -1017,7 +1080,24 @@ func (a *App) ProcessInspirationVideo(id string) error {
 
 // processInspirationVideo is the pipeline: download, transcribe, analyse.
 // Each step records its status so a page open on the video follows along.
-func (a *App) processInspirationVideo(id, videoURL string) {
+func (a *App) processInspirationVideo(ctx context.Context, id, videoURL string) {
+	origID := id
+	// The run's id can switch from its pending id to the platform's mid-way;
+	// clear both cancel flags on the way out so a later re-process is not
+	// blocked by a stale one.
+	defer func() { clearInspirationCanceled(origID, id) }()
+
+	// canceled reports whether the producer pulled this run (by either id).
+	canceled := func() bool {
+		return ctx.Err() != nil || inspirationIsCanceled(origID) || inspirationIsCanceled(id)
+	}
+	// stop reverts a pulled run to tracked, drops any partial download, and
+	// stops the pipeline advancing.
+	stop := func() {
+		a.dropInspirationDownload(id)
+		a.inspirationStatus(id, inspirationTracked, "", 0)
+	}
+
 	root, err := a.inspirationRoot()
 	if err != nil {
 		a.inspirationStatus(id, inspirationError, err.Error(), 0)
@@ -1027,7 +1107,7 @@ func (a *App) processInspirationVideo(id, videoURL string) {
 	// --- Download -----------------------------------------------------
 	var meta sidecarLine
 	var folder, file, thumb string
-	err = a.runInspirationSidecar(func(line sidecarLine) {
+	err = a.runInspirationSidecar(ctx, func(line sidecarLine) {
 		switch line.Status {
 		case "meta":
 			meta = line
@@ -1044,6 +1124,10 @@ func (a *App) processInspirationVideo(id, videoURL string) {
 			thumb = line.Thumb
 		}
 	}, "--url", videoURL, "--dir", root)
+	if canceled() {
+		stop()
+		return
+	}
 	if err != nil {
 		a.inspirationStatus(id, inspirationError, err.Error(), 0)
 		return
@@ -1112,8 +1196,17 @@ func (a *App) processInspirationVideo(id, videoURL string) {
 	go a.refreshInspirationChannel(firstNonEmpty(meta.Video.Channel.URL, meta.Video.Channel.Handle))
 	a.emitInspirationStatus(id, meta.Video.Title, inspirationTranscribing, "", 100)
 
+	if canceled() {
+		stop()
+		return
+	}
+
 	// --- Transcribe ---------------------------------------------------
-	lines, err := a.transcribeInspirationVideo(id, filepath.Join(root, filepath.FromSlash(folder), file))
+	lines, err := a.transcribeInspirationVideo(ctx, id, filepath.Join(root, filepath.FromSlash(folder), file))
+	if canceled() {
+		stop()
+		return
+	}
 	if err != nil {
 		a.inspirationStatus(id, inspirationError, err.Error(), 0)
 		return
@@ -1127,6 +1220,10 @@ func (a *App) processInspirationVideo(id, videoURL string) {
 	// --- Analyse ------------------------------------------------------
 	if err := a.analyzeInspirationVideo(id); err != nil {
 		a.inspirationStatus(id, inspirationError, err.Error(), 0)
+		return
+	}
+	if canceled() {
+		stop()
 		return
 	}
 
@@ -1170,7 +1267,7 @@ func (a *App) dropInspirationDownload(id string) {
 
 // transcribeInspirationVideo runs the faster-whisper sidecar over the local
 // copy and returns its utterances in video-relative seconds.
-func (a *App) transcribeInspirationVideo(id, path string) ([]InspirationLine, error) {
+func (a *App) transcribeInspirationVideo(ctx context.Context, id, path string) ([]InspirationLine, error) {
 	if _, err := os.Stat(path); err != nil {
 		return nil, fmt.Errorf("the downloaded video is missing: %w", err)
 	}
@@ -1186,7 +1283,7 @@ func (a *App) transcribeInspirationVideo(id, path string) ([]InspirationLine, er
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(python, append(append(pyArgs, script),
+	cmd := exec.CommandContext(ctx, python, append(append(pyArgs, script),
 		"--input", path, "--model", "small")...)
 	platform.BackgroundProcess(cmd)
 

@@ -212,3 +212,57 @@ func TestInspirationInFlight(t *testing.T) {
 		t.Fatalf("in-flight video should carry its progress: %+v", got[1])
 	}
 }
+
+func TestCancelInspirationVideo(t *testing.T) {
+	a := newTestApp(t)
+
+	lib := a.getInspiration()
+	lib.Videos = append(lib.Videos,
+		InspirationVideo{ID: "q1", Title: "Queued", Status: inspirationQueued},
+		InspirationVideo{ID: "done", Title: "Studied", Status: inspirationReady},
+	)
+	if err := a.saveInspiration(lib); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	// Simulate a populated queue with q1 waiting.
+	inspirationQueue.Lock()
+	inspirationQueue.ids = []string{"q1"}
+	inspirationQueue.canceled = nil
+	inspirationQueue.Unlock()
+	t.Cleanup(func() {
+		inspirationQueue.Lock()
+		inspirationQueue.ids = nil
+		inspirationQueue.canceled = nil
+		inspirationQueue.current = ""
+		inspirationQueue.cancel = nil
+		inspirationQueue.Unlock()
+	})
+
+	// Cancelling a queued video pulls it from the line, flags it, and drops it
+	// back to tracked so it leaves the in-flight list.
+	if err := a.CancelInspirationVideo("q1"); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	inspirationQueue.Lock()
+	inLine := len(inspirationQueue.ids)
+	flagged := inspirationQueue.canceled["q1"]
+	inspirationQueue.Unlock()
+	if inLine != 0 {
+		t.Fatalf("q1 should be pulled from the queue, %d left", inLine)
+	}
+	if !flagged {
+		t.Fatal("q1 should be flagged cancelled")
+	}
+	if v, _ := a.GetInspirationVideo("q1"); v.Status != inspirationTracked {
+		t.Fatalf("q1 should revert to tracked, got %q", v.Status)
+	}
+
+	// A finished video keeps its result — cancel leaves it alone.
+	if err := a.CancelInspirationVideo("done"); err != nil {
+		t.Fatalf("cancel done: %v", err)
+	}
+	if v, _ := a.GetInspirationVideo("done"); v.Status != inspirationReady {
+		t.Fatalf("a studied video must keep its result, got %q", v.Status)
+	}
+}

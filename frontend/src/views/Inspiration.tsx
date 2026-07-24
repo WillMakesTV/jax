@@ -8,11 +8,13 @@ import {
   Plus,
   Sparkles,
   Trash2,
+  X,
 } from 'lucide-react'
 import {useCallback, useEffect, useState} from 'react'
 import {
   AddInspirationChannel,
   AddInspirationVideo,
+  CancelInspirationVideo,
   DeleteInspirationChannel,
   GetInspirationChannels,
   GetInspirationVideos,
@@ -231,6 +233,16 @@ export function Inspiration({
                   )}
                 </span>
                 <StatusPill video={v} />
+                <button
+                  type="button"
+                  onClick={() => void CancelInspirationVideo(v.id)}
+                  title="Stop processing this video and take it out of the queue"
+                  aria-label="Stop processing"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-edge bg-bg px-2 py-1 text-xs font-medium text-fg-muted transition-colors hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
+                >
+                  <X size={13} aria-hidden />
+                  Stop
+                </button>
               </li>
             ))}
           </ul>
