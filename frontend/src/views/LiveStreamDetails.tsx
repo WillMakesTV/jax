@@ -6,12 +6,15 @@ import {
   Eye,
   Gauge,
   Radio,
+  Tag,
   Users,
 } from 'lucide-react'
 import {useEffect, useState} from 'react'
 import {
   GetContentSeries,
   GetLiveStreamMeta,
+  GetPlannedStreams,
+  GetPlanSessions,
   GetSeriesTypes,
   NextEpisodeNumber,
   SetPastStreamSeries,
@@ -57,11 +60,38 @@ export function LiveStreamDetails({onBack}: LiveStreamDetailsProps) {
   const {unreadCount: unreadChat} = useChat()
   const {unreadCount: unreadEvents} = useEvents()
   const [tab, setTab] = useState<LiveDetailsTab>('overview')
+  // The plan on the air, if this broadcast was started from one: its outline
+  // (title, description, thumbnail, tags) is shown here so the live details
+  // page carries the whole stream plan rather than a separate page.
+  const [plan, setPlan] = useState<main.PlannedStream | null>(null)
 
   // Detailed metrics view: poll platforms at the fast cadence while open.
   useEffect(() => requestFastPolling(), [requestFastPolling])
 
   const live = platforms.filter((p) => p.live)
+
+  // Resolve the on-air plan from the open broadcast session (endedAt === '').
+  useEffect(() => {
+    if (live.length === 0) {
+      setPlan(null)
+      return
+    }
+    let cancelled = false
+    Promise.all([GetPlannedStreams(), GetPlanSessions()])
+      .then(([plans, sessions]) => {
+        if (cancelled) return
+        const open = (sessions ?? []).find((s) => s.endedAt === '')
+        setPlan(
+          open
+            ? ((plans ?? []).find((p) => p.id === open.planId) ?? null)
+            : null,
+        )
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [live.length])
   const {totalViewers, uptimeMs} = aggregateLive(platforms, obs)
 
   const tabs: {id: LiveDetailsTab; label: string; badge?: number}[] = [
@@ -90,9 +120,7 @@ export function LiveStreamDetails({onBack}: LiveStreamDetailsProps) {
           >
             <Radio size={20} />
           </span>
-          <p className="text-sm font-semibold text-fg">
-            The stream has ended
-          </p>
+          <p className="text-sm font-semibold text-fg">The stream has ended</p>
           <p className="mt-1 max-w-sm text-sm text-fg-muted">
             Once its VODs are processed it will appear under Broadcasting.
           </p>
@@ -146,11 +174,21 @@ export function LiveStreamDetails({onBack}: LiveStreamDetailsProps) {
                   .join(' + ')}.`}
               />
 
-              <LiveSeriesEpisode
-                startedAt={
-                  live.map((p) => p.startedAt).filter(Boolean).sort()[0] ?? ''
-                }
-              />
+              {/* Started from a plan? Show the plan's outline here — the live
+                  details page is where that plan now lives. Otherwise offer
+                  the manual series/episode assignment. */}
+              {plan ? (
+                <LivePlanOverview plan={plan} />
+              ) : (
+                <LiveSeriesEpisode
+                  startedAt={
+                    live
+                      .map((p) => p.startedAt)
+                      .filter(Boolean)
+                      .sort()[0] ?? ''
+                  }
+                />
+              )}
 
               {/* Aggregate metrics. */}
               <section
@@ -203,6 +241,80 @@ export function LiveStreamDetails({onBack}: LiveStreamDetailsProps) {
 }
 
 /**
+ * The on-air plan's outline, shown atop the live details overview: its series
+ * and episode, title, description, thumbnail, and tags — the same information
+ * the plan's own broadcast page carries, so the live broadcast is treated as
+ * the stream plan itself while it airs.
+ */
+function LivePlanOverview({plan}: {plan: main.PlannedStream}) {
+  const [seriesTitle, setSeriesTitle] = useState('')
+
+  useEffect(() => {
+    if (!plan.seriesId) {
+      setSeriesTitle('')
+      return
+    }
+    GetContentSeries()
+      .then((s) =>
+        setSeriesTitle(
+          (s ?? []).find((x) => x.id === plan.seriesId)?.title ?? '',
+        ),
+      )
+      .catch(() => {})
+  }, [plan.seriesId])
+
+  const eyebrow = [
+    seriesTitle,
+    plan.episodeNumber > 0 ? `Episode ${plan.episodeNumber}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  return (
+    <section
+      aria-label="Stream plan"
+      className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-start xl:gap-8"
+    >
+      <div className="min-w-0 xl:flex-1">
+        {eyebrow && (
+          <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+            {eyebrow}
+          </p>
+        )}
+        <h2 className="mt-1 text-xl font-semibold tracking-tight text-fg">
+          {plan.title}
+        </h2>
+        {plan.description && (
+          <p className="mt-3 whitespace-pre-wrap text-sm text-fg-muted">
+            {plan.description}
+          </p>
+        )}
+        {(plan.tags ?? []).length > 0 && (
+          <div className="mt-4 flex flex-wrap items-center gap-1.5">
+            <Tag size={13} aria-hidden className="text-fg-muted" />
+            {(plan.tags ?? []).map((t) => (
+              <span
+                key={t}
+                className="rounded-full border border-edge bg-surface px-2.5 py-1 text-xs font-medium text-fg-muted"
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      {plan.thumbnailUrl && (
+        <img
+          src={plan.thumbnailUrl}
+          alt="Broadcast thumbnail"
+          className="aspect-video w-full rounded-lg border border-edge object-cover xl:w-80 xl:shrink-0"
+        />
+      )}
+    </section>
+  )
+}
+
+/**
  * Series/episode assignment for the running broadcast, mirroring the past
  * stream details page. VOD urls don't exist yet, so assignments key on the
  * go-live time ("live|<startedAt>"); once the finished stream's VODs appear,
@@ -222,7 +334,11 @@ function LiveSeriesEpisode({startedAt}: {startedAt: string}) {
   useEffect(() => {
     if (!startedAt) return
     let cancelled = false
-    Promise.all([GetContentSeries(), GetSeriesTypes(), GetLiveStreamMeta(startedAt)])
+    Promise.all([
+      GetContentSeries(),
+      GetSeriesTypes(),
+      GetLiveStreamMeta(startedAt),
+    ])
       .then(([s, t, meta]) => {
         if (cancelled) return
         setSeries(s ?? [])
@@ -248,7 +364,8 @@ function LiveSeriesEpisode({startedAt}: {startedAt: string}) {
     let cancelled = false
     NextEpisodeNumber(seriesId)
       .then((n) => {
-        if (!cancelled && n > 0) setNumber((cur) => (cur === '' ? String(n) : cur))
+        if (!cancelled && n > 0)
+          setNumber((cur) => (cur === '' ? String(n) : cur))
       })
       .catch(() => {})
     return () => {

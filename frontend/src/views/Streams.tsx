@@ -1,7 +1,6 @@
 import {
   Calendar,
   CalendarPlus,
-  Clapperboard,
   Eye,
   HardDrive,
   Link2,
@@ -177,12 +176,9 @@ function HeroStat({
 export function PastStreamsSection({
   onOpenStream,
   onOpenLive,
-  onPlanVideo,
 }: {
   onOpenStream: (stream: main.PastStream) => void
   onOpenLive: () => void
-  /** Open the "Plan a video" form (a short- or long-form video plan). */
-  onPlanVideo?: () => void
 }) {
   const {platforms} = useLiveData()
   // Maps each stream to its downloaded copy (if any) so a card with a
@@ -368,18 +364,6 @@ export function PastStreamsSection({
                 </button>
               )}
             </div>
-          )}
-          {/* Plan a produced video (short or long form) — the Videos-page
-            counterpart of "Plan a stream"; plans surface atop that page. */}
-          {onPlanVideo && (
-            <button
-              type="button"
-              onClick={onPlanVideo}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90"
-            >
-              <Clapperboard size={14} aria-hidden />
-              Plan a video
-            </button>
           )}
         </div>
       </div>
@@ -662,10 +646,14 @@ function PastStreamCard({
 export function PlanningSection({
   onPlanStream,
   onOpenPlan,
+  onOpenLive,
 }: {
   onPlanStream: () => void
   /** Open a planned stream's own view/edit page. */
   onOpenPlan: (plan: main.PlannedStream) => void
+  /** Open the live details page — where the on-air plan lives while it
+   *  broadcasts, so it isn't opened as a separate plan page. */
+  onOpenLive: () => void
 }) {
   const [plans, setPlans] = useState<main.PlannedStream[]>([])
   // Series titles for the plan cards' series tags, keyed by series id.
@@ -752,22 +740,30 @@ export function PlanningSection({
       ) : (
         // Three across on medium viewports, five at full width.
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
-          {plans.map((plan) => (
-            <PlanCard
-              key={plan.id}
-              plan={plan}
-              seriesTitle={seriesTitles[plan.seriesId] ?? ''}
-              session={sessions.find((s) => s.planId === plan.id) ?? null}
-              onOpen={() => onOpenPlan(plan)}
-              onDelete={() => setToDelete(plan)}
-              onConcluded={() =>
-                setPlans((prev) => prev.filter((p) => p.id !== plan.id))
-              }
-              onReset={() =>
-                setSessions((prev) => prev.filter((s) => s.planId !== plan.id))
-              }
-            />
-          ))}
+          {plans.map((plan) => {
+            const session = sessions.find((s) => s.planId === plan.id) ?? null
+            // The plan on the air is the live broadcast: open it there rather
+            // than as its own plan page.
+            const onAir = streaming && session?.endedAt === ''
+            return (
+              <PlanCard
+                key={plan.id}
+                plan={plan}
+                seriesTitle={seriesTitles[plan.seriesId] ?? ''}
+                session={session}
+                onOpen={() => (onAir ? onOpenLive() : onOpenPlan(plan))}
+                onDelete={() => setToDelete(plan)}
+                onConcluded={() =>
+                  setPlans((prev) => prev.filter((p) => p.id !== plan.id))
+                }
+                onReset={() =>
+                  setSessions((prev) =>
+                    prev.filter((s) => s.planId !== plan.id),
+                  )
+                }
+              />
+            )
+          })}
         </ul>
       )}
 

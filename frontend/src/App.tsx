@@ -783,7 +783,6 @@ function App() {
                 onPlanStream={openPlanStream}
                 onOpenBroadcast={openBroadcastPlan}
                 onEditSeries={openEditSeries}
-                onPlanVideo={() => openPlanVideo(null)}
               />
             )}
             {view === 'plan-stream' && (

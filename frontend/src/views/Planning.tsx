@@ -33,8 +33,6 @@ interface PlanningProps {
   onOpenBroadcast: (plan: main.PlannedStream) => void
   /** Open the series editor page (null = create a new series). */
   onEditSeries: (series: main.ContentSeries | null) => void
-  /** Open the "Plan a video" form (short- or long-form video plan). */
-  onPlanVideo: () => void
 }
 
 /**
@@ -54,7 +52,6 @@ export function Planning({
   onPlanStream,
   onOpenBroadcast,
   onEditSeries,
-  onPlanVideo,
 }: PlanningProps) {
   const {unreadCount: unreadChat} = useChat()
   const {unreadCount: unreadEvents} = useEvents()
@@ -124,11 +121,11 @@ export function Planning({
           <PlanningSection
             onPlanStream={onPlanStream}
             onOpenPlan={onOpenBroadcast}
+            onOpenLive={onOpenLive}
           />
           <PastStreamsSection
             onOpenStream={onOpenStream}
             onOpenLive={onOpenLive}
-            onPlanVideo={onPlanVideo}
           />
         </div>
       )}
