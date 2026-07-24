@@ -35,6 +35,10 @@ var (
 	procSendMessageW        = user32.NewProc("SendMessageW")
 	procMoveWindow          = user32.NewProc("MoveWindow")
 	procGetClientRect       = user32.NewProc("GetClientRect")
+	procGetDC               = user32.NewProc("GetDC")
+	procReleaseDC           = user32.NewProc("ReleaseDC")
+	procSelectObject        = gdi32.NewProc("SelectObject")
+	procGetTextMetricsW     = gdi32.NewProc("GetTextMetricsW")
 	procSetForegroundWindow = user32.NewProc("SetForegroundWindow")
 	procShowWindow          = user32.NewProc("ShowWindow")
 	procUpdateWindow        = user32.NewProc("UpdateWindow")
@@ -130,7 +134,36 @@ const (
 
 	// scriptScrollTimer identifies the window's scroll timer.
 	scriptScrollTimer = 1
+
+	// scriptScrollTickMs is how often the smooth scroll advances — ~60fps, so
+	// the sub-line nudges read as continuous motion rather than steps.
+	scriptScrollTickMs = 16
 )
+
+// textMetricW mirrors the Win32 TEXTMETRICW; only the two leading LONGs are
+// read (line height = tmHeight + tmExternalLeading).
+type textMetricW struct {
+	tmHeight           int32
+	tmAscent           int32
+	tmDescent          int32
+	tmInternalLeading  int32
+	tmExternalLeading  int32
+	tmAveCharWidth     int32
+	tmMaxCharWidth     int32
+	tmWeight           int32
+	tmOverhang         int32
+	tmDigitizedAspectX int32
+	tmDigitizedAspectY int32
+	tmFirstChar        uint16
+	tmLastChar         uint16
+	tmDefaultChar      uint16
+	tmBreakChar        uint16
+	tmItalic           byte
+	tmUnderlined       byte
+	tmStruckOut        byte
+	tmPitchAndFamily   byte
+	tmCharSet          byte
+}
 
 type wndclassexw struct {
 	size       uint32
@@ -173,6 +206,16 @@ var (
 	scriptClassErr  error
 	scriptFont      uintptr
 
+	// Smooth auto-scroll state. The EDIT control only scrolls in whole lines
+	// (EM_LINESCROLL), so between line steps the edit window is nudged up by
+	// sub-line pixels to make the motion continuous. scriptLineH is the
+	// measured line height (0 = not measured, falls back to line-at-a-time),
+	// scriptScrollDy the pixels advanced per timer tick, and scriptScrollAcc
+	// the sub-line offset the edit is currently shifted by.
+	scriptLineH     int32
+	scriptScrollDy  float64
+	scriptScrollAcc float64
+
 	// The background brush for the colours currently set, rebuilt whenever
 	// they change. Kept until then so repainting never races a DeleteObject.
 	scriptBrush   uintptr
@@ -202,23 +245,52 @@ var (
 			}
 			return 1
 		case wmTimer:
-			// One line down per tick, stopping at the end rather than
-			// hammering a scroll that can no longer move.
+			// Advance the scroll, stopping at the end rather than hammering a
+			// scroll that can no longer move. With a measured line height the
+			// edit is nudged sub-line pixels each tick and stepped a whole line
+			// (EM_LINESCROLL) once a line's worth accrues, so the motion is
+			// smooth; without one it falls back to a line at a time.
 			if wparam != scriptScrollTimer {
 				break
 			}
 			scriptMu.Lock()
 			edit := scriptEdit
+			lineH := scriptLineH
+			var steps int
+			var offset int32
+			if lineH > 0 {
+				scriptScrollAcc += scriptScrollDy
+				for scriptScrollAcc >= float64(lineH) {
+					scriptScrollAcc -= float64(lineH)
+					steps++
+				}
+				offset = int32(scriptScrollAcc + 0.5)
+			} else {
+				steps = 1
+			}
 			scriptMu.Unlock()
 			if edit == 0 {
 				return 0
 			}
-			first, _, _ := procSendMessageW.Call(edit, emGetFirstVisible, 0, 0)
-			_, _, _ = procSendMessageW.Call(edit, emLineScroll, 0, 1)
-			after, _, _ := procSendMessageW.Call(edit, emGetFirstVisible, 0, 0)
-			if after == first {
+
+			ended := false
+			for i := 0; i < steps; i++ {
+				first, _, _ := procSendMessageW.Call(edit, emGetFirstVisible, 0, 0)
+				_, _, _ = procSendMessageW.Call(edit, emLineScroll, 0, 1)
+				after, _, _ := procSendMessageW.Call(edit, emGetFirstVisible, 0, 0)
+				if after == first {
+					ended = true
+					break
+				}
+			}
+			if ended {
 				// The last line is on screen; nothing left to scroll to.
 				_, _, _ = procKillTimer.Call(hwnd, scriptScrollTimer)
+				scriptResetScrollOffset()
+				return 0
+			}
+			if lineH > 0 {
+				scriptMoveEdit(hwnd, edit, offset)
 			}
 			return 0
 		case wmSize:
@@ -237,6 +309,7 @@ var (
 		case wmDestroy:
 			scriptMu.Lock()
 			scriptHwnd, scriptEdit = 0, 0
+			scriptLineH, scriptScrollAcc, scriptScrollDy = 0, 0, 0
 			scriptMu.Unlock()
 			_, _, _ = procPostQuitMessage.Call(0)
 			return 0
@@ -291,7 +364,8 @@ func scriptBrushFor(bg uint32) uintptr {
 	return scriptBrush
 }
 
-// scriptScrollInterval turns lines per minute into a timer period.
+// scriptScrollInterval turns lines per minute into a timer period — the
+// fallback cadence for a whole-line scroll when the line height is unknown.
 func scriptScrollInterval(speed int) uintptr {
 	if speed < scriptSpeedMin {
 		speed = scriptSpeedMin
@@ -302,6 +376,63 @@ func scriptScrollInterval(speed int) uintptr {
 	return uintptr(60_000 / speed)
 }
 
+// scriptScrollPixelsPerTick is how many pixels the smooth scroll advances each
+// tick to hold the requested lines-per-minute pace.
+func scriptScrollPixelsPerTick(speed int, lineH int32) float64 {
+	if speed < scriptSpeedMin {
+		speed = scriptSpeedMin
+	}
+	if speed > scriptSpeedMax {
+		speed = scriptSpeedMax
+	}
+	pxPerSec := float64(lineH) * float64(speed) / 60.0
+	return pxPerSec * float64(scriptScrollTickMs) / 1000.0
+}
+
+// scriptLineHeight measures the EDIT control's line height with its own font,
+// so the smooth scroll knows when a sub-line offset has grown into a full line.
+func scriptLineHeight(edit uintptr) int32 {
+	dc, _, _ := procGetDC.Call(edit)
+	if dc == 0 {
+		return 0
+	}
+	defer procReleaseDC.Call(edit, dc)
+	if scriptFont != 0 {
+		_, _, _ = procSelectObject.Call(dc, scriptFont)
+	}
+	var tm textMetricW
+	if r, _, _ := procGetTextMetricsW.Call(dc, uintptr(unsafe.Pointer(&tm))); r == 0 {
+		return 0
+	}
+	return tm.tmHeight + tm.tmExternalLeading
+}
+
+// scriptMoveEdit positions the edit control at a sub-line vertical offset
+// (0 = flush), sized to the window's client area.
+func scriptMoveEdit(hwnd, edit uintptr, offset int32) {
+	if hwnd == 0 || edit == 0 {
+		return
+	}
+	var rc winRect
+	_, _, _ = procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
+	w := rc.right - rc.left
+	h := rc.bottom - rc.top
+	// The edit's top `offset` pixels clip against the parent; the `offset`
+	// pixels of parent background revealed at the bottom share the edit's
+	// colour, so the shift reads as smooth motion with no seam.
+	_, _, _ = procMoveWindow.Call(edit, 0, uintptr(-int(offset)), uintptr(w), uintptr(h), 1)
+}
+
+// scriptResetScrollOffset clears the sub-line offset and puts the edit flush
+// against the top of its client area.
+func scriptResetScrollOffset() {
+	scriptMu.Lock()
+	edit, hwnd := scriptEdit, scriptHwnd
+	scriptScrollAcc = 0
+	scriptMu.Unlock()
+	scriptMoveEdit(hwnd, edit, 0)
+}
+
 // applyScriptScroll starts, restarts, or stops the window's auto-scroll.
 func applyScriptScroll(hwnd uintptr, opts ScriptWindowOptions) {
 	if hwnd == 0 {
@@ -309,10 +440,28 @@ func applyScriptScroll(hwnd uintptr, opts ScriptWindowOptions) {
 	}
 	if !opts.Scroll {
 		_, _, _ = procKillTimer.Call(hwnd, scriptScrollTimer)
+		scriptResetScrollOffset()
 		return
 	}
-	// SetTimer with an existing id replaces the period in place.
-	_, _, _ = procSetTimer.Call(hwnd, scriptScrollTimer, scriptScrollInterval(opts.Speed), 0)
+	scriptMu.Lock()
+	edit := scriptEdit
+	if scriptLineH == 0 && edit != 0 {
+		scriptLineH = scriptLineHeight(edit)
+	}
+	lineH := scriptLineH
+	if lineH > 0 {
+		scriptScrollDy = scriptScrollPixelsPerTick(opts.Speed, lineH)
+	}
+	scriptMu.Unlock()
+
+	// SetTimer with an existing id replaces the period in place. With a known
+	// line height the scroll is pixel-smooth at a fixed high tick rate; without
+	// it, fall back to a whole line at the reading cadence.
+	if lineH > 0 {
+		_, _, _ = procSetTimer.Call(hwnd, scriptScrollTimer, uintptr(scriptScrollTickMs), 0)
+	} else {
+		_, _, _ = procSetTimer.Call(hwnd, scriptScrollTimer, scriptScrollInterval(opts.Speed), 0)
+	}
 }
 
 // applyScriptTopmost moves the window into or out of the topmost band
@@ -414,8 +563,10 @@ func OpenScriptWindow(title, text string, opts ScriptWindowOptions) error {
 		_, _, _ = procSetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(utf16Ptr(title))))
 		_, _, _ = procSetWindowTextW.Call(edit, uintptr(unsafe.Pointer(utf16Ptr(text))))
 		_, _, _ = procInvalidateRect.Call(edit, 0, 1)
-		// A re-opened prompter reads from the top again.
+		// A re-opened prompter reads from the top again, with no carried-over
+		// sub-line offset.
 		_, _, _ = procSendMessageW.Call(edit, emLineScroll, 0, 0)
+		scriptResetScrollOffset()
 		applyScriptScroll(hwnd, opts)
 		_, _, _ = procShowWindow.Call(hwnd, swRestore)
 		_, _, _ = procSetForegroundWindow.Call(hwnd)
