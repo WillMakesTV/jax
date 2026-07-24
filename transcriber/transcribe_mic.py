@@ -61,6 +61,11 @@ PREROLL_FRAMES = 5  # ~160ms of audio kept before speech onset
 # right up and low latency matters more on a live tab.
 MAX_UTTERANCE_SECONDS = 8.0
 MIN_UTTERANCE_SECONDS = 0.3  # skip blips too short to contain a word
+# While speech is still going, re-transcribe the growing utterance this often
+# and emit an interim result, so words show up on screen as they are spoken
+# instead of only after the speaker pauses. The final (on pause / max length)
+# replaces it.
+PARTIAL_INTERVAL_SECONDS = 0.8
 
 
 def find_ffmpeg() -> str:
@@ -219,6 +224,7 @@ class Capture:
         utterance = bytearray()
         in_speech = False
         utterance_started_at = 0.0
+        last_partial_at = 0.0
 
         while not self._stopped.is_set():
             chunk = self._proc.stdout.read(CHUNK_BYTES)
@@ -250,6 +256,7 @@ class Capture:
                 if event == "start" and not in_speech:
                     in_speech = True
                     utterance_started_at = now
+                    last_partial_at = now
                     utterance.clear()
                     for pre in preroll:
                         utterance.extend(pre)
@@ -273,6 +280,22 @@ class Capture:
                                     "start": utterance_started_at,
                                     "end": now,
                                 })
+                    elif (now - last_partial_at >= PARTIAL_INTERVAL_SECONDS
+                          and now - utterance_started_at >= MIN_UTTERANCE_SECONDS):
+                        # Interim result while the speaker is still going, so
+                        # captions appear as words are said. Marked partial so
+                        # the consumer replaces it with the final utterance.
+                        last_partial_at = now
+                        try:
+                            text = self._transcribe(bytes(utterance))
+                        except Exception:  # a failed partial just waits for the next
+                            text = ""
+                        if text:
+                            emit({
+                                "text": text,
+                                "start": utterance_started_at,
+                                "partial": True,
+                            })
                 else:
                     preroll.append(frame)
 

@@ -83,10 +83,14 @@ interface SidecarMessage {
   text?: string
   start?: number // unix seconds
   end?: number
+  /** An interim result while speech continues; replaced by the final. */
+  partial?: boolean
 }
 
 interface TranscriptContextValue {
   lines: TranscriptLine[]
+  /** The in-progress utterance being spoken right now, before it finalizes. */
+  partial: string
   capturing: boolean
   phase: TranscriptPhase
   /** The device being captured, once known. */
@@ -128,6 +132,9 @@ export function TranscriptProvider({children}: {children: ReactNode}) {
   const {obsRequest} = useServices()
   const {platforms, obs, mics, obsConnected} = useLiveData()
   const [lines, setLines] = useState<TranscriptLine[]>([])
+  // The interim words of the utterance being spoken right now, shown live and
+  // replaced by the final line when the speaker pauses.
+  const [partial, setPartial] = useState('')
   const [capturing, setCapturing] = useState(false)
   const [phase, setPhase] = useState<TranscriptPhase>('idle')
   const [deviceLabel, setDeviceLabel] = useState('')
@@ -196,15 +203,24 @@ export function TranscriptProvider({children}: {children: ReactNode}) {
         if (msg.device) setDeviceLabel(msg.device)
         return
       }
-      if (msg.text && msg.start && msg.end) {
+      const isPartial = msg.partial === true
+      if (msg.text && msg.start && (msg.end || isPartial)) {
         // A dictation owns the capture: its utterances belong to whatever
-        // field is being dictated into, not to the stream transcript.
+        // field is being dictated into, not to the stream transcript. It only
+        // takes the finalized utterance, never the interim partials.
         if (dictation.current) {
-          dictation.current(msg.text)
+          if (!isPartial) dictation.current(msg.text)
+          return
+        }
+        // An interim result: show it live, but don't group or persist it — the
+        // final utterance that follows does that.
+        if (isPartial) {
+          setPartial(msg.text)
           return
         }
         const at = Math.round(msg.start * 1000)
-        const endAt = Math.round(msg.end * 1000)
+        const endAt = Math.round((msg.end ?? msg.start) * 1000)
+        setPartial('')
         appendText(msg.text, at, endAt)
         // Persist the raw utterance to the stream's transcript log.
         if (sessionId.current) {
@@ -219,6 +235,7 @@ export function TranscriptProvider({children}: {children: ReactNode}) {
     const offExit = EventsOn('transcript:exit', (detail: string) => {
       setCapturing(false)
       setPhase('idle')
+      setPartial('')
       if (detail) setError(detail)
     })
     return () => {
@@ -323,6 +340,7 @@ export function TranscriptProvider({children}: {children: ReactNode}) {
     void StopTranscription()
     setCapturing(false)
     setPhase('idle')
+    setPartial('')
   }, [])
 
   const stopDictation = useCallback(() => {
@@ -386,11 +404,15 @@ export function TranscriptProvider({children}: {children: ReactNode}) {
     prevShould.current = shouldCapture
   }, [shouldCapture, capturing, start, stopCapture])
 
-  const clear = useCallback(() => setLines([]), [])
+  const clear = useCallback(() => {
+    setLines([])
+    setPartial('')
+  }, [])
 
   const value = useMemo<TranscriptContextValue>(
     () => ({
       lines,
+      partial,
       capturing,
       phase,
       deviceLabel,
@@ -404,6 +426,7 @@ export function TranscriptProvider({children}: {children: ReactNode}) {
     }),
     [
       lines,
+      partial,
       capturing,
       phase,
       deviceLabel,

@@ -15,15 +15,24 @@ const timeFmt = new Intl.DateTimeFormat('en', {
  * accumulates until cleared.
  */
 export function TranscriptPanel() {
-  const {lines, capturing, phase, deviceLabel, error, start, stop, clear} =
-    useTranscript()
+  const {
+    lines,
+    partial,
+    capturing,
+    phase,
+    deviceLabel,
+    error,
+    start,
+    stop,
+    clear,
+  } = useTranscript()
   const listRef = useRef<HTMLDivElement>(null)
 
-  // Follow the newest lines.
+  // Follow the newest lines, and the interim words as they stream in.
   useEffect(() => {
     const el = listRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [lines])
+  }, [lines, partial])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
@@ -89,7 +98,7 @@ export function TranscriptPanel() {
         </div>
 
         <div ref={listRef} className="h-full overflow-y-auto p-4">
-          {lines.length === 0 ? (
+          {lines.length === 0 && !partial ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
               <span
                 aria-hidden
@@ -99,7 +108,7 @@ export function TranscriptPanel() {
               </span>
               <p className="max-w-sm text-sm text-fg-muted">
                 {capturing
-                  ? 'Listening — spoken words appear here a few seconds after each sentence.'
+                  ? 'Listening — spoken words appear here as you speak.'
                   : 'Transcription starts automatically while you are live with a microphone enabled in OBS, using local Whisper. Hover here for controls.'}
               </p>
             </div>
@@ -118,6 +127,18 @@ export function TranscriptPanel() {
                   </p>
                 </li>
               ))}
+              {/* The utterance being spoken right now, dimmed until it settles
+                  into a finished line. */}
+              {partial && (
+                <li className="flex items-start gap-3" aria-live="polite">
+                  <span className="shrink-0 pt-0.5 font-mono text-[11px] text-fg-muted/60">
+                    ···
+                  </span>
+                  <p className="min-w-0 flex-1 break-words text-sm leading-relaxed text-fg-muted">
+                    {partial}
+                  </p>
+                </li>
+              )}
             </ul>
           )}
         </div>
