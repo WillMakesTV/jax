@@ -162,6 +162,8 @@ export function GenerateDownloadThumbnail(arg1:string):Promise<string>;
 
 export function GenerateEditDirections(arg1:string,arg2:string,arg3:string):Promise<string>;
 
+export function GenerateEditDirectives(arg1:string):Promise<Array<main.EditDirective>>;
+
 export function GenerateEditScript(arg1:string,arg2:string):Promise<string>;
 
 export function GeneratePlanSuggestion(arg1:string,arg2:string,arg3:number):Promise<main.PlanSuggestion>;
@@ -231,6 +233,8 @@ export function GetContentSeries():Promise<Array<main.ContentSeries>>;
 export function GetDebugReport(arg1:number):Promise<main.DebugReport>;
 
 export function GetDownloads():Promise<Array<main.DownloadedVideo>>;
+
+export function GetEditDirectives(arg1:string):Promise<Array<main.EditDirective>>;
 
 export function GetEditRuns(arg1:string):Promise<Array<main.EditRun>>;
 
@@ -461,6 +465,8 @@ export function SaveChatMessages(arg1:Array<main.StoredChatMessage>):Promise<voi
 export function SaveContentSeries(arg1:main.ContentSeries):Promise<main.ContentSeries>;
 
 export function SaveDebugReport(arg1:main.DebugReport):Promise<main.DebugReport>;
+
+export function SaveEditDirectives(arg1:string,arg2:Array<main.EditDirective>):Promise<void>;
 
 export function SaveEditScript(arg1:string,arg2:string):Promise<void>;
 

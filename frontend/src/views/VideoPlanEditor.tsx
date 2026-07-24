@@ -13,6 +13,7 @@ import {
   Send,
   Sparkles,
   Square,
+  Target,
   Timer,
   Wand2,
   X,
@@ -21,7 +22,9 @@ import clsx from 'clsx'
 import {useCallback, useEffect, useRef, useState} from 'react'
 import {
   ApplyChangesToSkill,
+  GenerateEditDirectives,
   GenerateVideoScript,
+  GetEditDirectives,
   GetEditRuns,
   GetEditScript,
   GetEditVersions,
@@ -600,6 +603,10 @@ export function VideoPlanEditor({
           they say it. Separate from the directions above — this is the
           document the teleprompter reads. */}
       <SpokenScript plan={plan} aiConnected={aiConnected} />
+
+      {/* Growth directives: takeaways from the reference library, distilled by
+          AI into rules for this cut. They ride along in the edit run. */}
+      <GrowthDirectives plan={plan} aiConnected={aiConnected} />
 
       {/* The primary action: run the edit in the background. */}
       <div className="flex flex-wrap items-center gap-2">
@@ -1278,6 +1285,125 @@ function SpokenScript({
           actually said on camera, with a note of what is on screen for each
           section. Generate it and read it off the Teleprompter while you
           record.
+        </p>
+      )}
+
+      {error && (
+        <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </section>
+  )
+}
+
+/**
+ * Growth directives: the takeaways most relevant to this video's directions
+ * and script, distilled by AI into a short list of concrete rules for the cut
+ * — chosen to grow the channel and hold the viewer. They save against the plan
+ * and ride along in the edit run, so the render is held to them. Building
+ * needs the edit directions or the spoken script to exist first.
+ */
+function GrowthDirectives({
+  plan,
+  aiConnected,
+}: {
+  plan: main.VideoPlan
+  aiConnected: boolean
+}) {
+  const [directives, setDirectives] = useState<main.EditDirective[]>([])
+  const [building, setBuilding] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    GetEditDirectives(plan.id)
+      .then((d) => setDirectives(d ?? []))
+      .catch(() => {})
+  }, [plan.id])
+
+  const has = directives.length > 0
+
+  const build = async () => {
+    setBuilding(true)
+    setError('')
+    try {
+      setDirectives((await GenerateEditDirectives(plan.id)) ?? [])
+    } catch (err) {
+      setError(messageOf(err, 'The directives could not be built.'))
+    } finally {
+      setBuilding(false)
+    }
+  }
+
+  return (
+    <section aria-labelledby="editor-directives-heading">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h2
+          id="editor-directives-heading"
+          className="inline-flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-fg-muted"
+        >
+          <Target size={14} aria-hidden />
+          Growth directives
+        </h2>
+        <button
+          type="button"
+          onClick={() => void build()}
+          disabled={building || !aiConnected}
+          title={
+            !aiConnected
+              ? 'Connect Anthropic or OpenAI in Settings → AI to build directives'
+              : 'Review the takeaways most relevant to this video and turn the ones that fit into rules for the cut, chosen to grow the channel'
+          }
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {building ? (
+            <Loader2 size={14} aria-hidden className="animate-spin" />
+          ) : has ? (
+            <RotateCcw size={14} aria-hidden />
+          ) : (
+            <Sparkles size={14} aria-hidden />
+          )}
+          {building
+            ? 'Building…'
+            : has
+              ? 'Rebuild directives'
+              : 'Build directives'}
+        </button>
+      </div>
+
+      {has ? (
+        <>
+          <ul className="flex flex-col gap-2">
+            {directives.map((d, i) => (
+              <li
+                key={i}
+                className="rounded-lg border border-edge bg-surface p-3"
+              >
+                <div className="flex items-start gap-2">
+                  {d.kind && (
+                    <span className="mt-0.5 shrink-0 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
+                      {d.kind}
+                    </span>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-fg">{d.title}</p>
+                    {d.detail && (
+                      <p className="mt-0.5 text-sm text-fg-muted">{d.detail}</p>
+                    )}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-xs text-fg-muted">
+            Applied to the cut when you process the video. Rebuild after you
+            revise the directions or script.
+          </p>
+        </>
+      ) : (
+        <p className="text-sm text-fg-muted">
+          Build directives and the AI searches your takeaways for the moves that
+          fit this video — its directions and script — and turns them into rules
+          the cut is held to, chosen to grow the channel and hold the viewer.
+          Write the directions or the script first.
         </p>
       )}
 

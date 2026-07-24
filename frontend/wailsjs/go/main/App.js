@@ -322,6 +322,10 @@ export function GenerateEditDirections(arg1, arg2, arg3) {
   return window['go']['main']['App']['GenerateEditDirections'](arg1, arg2, arg3);
 }
 
+export function GenerateEditDirectives(arg1) {
+  return window['go']['main']['App']['GenerateEditDirectives'](arg1);
+}
+
 export function GenerateEditScript(arg1, arg2) {
   return window['go']['main']['App']['GenerateEditScript'](arg1, arg2);
 }
@@ -460,6 +464,10 @@ export function GetDebugReport(arg1) {
 
 export function GetDownloads() {
   return window['go']['main']['App']['GetDownloads']();
+}
+
+export function GetEditDirectives(arg1) {
+  return window['go']['main']['App']['GetEditDirectives'](arg1);
 }
 
 export function GetEditRuns(arg1) {
@@ -916,6 +924,10 @@ export function SaveContentSeries(arg1) {
 
 export function SaveDebugReport(arg1) {
   return window['go']['main']['App']['SaveDebugReport'](arg1);
+}
+
+export function SaveEditDirectives(arg1, arg2) {
+  return window['go']['main']['App']['SaveEditDirectives'](arg1, arg2);
 }
 
 export function SaveEditScript(arg1, arg2) {

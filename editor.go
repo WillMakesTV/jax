@@ -1069,6 +1069,23 @@ func (a *App) editPrompt(plan VideoPlan, instruction string) string {
 		b.WriteString(script)
 		b.WriteString("\n")
 	}
+	// The growth directives built from the takeaway library (see
+	// editor_directives.go): the moves chosen to grow the channel and hold the
+	// viewer, so the cut is held to them and not just the directions.
+	if directives := a.GetEditDirectives(plan.ID); len(directives) > 0 {
+		b.WriteString("\n# Growth directives\n\nApply every one of these to the cut — they were chosen from the reference library to grow the channel and hold the viewer:\n\n")
+		for _, d := range directives {
+			b.WriteString("- ")
+			if d.Kind != "" {
+				fmt.Fprintf(&b, "[%s] ", d.Kind)
+			}
+			b.WriteString(d.Title)
+			if d.Detail != "" {
+				fmt.Fprintf(&b, " — %s", d.Detail)
+			}
+			b.WriteString("\n")
+		}
+	}
 	if strings.TrimSpace(instruction) != "" {
 		b.WriteString("\n# Requested changes for this pass\n\nThe video is already rendered. Make exactly these changes to it and leave the rest of the cut alone:\n\n")
 		b.WriteString(strings.TrimSpace(instruction))

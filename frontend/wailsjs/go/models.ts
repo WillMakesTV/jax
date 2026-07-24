@@ -505,6 +505,22 @@ export namespace main {
 	        this.mediaUrl = source["mediaUrl"];
 	    }
 	}
+	export class EditDirective {
+	    kind: string;
+	    title: string;
+	    detail: string;
+
+	    static createFrom(source: any = {}) {
+	        return new EditDirective(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.title = source["title"];
+	        this.detail = source["detail"];
+	    }
+	}
 	export class EditOutput {
 	    name: string;
 	    mediaUrl: string;
