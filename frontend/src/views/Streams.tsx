@@ -55,13 +55,16 @@ const streamKeyOf = (s: main.PastStream) =>
   s.broadcasts.map(broadcastKeyOf).join(',')
 
 /**
- * The dashboard's aggregate stat tiles — recent stream count, views totalled
- * across every stream and source, and the last stream's date — rendered at
- * the top of the Broadcasting page. Reads the same 1-hour past-streams cache
- * the grid below uses, so the extra load is a lookup.
+ * The Broadcasting hero: the channel's own Twitch banner and logo as a
+ * backdrop, with the aggregate stat tiles — recent stream count, views
+ * totalled across every stream and source, and the last stream's date — laid
+ * over it. Falls back to whichever connected channel has artwork (then a brand
+ * gradient) when Twitch has none. Reads the same 1-hour past-streams cache the
+ * grid below uses, so the extra load is a lookup.
  */
 export function StreamStatsSummary() {
   const [past, setPast] = useState<main.PastStream[]>([])
+  const {platforms} = useLiveData()
 
   useEffect(() => {
     GetPastStreams(false)
@@ -73,23 +76,100 @@ export function StreamStatsSummary() {
   const totalViews = past.reduce((sum, s) => sum + s.totalViews, 0)
   const lastStream = past[0]
 
+  // Dress the hero from Twitch by preference, then any connected channel with
+  // artwork.
+  const twitch = platforms.find((p) => p.platform === 'twitch')
+  const hero =
+    twitch && (twitch.bannerUrl || twitch.avatarUrl)
+      ? twitch
+      : (platforms.find((p) => p.bannerUrl || p.avatarUrl) ?? platforms[0])
+  const banner = hero?.bannerUrl
+  const logo = hero?.avatarUrl
+
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-      <StatTile
-        icon={Video}
-        label="Recent streams"
-        value={String(past.length)}
-      />
-      <StatTile
-        icon={Eye}
-        label="Total stream views"
-        value={totalViews > 0 ? formatCompact(totalViews) : '—'}
-      />
-      <StatTile
-        icon={Calendar}
-        label="Last stream"
-        value={lastStream ? formatDate(lastStream.startedAt) || '—' : '—'}
-      />
+    <section
+      aria-label="Broadcast at a glance"
+      className="relative overflow-hidden rounded-2xl border border-edge bg-surface"
+    >
+      {/* The channel's banner (else its blurred logo, else a brand gradient)
+          as the backdrop, under a scrim that keeps the tiles readable. */}
+      <div aria-hidden className="absolute inset-0">
+        {banner ? (
+          <img src={banner} alt="" className="h-full w-full object-cover" />
+        ) : logo ? (
+          <img
+            src={logo}
+            alt=""
+            className="h-full w-full scale-110 object-cover opacity-40 blur-2xl"
+          />
+        ) : (
+          <div className="h-full w-full bg-gradient-to-br from-accent/30 to-accent/5" />
+        )}
+        <div className="absolute inset-0 bg-slate-950/70" />
+      </div>
+
+      <div className="relative p-5">
+        <div className="flex items-center gap-3">
+          {logo ? (
+            <img
+              src={logo}
+              alt=""
+              aria-hidden
+              className="h-11 w-11 shrink-0 rounded-full border-2 border-white/30 object-cover"
+            />
+          ) : hero ? (
+            <BrandTile platform={hero.platform} size={40} />
+          ) : null}
+          <div className="min-w-0">
+            <p className="truncate text-base font-semibold text-white">
+              {hero?.channelName || 'Your channel'}
+            </p>
+            <p className="text-xs text-white/70">Broadcast at a glance</p>
+          </div>
+        </div>
+
+        {/* The stat tiles, inside the banner. */}
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <HeroStat
+            icon={Video}
+            label="Recent streams"
+            value={String(past.length)}
+          />
+          <HeroStat
+            icon={Eye}
+            label="Total stream views"
+            value={totalViews > 0 ? formatCompact(totalViews) : '—'}
+          />
+          <HeroStat
+            icon={Calendar}
+            label="Last stream"
+            value={lastStream ? formatDate(lastStream.startedAt) || '—' : '—'}
+          />
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** One stat card laid over the broadcasting hero banner. */
+function HeroStat({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: LucideIcon
+  label: string
+  value: string
+}) {
+  return (
+    <div className="flex flex-col gap-1 rounded-xl border border-white/15 bg-slate-950/40 p-3 backdrop-blur-sm">
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-white/70">
+        <Icon size={13} aria-hidden />
+        {label}
+      </span>
+      <span className="truncate text-xl font-semibold tracking-tight text-white">
+        {value}
+      </span>
     </div>
   )
 }
