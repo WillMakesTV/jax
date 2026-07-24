@@ -122,18 +122,20 @@ export function SystemWidgetsPanel({
                   </span>
                 </div>
               </div>
-              {/* CTAs sit at the card's foot, aligned across the row
-                  whatever each description's height. */}
-              <div className="mt-auto flex flex-wrap items-center gap-2 pt-4">
+              {/* CTAs sit at the card's foot in a three-up grid, aligned
+                  across the row whatever each description's height. */}
+              <div className="mt-auto grid grid-cols-3 gap-2 pt-4">
                 {sw.editable && (
                   <button
                     type="button"
                     onClick={() => onOpenSystemWidget(sw)}
                     title="Customize this widget's display"
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                    className="inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
                   >
-                    <Pencil size={12} aria-hidden />
-                    {sw.customized ? 'Edit display' : 'Customize'}
+                    <Pencil size={12} aria-hidden className="shrink-0" />
+                    <span className="truncate">
+                      {sw.customized ? 'Edit display' : 'Customize'}
+                    </span>
                   </button>
                 )}
                 {sw.enabled && sw.sourceUrl && (
@@ -141,14 +143,16 @@ export function SystemWidgetsPanel({
                     type="button"
                     onClick={() => void copySource(sw)}
                     title="Copy the OBS Browser Source address"
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                    className="inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
                   >
                     {copiedId === sw.id ? (
-                      <Check size={12} aria-hidden />
+                      <Check size={12} aria-hidden className="shrink-0" />
                     ) : (
-                      <Copy size={12} aria-hidden />
+                      <Copy size={12} aria-hidden className="shrink-0" />
                     )}
-                    {copiedId === sw.id ? 'Copied' : 'Copy Browser Source'}
+                    <span className="truncate">
+                      {copiedId === sw.id ? 'Copied' : 'Copy Browser Source'}
+                    </span>
                   </button>
                 )}
                 <button
@@ -159,14 +163,16 @@ export function SystemWidgetsPanel({
                       ? 'Disable this widget — its Browser Source page goes dark'
                       : 'Enable this widget'
                   }
-                  className={`ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                  className={`inline-flex w-full min-w-0 items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
                     sw.enabled
                       ? 'bg-accent text-accent-fg hover:opacity-90'
                       : 'border border-edge bg-bg text-fg-muted hover:bg-surface-hover hover:text-fg'
                   }`}
                 >
-                  <Power size={12} aria-hidden />
-                  {sw.enabled ? 'Enabled' : 'Disabled'}
+                  <Power size={12} aria-hidden className="shrink-0" />
+                  <span className="truncate">
+                    {sw.enabled ? 'Enabled' : 'Disabled'}
+                  </span>
                 </button>
               </div>
             </li>
