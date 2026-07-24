@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import {ArrowLeft, Check, Film, MonitorPlay, Trash2, Upload} from 'lucide-react'
+import {ArrowLeft, Check, Film, Trash2, Upload} from 'lucide-react'
 import {useEffect, useState} from 'react'
 import {
   EnsureVideoPlanWorkspace,
@@ -15,8 +15,9 @@ import {PageHeader} from '../components/PageHeader'
 import {ObsRecordPanel} from '../obs/ObsRecordPanel'
 import {formatDate} from '../lib/format'
 
-/** Where added content comes from — the same split as the plan wizard. */
-type ContentMode = 'streams' | 'footage'
+/** Where added content comes from: a past broadcast, a fresh OBS recording,
+ *  or footage files uploaded from disk. */
+type ContentMode = 'streams' | 'record' | 'upload'
 
 /**
  * The video-plan's "Add content" page: source additional past broadcasts or
@@ -45,7 +46,6 @@ export function AddPlanContent({
   )
   const [files, setFiles] = useState<string[]>(plan.files ?? [])
   const [sourcesDir, setSourcesDir] = useState('')
-  const [obsOpen, setObsOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -192,8 +192,9 @@ export function AddPlanContent({
         >
           {(
             [
-              {id: 'streams', label: 'Past broadcasts'},
-              {id: 'footage', label: 'New footage'},
+              {id: 'streams', label: 'Past broadcast'},
+              {id: 'record', label: 'Record from OBS'},
+              {id: 'upload', label: 'Upload'},
             ] as {id: ContentMode; label: string}[]
           ).map((m) => (
             <button
@@ -279,6 +280,8 @@ export function AddPlanContent({
           </>
         ) : (
           <>
+            {/* Footage imported so far — recordings and uploads alike — shown
+                on both footage tabs so the plan's clips are always in view. */}
             {files.length > 0 && (
               <ul className="flex flex-col gap-1.5">
                 {files.map((name) => (
@@ -305,42 +308,38 @@ export function AddPlanContent({
                 ))}
               </ul>
             )}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => void addFiles()}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
-              >
-                <Upload size={14} aria-hidden />
-                Add footage files…
-              </button>
-              <button
-                type="button"
-                onClick={() => setObsOpen((v) => !v)}
-                aria-pressed={obsOpen}
-                className={clsx(
-                  'inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-sm font-medium transition-colors',
-                  obsOpen
-                    ? 'border-accent bg-accent/10 text-fg'
-                    : 'border-edge bg-surface text-fg hover:bg-surface-hover',
-                )}
-              >
-                <MonitorPlay size={14} aria-hidden />
-                Record from OBS
-              </button>
-            </div>
-            {obsOpen && (
-              <ObsRecordPanel
-                recordDir={sourcesDir}
-                planId={plan.id}
-                onRecorded={(path) => void importPaths([path])}
-              />
+
+            {mode === 'record' ? (
+              <>
+                <ObsRecordPanel
+                  recordDir={sourcesDir}
+                  planId={plan.id}
+                  onRecorded={(path) => void importPaths([path])}
+                />
+                <p className="text-xs text-fg-muted">
+                  Record straight from OBS into this plan&apos;s workspace — the
+                  clip is added to the plan the moment it stops.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void addFiles()}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+                  >
+                    <Upload size={14} aria-hidden />
+                    Add footage files…
+                  </button>
+                </div>
+                <p className="text-xs text-fg-muted">
+                  Video files that never aired — screen captures, b-roll, or
+                  phone clips. They land in the plan&apos;s workspace
+                  immediately.
+                </p>
+              </>
             )}
-            <p className="text-xs text-fg-muted">
-              Video files that never aired — screen captures, b-roll, phone
-              clips, or a fresh recording straight from OBS. They land in the
-              plan&apos;s workspace immediately.
-            </p>
           </>
         )}
 
