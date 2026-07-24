@@ -284,68 +284,72 @@ export function ObsRecordPanel({
           </span>
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-3 p-3">
-        {recording ? (
-          <button
-            type="button"
-            onClick={() => void stop()}
-            disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            <Square size={13} aria-hidden fill="currentColor" />
-            {busy ? 'Stopping…' : 'Stop recording'}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => void start()}
-            disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            <Circle size={13} aria-hidden fill="currentColor" />
-            {busy ? 'Starting…' : 'Start recording'}
-          </button>
-        )}
-        {planId && (
-          <>
+      <div className="flex flex-col gap-3 p-3">
+        {/* The record/teleprompter/capture controls laid out as an even grid
+            beneath the preview — four across at width, two per row below. */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {recording ? (
             <button
               type="button"
-              onClick={() => void openPrompter()}
-              title="Open the plan's spoken script in its own window beside the app — it follows the hide-from-capture setting"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+              onClick={() => void stop()}
+              disabled={busy}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
             >
-              <ScrollText size={13} aria-hidden />
-              Teleprompter
+              <Square size={13} aria-hidden fill="currentColor" />
+              {busy ? 'Stopping…' : 'Stop recording'}
             </button>
-            <button
-              type="button"
-              onClick={() => setSettingsOpen((open) => !open)}
-              aria-pressed={settingsOpen}
-              title="Colours, auto-scroll and keep-on-top for the teleprompter"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
-            >
-              <Settings2 size={13} aria-hidden />
-              Prompter settings
-            </button>
-          </>
-        )}
-        <button
-          type="button"
-          onClick={() => void toggleCaptureHidden()}
-          title={
-            captureHidden
-              ? 'The app (and the script window) is hidden from screen captures — click to show it again'
-              : 'Hide the app (and the script window) from screen captures, shares, and screenshots'
-          }
-          className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
-        >
-          {captureHidden ? (
-            <EyeOff size={13} aria-hidden />
           ) : (
-            <Eye size={13} aria-hidden />
+            <button
+              type="button"
+              onClick={() => void start()}
+              disabled={busy}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              <Circle size={13} aria-hidden fill="currentColor" />
+              {busy ? 'Starting…' : 'Start recording'}
+            </button>
           )}
-          {captureHidden ? 'Hidden from capture' : 'Hide from capture'}
-        </button>
+          {planId && (
+            <>
+              <button
+                type="button"
+                onClick={() => void openPrompter()}
+                title="Open the plan's spoken script in its own window beside the app — it follows the hide-from-capture setting"
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+              >
+                <ScrollText size={13} aria-hidden />
+                Teleprompter
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsOpen((open) => !open)}
+                aria-pressed={settingsOpen}
+                title="Colours, auto-scroll and keep-on-top for the teleprompter"
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+              >
+                <Settings2 size={13} aria-hidden />
+                Prompter settings
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => void toggleCaptureHidden()}
+            title={
+              captureHidden
+                ? 'The app (and the script window) is hidden from screen captures — click to show it again'
+                : 'Hide the app (and the script window) from screen captures, shares, and screenshots'
+            }
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-edge bg-bg px-3 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-hover"
+          >
+            {captureHidden ? (
+              <EyeOff size={13} aria-hidden />
+            ) : (
+              <Eye size={13} aria-hidden />
+            )}
+            {captureHidden ? 'Hidden from capture' : 'Hide from capture'}
+          </button>
+        </div>
         <p className="text-xs text-fg-muted">
           {recordDir
             ? "Records OBS's program output straight into the plan's sources folder; the file is added to the plan when the recording stops."
