@@ -759,6 +759,7 @@ export function VideoPlanDetails({
             key={playing.url}
             controls
             autoPlay
+            loop={short}
             poster={playing.poster}
             src={playing.url}
             className="aspect-video w-full rounded-lg bg-black"

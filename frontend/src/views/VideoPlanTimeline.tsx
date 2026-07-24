@@ -159,6 +159,11 @@ export function VideoPlanTimeline({
   const previewCutRef = useRef(true)
   segmentsRef.current = segments
   previewCutRef.current = previewCut
+  // Short-form videos loop: on reaching the end of the cut, playback replays
+  // from the top rather than stopping (see the playback loop).
+  const short = plan.format === 'short'
+  const loopRef = useRef(short)
+  loopRef.current = short
   // Suppresses the autosave until the stored cut has been applied.
   const loaded = useRef(false)
   // Set by the first real edit. A saved cut outranks the workspace's own
@@ -316,11 +321,14 @@ export function VideoPlanTimeline({
           const t = v.currentTime
           const inSeg = segs.find((s) => t >= s.start && t < s.end - 0.04)
           if (!inSeg) {
-            // Past the current segment (or in a cut region): jump to the next
-            // kept segment after t, else stop at the cut's end.
             const next = segs.find((s) => s.start > t - 0.04)
             if (next) {
-              v.currentTime = next.start
+              // Only seek when a removed region actually lies ahead; segments
+              // that abut play straight through, without a stutter at the seam.
+              if (next.start > t + 0.12) v.currentTime = next.start
+            } else if (loopRef.current) {
+              // Short form replays from the top of the cut instead of stopping.
+              v.currentTime = segs[0].start
             } else {
               v.pause()
             }
@@ -601,6 +609,7 @@ export function VideoPlanTimeline({
           ref={videoRef}
           src={url}
           controls
+          loop={short}
           onLoadedMetadata={onMetadata}
           className="aspect-video w-full rounded-lg bg-black"
         />
