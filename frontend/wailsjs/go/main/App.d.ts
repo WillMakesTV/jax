@@ -42,6 +42,8 @@ export function CancelDownload():Promise<void>;
 
 export function CancelEditRun():Promise<void>;
 
+export function CancelAllInspirationVideos():Promise<void>;
+
 export function CancelInspirationVideo(arg1:string):Promise<void>;
 
 export function CancelKickAuth():Promise<void>;

@@ -82,6 +82,10 @@ export function CancelEditRun() {
   return window['go']['main']['App']['CancelEditRun']();
 }
 
+export function CancelAllInspirationVideos() {
+  return window['go']['main']['App']['CancelAllInspirationVideos']();
+}
+
 export function CancelInspirationVideo(arg1) {
   return window['go']['main']['App']['CancelInspirationVideo'](arg1);
 }

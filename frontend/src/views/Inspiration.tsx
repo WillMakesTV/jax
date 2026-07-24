@@ -14,6 +14,7 @@ import {useCallback, useEffect, useState} from 'react'
 import {
   AddInspirationChannel,
   AddInspirationVideo,
+  CancelAllInspirationVideos,
   CancelInspirationVideo,
   DeleteInspirationChannel,
   GetInspirationChannels,
@@ -212,10 +213,23 @@ export function Inspiration({
 
       {working.length > 0 && (
         <section className="mb-4 rounded-xl border border-edge bg-surface p-4">
-          <h2 className="text-sm font-semibold text-fg">
-            Processing {working.length}{' '}
-            {working.length === 1 ? 'video' : 'videos'}
-          </h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold text-fg">
+              Processing {working.length}{' '}
+              {working.length === 1 ? 'video' : 'videos'}
+            </h2>
+            {working.length > 1 && (
+              <button
+                type="button"
+                onClick={() => void CancelAllInspirationVideos()}
+                title="Stop processing and clear every video from the queue"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-bg px-2.5 py-1 text-xs font-medium text-fg-muted transition-colors hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
+              >
+                <X size={13} aria-hidden />
+                Stop all
+              </button>
+            )}
+          </div>
           <ul className="mt-3 flex flex-col gap-2">
             {working.map((v) => (
               <li

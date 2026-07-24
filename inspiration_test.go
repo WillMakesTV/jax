@@ -266,3 +266,48 @@ func TestCancelInspirationVideo(t *testing.T) {
 		t.Fatalf("a studied video must keep its result, got %q", v.Status)
 	}
 }
+
+func TestCancelAllInspirationVideos(t *testing.T) {
+	a := newTestApp(t)
+
+	lib := a.getInspiration()
+	lib.Videos = append(lib.Videos,
+		InspirationVideo{ID: "a", Title: "Downloading", Status: inspirationDownloading},
+		InspirationVideo{ID: "b", Title: "Queued", Status: inspirationQueued},
+		InspirationVideo{ID: "done", Title: "Studied", Status: inspirationReady},
+	)
+	if err := a.saveInspiration(lib); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	inspirationQueue.Lock()
+	inspirationQueue.ids = []string{"b"}
+	inspirationQueue.current = "a"
+	inspirationQueue.canceled = nil
+	inspirationQueue.Unlock()
+	t.Cleanup(func() {
+		inspirationQueue.Lock()
+		inspirationQueue.ids = nil
+		inspirationQueue.canceled = nil
+		inspirationQueue.current = ""
+		inspirationQueue.cancel = nil
+		inspirationQueue.Unlock()
+	})
+
+	if err := a.CancelAllInspirationVideos(); err != nil {
+		t.Fatalf("cancel all: %v", err)
+	}
+	inspirationQueue.Lock()
+	left := len(inspirationQueue.ids)
+	inspirationQueue.Unlock()
+	if left != 0 {
+		t.Fatalf("queue should be empty, %d left", left)
+	}
+	for _, id := range []string{"a", "b"} {
+		if v, _ := a.GetInspirationVideo(id); v.Status != inspirationTracked {
+			t.Fatalf("%s should revert to tracked, got %q", id, v.Status)
+		}
+	}
+	if v, _ := a.GetInspirationVideo("done"); v.Status != inspirationReady {
+		t.Fatalf("a studied video must keep its result, got %q", v.Status)
+	}
+}

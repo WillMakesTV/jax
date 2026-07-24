@@ -656,6 +656,33 @@ func (a *App) CancelInspirationVideo(id string) error {
 	return nil
 }
 
+// CancelAllInspirationVideos empties the processing queue and stops the run in
+// progress, dropping every video the pipeline was holding back to "tracked".
+func (a *App) CancelAllInspirationVideos() error {
+	inspirationQueue.Lock()
+	if inspirationQueue.canceled == nil {
+		inspirationQueue.canceled = map[string]bool{}
+	}
+	for _, id := range inspirationQueue.ids {
+		inspirationQueue.canceled[id] = true
+	}
+	inspirationQueue.ids = nil
+	if inspirationQueue.current != "" {
+		inspirationQueue.canceled[inspirationQueue.current] = true
+		if inspirationQueue.cancel != nil {
+			inspirationQueue.cancel()
+		}
+	}
+	inspirationQueue.Unlock()
+
+	for _, v := range a.getInspiration().Videos {
+		if inspirationWorking(v.Status) {
+			a.inspirationStatus(v.ID, inspirationTracked, "", 0)
+		}
+	}
+	return nil
+}
+
 // enqueueInspirationVideo puts a video in line to be processed and starts the
 // worker if it is idle. Already-queued videos are left where they are.
 func (a *App) enqueueInspirationVideo(id string) {
