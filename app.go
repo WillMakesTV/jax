@@ -215,6 +215,9 @@ func (a *App) startup(ctx context.Context) {
 	// existed, without waiting for someone to open its page (see
 	// inspiration.go).
 	go a.backfillInspirationTakeaways()
+	// Embed any takeaways missing from the vector store, so meaning-based
+	// retrieval covers a library built before RAG (see takeaway_rag.go).
+	go a.backfillInspirationEmbeddings()
 	// Put the inspiration videos an abrupt close interrupted back in line, so
 	// a queue survives the app going away mid-run (see inspiration.go).
 	go a.resumeInspirationQueue()

@@ -265,6 +265,25 @@ CREATE TABLE IF NOT EXISTS dev_ai_debug_fixed (
 	read         INTEGER NOT NULL DEFAULT 0,
 	created_at   TEXT NOT NULL DEFAULT '',
 	resolved_at  TEXT NOT NULL
+);
+-- Embedding vectors for inspiration takeaways — one row per takeaway — so the
+-- library can be searched by meaning (RAG) rather than keywords alone. The
+-- takeaway's text is denormalised alongside the vector, so a search reads only
+-- this table (see takeaway_rag.go).
+CREATE TABLE IF NOT EXISTS inspiration_takeaway_vectors (
+	video_id    TEXT NOT NULL,
+	idx         INTEGER NOT NULL,
+	kind        TEXT NOT NULL DEFAULT '',
+	at_secs     INTEGER NOT NULL DEFAULT -1,
+	title       TEXT NOT NULL DEFAULT '',
+	detail      TEXT NOT NULL DEFAULT '',
+	apply       TEXT NOT NULL DEFAULT '',
+	channel_id  TEXT NOT NULL DEFAULT '',
+	video_title TEXT NOT NULL DEFAULT '',
+	video_url   TEXT NOT NULL DEFAULT '',
+	model       TEXT NOT NULL DEFAULT '',
+	vec         BLOB NOT NULL,
+	PRIMARY KEY (video_id, idx)
 );`
 	if _, err := s.db.Exec(schema); err != nil {
 		return err
@@ -411,6 +430,83 @@ func (s *Store) channelMetricsSince(from string) (map[string][]ChannelMetrics, e
 			return nil, err
 		}
 		out[day] = append(out[day], m)
+	}
+	return out, rows.Err()
+}
+
+// ---------------------------------------------------------------------------
+// Inspiration takeaway vectors (RAG)
+// ---------------------------------------------------------------------------
+
+// replaceTakeawayVectors swaps in a video's takeaway embeddings: every prior
+// row for the video is dropped and the new set written, in one transaction.
+func (s *Store) replaceTakeawayVectors(videoID string, rows []takeawayVector) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`DELETE FROM inspiration_takeaway_vectors WHERE video_id = ?`, videoID); err != nil {
+		return err
+	}
+	for i, r := range rows {
+		if _, err := tx.Exec(
+			`INSERT INTO inspiration_takeaway_vectors
+			 (video_id, idx, kind, at_secs, title, detail, apply, channel_id, video_title, video_url, model, vec)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			videoID, i, r.Kind, r.AtSecs, r.Title, r.Detail, r.Apply,
+			r.ChannelID, r.VideoTitle, r.VideoURL, r.Model, vecBlob(r.Vec),
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// deleteTakeawayVectors drops every embedding for a video.
+func (s *Store) deleteTakeawayVectors(videoID string) error {
+	_, err := s.db.Exec(`DELETE FROM inspiration_takeaway_vectors WHERE video_id = ?`, videoID)
+	return err
+}
+
+// allTakeawayVectors reads every stored takeaway embedding.
+func (s *Store) allTakeawayVectors() ([]takeawayVector, error) {
+	rows, err := s.db.Query(
+		`SELECT video_id, kind, at_secs, title, detail, apply, channel_id, video_title, video_url, model, vec
+		 FROM inspiration_takeaway_vectors`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []takeawayVector{}
+	for rows.Next() {
+		var r takeawayVector
+		var blob []byte
+		if err := rows.Scan(&r.VideoID, &r.Kind, &r.AtSecs, &r.Title, &r.Detail,
+			&r.Apply, &r.ChannelID, &r.VideoTitle, &r.VideoURL, &r.Model, &blob); err != nil {
+			return nil, err
+		}
+		r.Vec = blobVec(blob)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// takeawayVectorVideoIDs reports which videos already have embeddings, so the
+// backfill knows what is left.
+func (s *Store) takeawayVectorVideoIDs() (map[string]bool, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT video_id FROM inspiration_takeaway_vectors`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
 	}
 	return out, rows.Err()
 }

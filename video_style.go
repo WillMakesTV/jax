@@ -213,6 +213,20 @@ func (a *App) DeleteVideoStyle(id string) error {
 // name, best first. A name that matches nothing in particular still returns
 // the library, so a style always has something to be written from.
 func (a *App) SuggestVideoStyleTakeaways(name string) []VideoStyleSource {
+	// Prefer meaning-based retrieval when the takeaways are embedded (RAG); it
+	// speaks to the style's intent, not just its words. Falls through to the
+	// keyword ranking below when embeddings aren't available.
+	if rows, ok := a.ragTakeawayRows(name, videoStyleMaxSources); ok {
+		out := make([]VideoStyleSource, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, VideoStyleSource{
+				Kind: r.Kind, Title: r.Title, Detail: r.Detail, Apply: r.Apply,
+				VideoID: r.VideoID, VideoTitle: r.VideoTitle, VideoURL: r.VideoURL,
+			})
+		}
+		return out
+	}
+
 	terms := inspirationTerms(name)
 	type scored struct {
 		src   VideoStyleSource

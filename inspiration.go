@@ -1617,6 +1617,9 @@ func (a *App) extractInspirationTakeaways(id string) error {
 		v.Takeaways = parsed.Takeaways
 		v.TakeawaysAt = time.Now().UTC().Format(time.RFC3339)
 	})
+	// Index the fresh takeaways into the vector store for meaning-based
+	// retrieval (best-effort; see takeaway_rag.go).
+	go a.embedInspirationTakeaways(id)
 	return nil
 }
 
@@ -1691,6 +1694,9 @@ func (a *App) DeleteInspirationVideo(id string) error {
 	if err := a.saveInspiration(lib); err != nil {
 		return err
 	}
+	if a.store != nil {
+		_ = a.store.deleteTakeawayVectors(id)
+	}
 	if folder != "" {
 		if root, err := a.inspirationRoot(); err == nil {
 			_ = os.RemoveAll(filepath.Join(root, filepath.FromSlash(folder)))
@@ -1711,12 +1717,14 @@ func (a *App) DeleteInspirationChannel(id string) error {
 	lib.Channels = channels
 
 	folders := []string{}
+	removed := []string{}
 	videos := make([]InspirationVideo, 0, len(lib.Videos))
 	for _, v := range lib.Videos {
 		if v.ChannelID == id {
 			if v.Folder != "" {
 				folders = append(folders, v.Folder)
 			}
+			removed = append(removed, v.ID)
 			continue
 		}
 		videos = append(videos, v)
@@ -1724,6 +1732,11 @@ func (a *App) DeleteInspirationChannel(id string) error {
 	lib.Videos = videos
 	if err := a.saveInspiration(lib); err != nil {
 		return err
+	}
+	if a.store != nil {
+		for _, vid := range removed {
+			_ = a.store.deleteTakeawayVectors(vid)
+		}
 	}
 	if root, err := a.inspirationRoot(); err == nil {
 		for _, f := range folders {

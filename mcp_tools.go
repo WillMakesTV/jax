@@ -742,6 +742,31 @@ func mcpToolCatalog() []mcpTool {
 				return hits, nil
 			},
 		},
+		{
+			name:        "search_takeaways",
+			description: "Retrieve the inspiration takeaways most relevant to a query — the reusable tips, techniques and concepts lifted from studied videos — ranked by meaning when they have been embedded (RAG over a vector store), else by keyword. Each result carries the takeaway text, the video and moment it came from, and a citation URL. Use this to ground advice in what the library has actually learned.",
+			inputSchema: objSchema(map[string]any{
+				"query": prop("string", "What you want takeaways about: a goal, technique, or topic."),
+				"limit": prop("integer", "How many takeaways to return (default 10, max 50)."),
+			}, "query"),
+			handler: func(a *App, args json.RawMessage) (any, error) {
+				var in struct {
+					Query string `json:"query"`
+					Limit int    `json:"limit"`
+				}
+				if err := decodeArgs(args, &in); err != nil {
+					return nil, err
+				}
+				want := in.Limit
+				if want <= 0 {
+					want = 10
+				}
+				if want > 50 {
+					want = 50
+				}
+				return a.SearchTakeaways(in.Query, want)
+			},
+		},
 
 		// --- Projects ------------------------------------------------------
 		{
